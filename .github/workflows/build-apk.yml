@@ -10,7 +10,7 @@ on:
       - "fastlane/**"
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build:
@@ -31,12 +31,35 @@ jobs:
       - name: Make gradlew executable
         run: chmod +x ./gradlew
 
-      - name: Build foss debug APK
-        run: ./gradlew assembleFossDebug --stacktrace
+      - name: Decode keystore
+        run: echo "${{ secrets.SIGNING_KEYSTORE_BASE64 }}" | base64 -d > "${{ runner.temp }}/galeriaplus.jks"
 
-      - name: Upload APK
+      - name: Build foss release APK
+        env:
+          SIGNING_KEY_ALIAS: ${{ secrets.SIGNING_KEY_ALIAS }}
+          SIGNING_KEY_PASSWORD: ${{ secrets.SIGNING_KEY_PASSWORD }}
+          SIGNING_STORE_PASSWORD: ${{ secrets.SIGNING_STORE_PASSWORD }}
+          SIGNING_STORE_FILE: ${{ runner.temp }}/galeriaplus.jks
+        run: ./gradlew assembleFossRelease --stacktrace
+
+      - name: Locate APK
+        id: apk
+        run: echo "path=$(ls app/build/outputs/apk/foss/release/*.apk | head -n1)" >> "$GITHUB_OUTPUT"
+
+      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: gallery-foss-debug-apk
-          path: app/build/outputs/apk/foss/debug/*.apk
+          name: galeria-plus-release-apk
+          path: app/build/outputs/apk/foss/release/*.apk
           if-no-files-found: error
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION=$(grep '^VERSION_NAME=' gradle.properties | cut -d'=' -f2)
+          TAG="v${VERSION}-build${{ github.run_number }}"
+          gh release create "$TAG" "${{ steps.apk.outputs.path }}" \
+            --repo "${{ github.repository }}" \
+            --title "Galéria+ ${VERSION} (build ${{ github.run_number }})" \
+            --notes "Automaticky postavený podpísaný build Galéria+. Stiahni a nainštaluj APK nižšie."
