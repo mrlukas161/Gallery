@@ -6,13 +6,12 @@ import com.google.mediapipe.framework.image.BitmapImageBuilder
 import com.google.mediapipe.tasks.core.BaseOptions
 import com.google.mediapipe.tasks.vision.core.RunningMode
 import com.google.mediapipe.tasks.vision.facedetector.FaceDetector
-import com.google.mediapipe.tasks.vision.facedetector.FaceDetectorOptions
 
 // Tenký wrapper nad MediaPipe FaceDetector (BlazeFace). Vracia bounding boxy tvárí.
 class FaceDetectionHelper(context: Context) {
     private val detector: FaceDetector = FaceDetector.createFromOptions(
         context,
-        FaceDetectorOptions.builder()
+        FaceDetector.FaceDetectorOptions.builder()
             .setBaseOptions(
                 BaseOptions.builder()
                     .setModelAssetPath("face/blaze_face_short_range.tflite")
