@@ -1,7 +1,10 @@
 package org.fossify.gallery.activities
 
 import android.content.Intent
+import android.os.Bundle
 import org.fossify.commons.activities.BaseSplashActivity
+import org.fossify.commons.extensions.baseConfig
+import org.fossify.commons.helpers.SIDELOADING_FALSE
 import org.fossify.commons.helpers.ensureBackgroundThread
 import org.fossify.gallery.extensions.config
 import org.fossify.gallery.extensions.favoritesDB
@@ -10,6 +13,14 @@ import org.fossify.gallery.extensions.mediaDB
 import org.fossify.gallery.models.Favorite
 
 class SplashActivity : BaseSplashActivity() {
+    override fun onCreate(savedInstanceState: Bundle?) {
+        // Legitímny fork: nastav príznak ešte PRED tým, než commons BaseSplashActivity
+        // spustí anti-sideloading kontrolu. (V release builde resource shrinking odstráni
+        // overovaný drawable → kontrola by inak falošne hlásila "fake version".)
+        baseConfig.appSideloadingStatus = SIDELOADING_FALSE
+        super.onCreate(savedInstanceState)
+    }
+
     override fun initActivity() {
         // check if previously selected favorite items have been properly migrated into the new Favorites table
         if (config.wereFavoritesMigrated) {
