@@ -131,6 +131,8 @@ import org.fossify.gallery.helpers.MediaFetcher
 import org.fossify.gallery.helpers.PICKED_PATHS
 import org.fossify.gallery.helpers.RECYCLE_BIN
 import org.fossify.gallery.helpers.SET_WALLPAPER_INTENT
+import org.fossify.gallery.helpers.SMART_ALBUM_PATHS
+import org.fossify.gallery.helpers.getSmartAlbumName
 import org.fossify.gallery.helpers.SHOW_ALL
 import org.fossify.gallery.helpers.SHOW_TEMP_HIDDEN_DURATION
 import org.fossify.gallery.helpers.SKIP_AUTHENTICATION
@@ -1174,6 +1176,20 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
             }
         }
 
+        if (config.showSmartAlbums) {
+            SMART_ALBUM_PATHS.reversed().forEach { albumPath ->
+                if (!dirs.map { it.path }.contains(albumPath)) {
+                    val smartAlbum = Directory().apply {
+                        path = albumPath
+                        name = getSmartAlbumName(albumPath)
+                        location = LOCATION_INTERNAL
+                    }
+
+                    dirs.add(0, smartAlbum)
+                }
+            }
+        }
+
         // fetch files from MediaStore only, unless the app has the MANAGE_EXTERNAL_STORAGE permission on Android 11+
         val android11Files = mLastMediaFetcher?.getAndroid11FolderMedia(
             isPickImage = getImagesOnly,
@@ -1252,8 +1268,10 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
                 setupAdapter(dirs)
 
                 // update directories and media files in the local db, delete invalid items. Intentionally creating a new thread
-                updateDBDirectory(directory)
-                if (!directory.isRecycleBin() && !directory.areFavorites()) {
+                if (!directory.isSmartAlbum()) {
+                    updateDBDirectory(directory)
+                }
+                if (!directory.isRecycleBin() && !directory.areFavorites() && !directory.isSmartAlbum()) {
                     Thread {
                         try {
                             mediaDB.insertAll(curMedia)
@@ -1262,7 +1280,7 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
                     }.start()
                 }
 
-                if (!directory.isRecycleBin()) {
+                if (!directory.isRecycleBin() && !directory.isSmartAlbum()) {
                     getCachedMedia(directory.path, getVideosOnly, getImagesOnly) {
                         val mediaToDelete = ArrayList<Medium>()
                         it.forEach {

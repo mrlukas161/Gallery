@@ -7,6 +7,7 @@ import org.fossify.commons.extensions.formatDate
 import org.fossify.commons.extensions.formatSize
 import org.fossify.commons.helpers.*
 import org.fossify.gallery.helpers.RECYCLE_BIN
+import org.fossify.gallery.helpers.SMART_ALBUM_PATHS
 
 @Entity(tableName = "directories", indices = [Index(value = ["path"], unique = true)])
 data class Directory(
@@ -42,6 +43,8 @@ data class Directory(
     fun areFavorites() = path == FAVORITES
 
     fun isRecycleBin() = path == RECYCLE_BIN
+
+    fun isSmartAlbum() = path in SMART_ALBUM_PATHS
 
     fun getKey() = ObjectKey("$path-$modified")
 }

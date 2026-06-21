@@ -93,6 +93,8 @@ import org.fossify.gallery.helpers.MediaFetcher
 import org.fossify.gallery.helpers.MyWidgetProvider
 import org.fossify.gallery.helpers.PicassoRoundedCornersTransformation
 import org.fossify.gallery.helpers.RECYCLE_BIN
+import org.fossify.gallery.helpers.getSmartAlbumName
+import org.fossify.gallery.helpers.isSmartAlbumPath
 import org.fossify.gallery.helpers.ROUNDED_CORNERS_NONE
 import org.fossify.gallery.helpers.ROUNDED_CORNERS_SMALL
 import org.fossify.gallery.helpers.SHOW_ALL
@@ -596,7 +598,7 @@ fun Context.getFolderNameFromPath(path: String): String {
         otgPath -> getString(org.fossify.commons.R.string.usb)
         FAVORITES -> getString(org.fossify.commons.R.string.favorites)
         RECYCLE_BIN -> getString(org.fossify.commons.R.string.recycle_bin)
-        else -> path.getFilenameFromPath()
+        else -> if (isSmartAlbumPath(path)) getSmartAlbumName(path) else path.getFilenameFromPath()
     }
 }
 

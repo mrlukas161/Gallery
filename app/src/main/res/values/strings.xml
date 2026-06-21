@@ -7,6 +7,13 @@
     <string name="update_later">Neskôr</string>
     <string name="update_downloading">Sťahujem aktualizáciu…</string>
     <string name="update_check_failed">Aktualizácia zlyhala</string>
+    <string name="show_smart_albums">Zobraziť smart albumy</string>
+    <string name="smart_album_videos">Videá</string>
+    <string name="smart_album_gifs">GIF</string>
+    <string name="smart_album_screenshots">Screenshoty</string>
+    <string name="smart_album_downloads">Stiahnuté</string>
+    <string name="smart_album_camera">Kamera</string>
+    <string name="smart_album_raw">RAW</string>
     <string name="edit">Edit</string>
     <string name="open_camera">Open camera</string>
     <string name="hidden">(hidden)</string>

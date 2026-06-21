@@ -32,6 +32,10 @@ class Config(context: Context) : BaseConfig(context) {
         get() = prefs.getLong("last_app_update_check_ts", 0L)
         set(value) = prefs.edit().putLong("last_app_update_check_ts", value).apply()
 
+    var showSmartAlbums: Boolean
+        get() = prefs.getBoolean(SHOW_SMART_ALBUMS, false)
+        set(value) = prefs.edit().putBoolean(SHOW_SMART_ALBUMS, value).apply()
+
     fun saveFolderGrouping(path: String, value: Int) {
         if (path.isEmpty()) {
             groupBy = value
