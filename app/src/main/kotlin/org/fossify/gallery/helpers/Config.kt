@@ -24,6 +24,14 @@ class Config(context: Context) : BaseConfig(context) {
         get(): Int = prefs.getInt(DIRECTORY_SORT_ORDER, SORT_BY_DATE_MODIFIED or SORT_DESCENDING)
         set(order) = prefs.edit().putInt(DIRECTORY_SORT_ORDER, order).apply()
 
+    var checkForAppUpdates: Boolean
+        get() = prefs.getBoolean("check_for_app_updates", true)
+        set(value) = prefs.edit().putBoolean("check_for_app_updates", value).apply()
+
+    var lastAppUpdateCheckTS: Long
+        get() = prefs.getLong("last_app_update_check_ts", 0L)
+        set(value) = prefs.edit().putLong("last_app_update_check_ts", value).apply()
+
     fun saveFolderGrouping(path: String, value: Int) {
         if (path.isEmpty()) {
             groupBy = value

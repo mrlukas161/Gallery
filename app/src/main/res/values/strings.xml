@@ -2,6 +2,11 @@
 <resources>
     <string name="app_launcher_name">Gallery</string>
     <string name="app_name_brand">Galéria+</string>
+    <string name="update_available_msg">Je dostupná nová verzia Galéria+ %s. Chcete ju nainštalovať?</string>
+    <string name="update_now">Aktualizovať</string>
+    <string name="update_later">Neskôr</string>
+    <string name="update_downloading">Sťahujem aktualizáciu…</string>
+    <string name="update_check_failed">Aktualizácia zlyhala</string>
     <string name="edit">Edit</string>
     <string name="open_camera">Open camera</string>
     <string name="hidden">(hidden)</string>

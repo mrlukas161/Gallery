@@ -57,7 +57,9 @@ import org.fossify.commons.extensions.recycleBinPath
 import org.fossify.commons.extensions.sdCardPath
 import org.fossify.commons.extensions.showErrorToast
 import org.fossify.commons.extensions.toFileDirItem
+import org.fossify.commons.dialogs.ConfirmationDialog
 import org.fossify.commons.extensions.toast
+import org.fossify.gallery.helpers.AppUpdater
 import org.fossify.commons.extensions.underlineText
 import org.fossify.commons.extensions.viewBinding
 import org.fossify.commons.helpers.DAY_SECONDS
@@ -237,6 +239,9 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
         binding.directoriesRefreshLayout.setOnRefreshListener { getDirectories() }
         storeStateVariables()
         checkWhatsNewDialog()
+        if (!mIsThirdPartyIntent) {
+            checkForAppUpdate()
+        }
         setupLatestMediaId()
 
         if (!config.wereFavoritesPinned) {
@@ -1746,6 +1751,24 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
     private fun checkWhatsNewDialog() {
         arrayListOf<Release>().apply {
             checkWhatsNew(this, BuildConfig.VERSION_CODE)
+        }
+    }
+
+    private fun checkForAppUpdate() {
+        AppUpdater.checkForUpdate(this, force = false) { update ->
+            if (update != null && !isFinishing && !isDestroyed) {
+                ConfirmationDialog(
+                    this,
+                    getString(R.string.update_available_msg, update.versionName),
+                    positive = R.string.update_now,
+                    negative = R.string.update_later
+                ) {
+                    toast(R.string.update_downloading)
+                    AppUpdater.downloadAndInstall(this, update) {
+                        toast(R.string.update_check_failed)
+                    }
+                }
+            }
         }
     }
 }
