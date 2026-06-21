@@ -16,6 +16,8 @@ import org.fossify.gallery.R
 import org.fossify.gallery.databinding.ActivitySettingsBinding
 import org.fossify.gallery.dialogs.*
 import org.fossify.gallery.extensions.*
+import org.fossify.gallery.faces.FaceIndexer
+import org.fossify.gallery.faces.FacesDatabase
 import org.fossify.gallery.helpers.*
 import org.fossify.gallery.models.AlbumCover
 import java.io.File
@@ -107,6 +109,7 @@ class SettingsActivity : SimpleActivity() {
         setupShowSmartAlbums()
         updateTextColors(binding.settingsHolder)
         setupClearCache()
+        setupFaceIndexing()
         setupExportFavorites()
         setupImportFavorites()
         setupExportSettings()
@@ -775,6 +778,52 @@ class SettingsActivity : SimpleActivity() {
                     emptyTheRecycleBin()
                     mRecycleBinContentSize = 0L
                     binding.settingsEmptyRecycleBinSize.text = 0L.formatSize()
+                }
+            }
+        }
+    }
+
+    private fun setupFaceIndexing() {
+        updateFaceIndexingSummary()
+        binding.settingsFaceIndexingHolder.setOnClickListener {
+            if (FaceIndexer.isRunning) {
+                FaceIndexer.stop()
+                updateFaceIndexingSummary()
+            } else {
+                binding.settingsFaceIndexingSummary.text = getString(R.string.face_indexing_starting)
+                FaceIndexer.index(
+                    this,
+                    onProgress = { done, total ->
+                        runOnUiThread {
+                            if (!isDestroyed) {
+                                binding.settingsFaceIndexingSummary.text = getString(R.string.face_indexing_progress, done, total)
+                            }
+                        }
+                    },
+                    onDone = { faces, photos ->
+                        runOnUiThread {
+                            if (!isDestroyed) {
+                                binding.settingsFaceIndexingSummary.text = getString(R.string.face_indexing_result, faces, photos)
+                            }
+                        }
+                    },
+                )
+            }
+        }
+    }
+
+    private fun updateFaceIndexingSummary() {
+        ensureBackgroundThread {
+            val dao = FacesDatabase.getInstance(this).FaceDao()
+            val faces = try { dao.getFaceCount() } catch (e: Exception) { 0 }
+            val photos = try { dao.getPhotosWithFacesCount() } catch (e: Exception) { 0 }
+            runOnUiThread {
+                if (!isDestroyed) {
+                    binding.settingsFaceIndexingSummary.text = when {
+                        FaceIndexer.isRunning -> getString(R.string.face_indexing_running)
+                        faces > 0 -> getString(R.string.face_indexing_result, faces, photos)
+                        else -> getString(R.string.face_indexing_tap_to_start)
+                    }
                 }
             }
         }

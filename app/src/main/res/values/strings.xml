@@ -14,6 +14,12 @@
     <string name="smart_album_downloads">Stiahnuté</string>
     <string name="smart_album_camera">Kamera</string>
     <string name="smart_album_raw">RAW</string>
+    <string name="face_indexing_title">Rozpoznávanie tvárí (beta)</string>
+    <string name="face_indexing_tap_to_start">Ťuknutím spustíš vyhľadávanie tvárí na fotkách</string>
+    <string name="face_indexing_starting">Spúšťam…</string>
+    <string name="face_indexing_running">Indexujem tváre… (ťuknutím zastavíš)</string>
+    <string name="face_indexing_progress">Indexujem %1$d / %2$d (ťuknutím zastavíš)</string>
+    <string name="face_indexing_result">Našlo %1$d tvárí v %2$d fotkách (ťuknutím znova)</string>
     <string name="edit">Edit</string>
     <string name="open_camera">Open camera</string>
     <string name="hidden">(hidden)</string>

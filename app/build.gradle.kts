@@ -104,6 +104,7 @@ android {
     androidResources {
         @Suppress("UnstableApiUsage")
         generateLocaleConfig = true
+        noCompress += "tflite"
     }
 
     tasks.withType<KotlinCompile> {
@@ -173,6 +174,7 @@ dependencies {
     implementation(libs.zjupure.webpdecoder)
 
     implementation(libs.bundles.room)
+    implementation(libs.mediapipe.tasks.vision)
     ksp(libs.androidx.room.compiler)
     detektPlugins(libs.compose.detekt)
 }

@@ -21,3 +21,7 @@ native <methods>;
 
 # Reprint
 -keep class com.github.ajalt.reprint.module.** { *; }
+
+# MediaPipe (rozpoznávanie tvárí) — prístup cez JNI/reflexiu, nesmie sa odstrániť
+-keep class com.google.mediapipe.** { *; }
+-dontwarn com.google.mediapipe.**
