@@ -66,11 +66,12 @@ class PeopleActivity : SimpleActivity() {
         val faces = facesDao.getAllFaces().filter {
             it.score >= MIN_FACE_SCORE && (it.bboxRight - it.bboxLeft) >= MIN_FACE_SIZE
         }
+        val anchors = peopleDao.getAllAnchors().groupBy({ it.personId }, { it.embedding })
         val grouped = PersonGrouper.build(
-            faces, peopleDao.getPersons(), peopleDao.getAssignments(), peopleDao.getCannotLinks(),
+            faces, peopleDao.getPersons(), peopleDao.getAssignments(), peopleDao.getCannotLinks(), anchors,
         )
-        // potvrdené osoby (aj s 1 tvárou) hore, návrhy dole; prázdne osoby skry
-        return grouped.confirmed.filter { it.faceCount > 0 } + grouped.suggestions
+        // pomenované osoby (aj naseedované z Picasy, aj s 0 telefónnymi tvárami) hore, návrhy dole
+        return grouped.confirmed + grouped.suggestions
     }
 
     private fun openPerson(person: Person) {
@@ -169,6 +170,7 @@ class PeopleActivity : SimpleActivity() {
                     val dao = PeopleDatabase.getInstance(this).PeopleDao()
                     dao.deleteAssignmentsForPerson(id)
                     dao.deleteCannotLinksForPerson(id)
+                    dao.deleteAnchorsForPerson(id)
                     dao.deletePerson(id)
                     runOnUiThread { loadPeople() }
                 }

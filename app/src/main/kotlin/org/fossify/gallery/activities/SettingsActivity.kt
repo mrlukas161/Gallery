@@ -115,6 +115,7 @@ class SettingsActivity : SimpleActivity() {
         updateTextColors(binding.settingsHolder)
         setupClearCache()
         setupFaceIndexing()
+        setupPicasaImport()
         setupCheckForUpdates()
         setupSettingsSearch()
         setupExportFavorites()
@@ -918,6 +919,75 @@ class SettingsActivity : SimpleActivity() {
                         FaceIndexer.isRunning -> getString(R.string.face_indexing_running)
                         faces > 0 -> getString(R.string.face_indexing_result, faces, photos)
                         else -> getString(R.string.face_indexing_tap_to_start)
+                    }
+                }
+            }
+        }
+    }
+
+    private val picasaImportPicker =
+        registerForActivityResult(androidx.activity.result.contracts.ActivityResultContracts.OpenDocument()) { uri: android.net.Uri? ->
+            if (uri != null) startPicasaImport(uri)
+        }
+
+    private fun setupPicasaImport() {
+        updatePicasaImportSummary()
+        binding.settingsPicasaImportHolder.setOnClickListener {
+            if (org.fossify.gallery.faces.PicasaImportService.isRunning) return@setOnClickListener
+            try {
+                picasaImportPicker.launch(arrayOf("*/*"))
+            } catch (e: Throwable) {
+                binding.settingsPicasaImportSummary.text = getString(R.string.picasa_import_failed)
+            }
+        }
+    }
+
+    private fun startPicasaImport(uri: android.net.Uri) {
+        binding.settingsPicasaImportSummary.text = getString(R.string.picasa_import_running, 0, 0)
+        org.fossify.gallery.faces.PicasaImportService.import(
+            this, uri,
+            onProgress = { done, total ->
+                runOnUiThread {
+                    if (!isDestroyed) {
+                        binding.settingsPicasaImportSummary.text = getString(R.string.picasa_import_running, done, total)
+                    }
+                }
+            },
+            onDone = { persons, anchors, skipped, already ->
+                runOnUiThread {
+                    if (!isDestroyed) {
+                        binding.settingsPicasaImportSummary.text = if (already) {
+                            getString(R.string.picasa_import_already)
+                        } else {
+                            getString(R.string.picasa_import_done, persons, anchors, skipped)
+                        }
+                    }
+                }
+            },
+            onError = { msg ->
+                runOnUiThread {
+                    if (!isDestroyed) {
+                        binding.settingsPicasaImportSummary.text = getString(R.string.picasa_import_error, msg)
+                    }
+                }
+            },
+        )
+    }
+
+    private fun updatePicasaImportSummary() {
+        ensureBackgroundThread {
+            val dao = org.fossify.gallery.faces.PeopleDatabase.getInstance(this).PeopleDao()
+            val anchors = try {
+                dao.getAnchorCount()
+            } catch (e: Exception) {
+                0
+            }
+            runOnUiThread {
+                if (!isDestroyed) {
+                    binding.settingsPicasaImportSummary.text = if (anchors > 0) {
+                        getString(R.string.picasa_import_state, anchors)
+                    } else {
+                        getString(R.string.picasa_import_tap)
                     }
                 }
             }

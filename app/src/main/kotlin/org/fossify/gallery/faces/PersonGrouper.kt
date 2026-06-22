@@ -20,6 +20,7 @@ object PersonGrouper {
         persons: List<PersonEntity>,
         assignments: List<FaceAssignmentEntity>,
         cannotLinks: List<CannotLinkEntity>,
+        anchorsByPersonId: Map<Long, List<ByteArray>> = emptyMap(),
     ): Grouped {
         val assignedPersonByFace = HashMap<Long, Long>()
         val manualFaces = HashSet<Long>()
@@ -46,10 +47,20 @@ object PersonGrouper {
         // centroid každej osoby = priemer jej RUČNE potvrdených tvárí (ak žiadne, tak zo všetkých jej tvárí)
         val centroids = HashMap<Long, FloatArray>()
         for (p in persons) {
-            val fs = personFaces[p.id] ?: continue
+            val fs = personFaces[p.id] ?: arrayListOf()
             val manual = fs.filter { f -> f.id?.let { id -> manualFaces.contains(id) } == true }
             val base = manual.ifEmpty { fs }
-            val c = meanEmbedding(base) ?: continue
+            val embs = ArrayList<FloatArray>()
+            for (f in base) {
+                val e = f.embedding?.let { FaceEmbedder.toFloats(it) }
+                if (e != null && e.isNotEmpty()) embs.add(e)
+            }
+            // naimportované Picasa "vzory" — fungujú aj keď osoba nemá žiadnu telefónnu tvár
+            anchorsByPersonId[p.id]?.forEach { bytes ->
+                val e = FaceEmbedder.toFloats(bytes)
+                if (e.isNotEmpty()) embs.add(e)
+            }
+            val c = meanEmbeddingFromList(embs) ?: continue
             centroids[p.id] = c
         }
 
@@ -91,11 +102,10 @@ object PersonGrouper {
 
     private fun pairKey(faceId: Long, personId: Long): Long = faceId * 1_000_003L + personId
 
-    private fun meanEmbedding(faces: List<FaceEntity>): FloatArray? {
+    private fun meanEmbeddingFromList(embs: List<FloatArray>): FloatArray? {
         var acc: FloatArray? = null
         var n = 0
-        for (f in faces) {
-            val e = f.embedding?.let { FaceEmbedder.toFloats(it) } ?: continue
+        for (e in embs) {
             if (e.isEmpty()) continue
             if (acc == null) acc = FloatArray(e.size)
             if (acc.size != e.size) continue

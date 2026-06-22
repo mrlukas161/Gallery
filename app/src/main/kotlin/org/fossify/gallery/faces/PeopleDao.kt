@@ -48,4 +48,29 @@ interface PeopleDao {
 
     @Query("DELETE FROM cannot_links WHERE person_id = :personId")
     fun deleteCannotLinksForPerson(personId: Long)
+
+    // --- import z Picasy (anchor embeddingy + dedup mien) ---
+    @Query("SELECT * FROM persons WHERE name = :name LIMIT 1")
+    fun findPersonByName(name: String): PersonEntity?
+
+    @Insert
+    fun insertAnchor(anchor: AnchorEmbeddingEntity)
+
+    @Query("SELECT * FROM anchor_embeddings")
+    fun getAllAnchors(): List<AnchorEmbeddingEntity>
+
+    @Query("SELECT embedding FROM anchor_embeddings WHERE person_id = :personId")
+    fun getAnchorEmbeddings(personId: Long): List<ByteArray>
+
+    @Query("DELETE FROM anchor_embeddings WHERE person_id = :personId")
+    fun deleteAnchorsForPerson(personId: Long)
+
+    @Query("SELECT COUNT(*) FROM anchor_embeddings")
+    fun getAnchorCount(): Int
+
+    @Insert
+    fun insertImportManifest(manifest: ImportManifestEntity)
+
+    @Query("SELECT * FROM import_manifests WHERE manifest_hash = :hash LIMIT 1")
+    fun findImportManifest(hash: String): ImportManifestEntity?
 }

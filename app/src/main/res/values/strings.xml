@@ -37,6 +37,15 @@
     <string name="delete_person_confirm">Odstrániť túto osobu? Tváre sa vrátia medzi návrhy.</string>
     <string name="no_other_person">Nie je iná osoba na zlúčenie</string>
     <string name="person_long_press_hint">Podržaním tváre ju opravíš (presun k osobe / toto nie je táto osoba)</string>
+    <!-- Import tvárí z Picasy -->
+    <string name="picasa_import_title">Importovať Picasa tváre</string>
+    <string name="picasa_import_tap">Ťuknutím vyber ZIP s tvárami z Picasy</string>
+    <string name="picasa_import_state">Naimportované vzory: %1$d (ťuknutím doplniť)</string>
+    <string name="picasa_import_running">Importujem… %1$d / %2$d</string>
+    <string name="picasa_import_done">Hotovo: %1$d osôb, %2$d vzorov (preskočené %3$d). Tváre sa zaradia pod mená pri ďalšom otvorení Ľudí.</string>
+    <string name="picasa_import_already">Táto sada už bola naimportovaná</string>
+    <string name="picasa_import_error">Chyba importu: %1$s</string>
+    <string name="picasa_import_failed">Nepodarilo sa otvoriť výber súboru</string>
     <string name="face_indexing_error">Chyba: %1$s (ťuknutím skús znova)</string>
     <string name="search_settings_hint">Hľadať v nastaveniach</string>
     <string name="check_updates_title">Skontrolovať aktualizácie</string>

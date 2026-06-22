@@ -8,8 +8,14 @@ import androidx.room.RoomDatabase
 // Samostatná databáza pre POMENOVANÉ osoby a korekcie (people.db). Oddelená od faces.db,
 // aby pridanie/zmena tejto schémy NIKDY nevynútila reindex drahých embeddingov v faces.db.
 @Database(
-    entities = [PersonEntity::class, FaceAssignmentEntity::class, CannotLinkEntity::class],
-    version = 1,
+    entities = [
+        PersonEntity::class,
+        FaceAssignmentEntity::class,
+        CannotLinkEntity::class,
+        AnchorEmbeddingEntity::class,
+        ImportManifestEntity::class,
+    ],
+    version = 2,
 )
 abstract class PeopleDatabase : RoomDatabase() {
     abstract fun PeopleDao(): PeopleDao
