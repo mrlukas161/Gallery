@@ -7,7 +7,7 @@ import androidx.room.RoomDatabase
 
 // Samostatná databáza pre tváre (faces.db) — úplne oddelená od gallery.db, aby žiadna
 // zmena/chyba schémy tvárí nemohla zasiahnuť cache fotiek v hlavnej galérii.
-@Database(entities = [FaceEntity::class, IndexedPhotoEntity::class], version = 1)
+@Database(entities = [FaceEntity::class, IndexedPhotoEntity::class], version = 2)
 abstract class FacesDatabase : RoomDatabase() {
     abstract fun FaceDao(): FaceDao
 

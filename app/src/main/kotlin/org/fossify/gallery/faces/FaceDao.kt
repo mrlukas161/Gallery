@@ -19,6 +19,9 @@ interface FaceDao {
     @Query("SELECT COUNT(*) FROM faces")
     fun getFaceCount(): Int
 
+    @Query("SELECT embedding FROM faces WHERE embedding IS NOT NULL")
+    fun getAllEmbeddings(): List<ByteArray>
+
     @Query("SELECT COUNT(*) FROM indexed_photos WHERE face_count > 0")
     fun getPhotosWithFacesCount(): Int
 

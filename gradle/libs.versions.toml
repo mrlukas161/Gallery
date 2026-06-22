@@ -18,6 +18,7 @@ exif = "1.0.1"
 room = "2.8.4"
 #Faces (MediaPipe face detection)
 mediapipeTasksVision = "0.10.35"
+tensorflowLite = "2.17.0"
 #Fossify
 commons = "6.1.6"
 #Gradle4
@@ -60,6 +61,7 @@ androidx-room-ktx = { module = "androidx.room:room-ktx", version.ref = "room" }
 androidx-room-compiler = { module = "androidx.room:room-compiler", version.ref = "room" }
 #Faces
 mediapipe-tasks-vision = { module = "com.google.mediapipe:tasks-vision", version.ref = "mediapipeTasksVision" }
+tensorflow-lite = { module = "org.tensorflow:tensorflow-lite", version.ref = "tensorflowLite" }
 #Compose
 compose-detekt = { module = "io.nlopez.compose.rules:detekt", version.ref = "detektCompose" }
 #Fossify

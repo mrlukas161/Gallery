@@ -888,10 +888,10 @@ class SettingsActivity : SimpleActivity() {
                             }
                         }
                     },
-                    onDone = { faces, photos ->
+                    onDone = { faces, photos, persons ->
                         runOnUiThread {
                             if (!isDestroyed) {
-                                binding.settingsFaceIndexingSummary.text = getString(R.string.face_indexing_result, faces, photos)
+                                binding.settingsFaceIndexingSummary.text = getString(R.string.face_indexing_result_persons, faces, persons, photos)
                             }
                         }
                     },

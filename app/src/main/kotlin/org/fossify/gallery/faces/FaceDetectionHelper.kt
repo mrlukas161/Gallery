@@ -7,7 +7,7 @@ import com.google.mediapipe.tasks.core.BaseOptions
 import com.google.mediapipe.tasks.vision.core.RunningMode
 import com.google.mediapipe.tasks.vision.facedetector.FaceDetector
 
-// Tenký wrapper nad MediaPipe FaceDetector (BlazeFace). Vracia bounding boxy tvárí.
+// Wrapper nad MediaPipe FaceDetector (BlazeFace). Vracia bbox + body očí (na zarovnanie pred odtlačkom).
 class FaceDetectionHelper(context: Context) {
     private val detector: FaceDetector = FaceDetector.createFromOptions(
         context,
@@ -24,20 +24,36 @@ class FaceDetectionHelper(context: Context) {
 
     data class DetectedFace(
         val left: Int, val top: Int, val right: Int, val bottom: Int, val score: Float,
+        val eye1X: Float, val eye1Y: Float, val eye2X: Float, val eye2Y: Float, val hasEyes: Boolean,
     )
 
     fun detect(bitmap: Bitmap): List<DetectedFace> {
         val mpImage = BitmapImageBuilder(bitmap).build()
         val result = detector.detect(mpImage)
+        val w = bitmap.width.toFloat()
+        val h = bitmap.height.toFloat()
         return result.detections().map { detection ->
             val box = detection.boundingBox()
             val score = detection.categories().firstOrNull()?.score() ?: 0f
+            var e1x = 0f
+            var e1y = 0f
+            var e2x = 0f
+            var e2y = 0f
+            var hasEyes = false
+            try {
+                val kps = detection.keypoints().orElse(null)
+                if (kps != null && kps.size >= 2) {
+                    e1x = kps[0].x() * w
+                    e1y = kps[0].y() * h
+                    e2x = kps[1].x() * w
+                    e2y = kps[1].y() * h
+                    hasEyes = true
+                }
+            } catch (ignored: Throwable) {
+            }
             DetectedFace(
-                left = box.left.toInt(),
-                top = box.top.toInt(),
-                right = box.right.toInt(),
-                bottom = box.bottom.toInt(),
-                score = score,
+                box.left.toInt(), box.top.toInt(), box.right.toInt(), box.bottom.toInt(), score,
+                e1x, e1y, e2x, e2y, hasEyes,
             )
         }
     }

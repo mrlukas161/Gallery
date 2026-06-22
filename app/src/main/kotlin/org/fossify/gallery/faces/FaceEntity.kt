@@ -22,5 +22,6 @@ data class FaceEntity(
     @ColumnInfo(name = "bbox_right") var bboxRight: Int,
     @ColumnInfo(name = "bbox_bottom") var bboxBottom: Int,
     @ColumnInfo(name = "score") var score: Float,
+    @ColumnInfo(name = "embedding", typeAffinity = ColumnInfo.BLOB) var embedding: ByteArray?,
     @ColumnInfo(name = "detected_at") var detectedAt: Long,
 )

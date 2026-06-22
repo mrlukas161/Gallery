@@ -12,10 +12,8 @@ import androidx.core.app.NotificationManagerCompat
 import org.fossify.commons.helpers.ensureBackgroundThread
 import java.io.File
 
-// B1: manuálne spustené indexovanie tvárí na pozadí (bežné vlákno). Prejde fotky z MediaStore,
-// zmenší ich, spustí detekciu a uloží tváre do faces.db. Resumovateľné (preskočí už spracované).
-// Všetko je obalené v zachytení chýb, aby pád nepoložil apku. Robustnosť (foreground service /
-// WorkManager) príde v B4.
+// B2: indexovanie = detekcia + ODTLAČOK pre každú tvár (faces.db). Po dokončení sa odtlačky
+// zoskupia a vráti sa počet osôb. Beží na bežnom vlákne (robustnosť FGS/WorkManager = B4).
 object FaceIndexer {
     @Volatile
     var isRunning = false
@@ -28,7 +26,7 @@ object FaceIndexer {
     fun index(
         context: Context,
         onProgress: (done: Int, total: Int) -> Unit,
-        onDone: (faces: Int, photos: Int) -> Unit,
+        onDone: (faces: Int, photos: Int, persons: Int) -> Unit,
         onError: (message: String) -> Unit,
     ) {
         if (isRunning) return
@@ -36,9 +34,11 @@ object FaceIndexer {
         val appCtx = context.applicationContext
         ensureBackgroundThread {
             var detector: FaceDetectionHelper? = null
+            var embedder: FaceEmbedder? = null
             try {
                 val dao = FacesDatabase.getInstance(appCtx).FaceDao()
                 detector = FaceDetectionHelper(appCtx)
+                embedder = FaceEmbedder(appCtx)
                 ensureChannel(appCtx)
 
                 val processed = dao.getProcessedPaths().toHashSet()
@@ -54,11 +54,17 @@ object FaceIndexer {
                             val detected = detector.detect(bmp)
                             faceCount = detected.size
                             if (detected.isNotEmpty()) {
+                                val theEmbedder = embedder
                                 dao.insertFaces(detected.mapIndexed { i, f ->
+                                    val embedding = try {
+                                        FaceEmbedder.toBytes(theEmbedder.embed(bmp, f))
+                                    } catch (e: Throwable) {
+                                        null
+                                    }
                                     FaceEntity(
                                         id = null, mediaFullPath = path, mediaStoreId = mediaStoreId, faceIndex = i,
                                         bboxLeft = f.left, bboxTop = f.top, bboxRight = f.right, bboxBottom = f.bottom,
-                                        score = f.score, detectedAt = System.currentTimeMillis(),
+                                        score = f.score, embedding = embedding, detectedAt = System.currentTimeMillis(),
                                     )
                                 })
                             }
@@ -75,12 +81,18 @@ object FaceIndexer {
                     }
                 }
                 cancelNotification(appCtx)
-                onDone(safeFaceCount(dao), safePhotoCount(dao))
+                val persons = try {
+                    FaceClusterer.countPersons(dao.getAllEmbeddings().map { FaceEmbedder.toFloats(it) })
+                } catch (e: Throwable) {
+                    0
+                }
+                onDone(safeFaceCount(dao), safePhotoCount(dao), persons)
             } catch (e: Throwable) {
                 cancelNotification(appCtx)
                 onError(describe(e))
             } finally {
                 detector?.close()
+                embedder?.close()
                 isRunning = false
             }
         }
@@ -90,8 +102,7 @@ object FaceIndexer {
         isRunning = false
     }
 
-    // Zostaví celý reťazec príčin (ExceptionInInitializerError -> skutočná príčina), aby sme
-    // vedeli, čo presne MediaPipe pri inicializácii zhodilo.
+    // Zostaví reťazec príčin (root-first), aby sme videli, čo presne zlyhalo.
     private fun describe(t: Throwable): String {
         val chain = ArrayList<Throwable>()
         var cur: Throwable? = t
@@ -99,7 +110,6 @@ object FaceIndexer {
             chain.add(cur)
             cur = cur.cause
         }
-        // koreňová príčina ako prvá (najinformatívnejšia)
         return chain.asReversed().joinToString(" <- ") { e ->
             e.javaClass.simpleName + (e.message?.let { ": " + it.take(160) } ?: "")
         }

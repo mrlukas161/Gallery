@@ -189,6 +189,7 @@ dependencies {
 
     implementation(libs.bundles.room)
     implementation(libs.mediapipe.tasks.vision)
+    implementation(libs.tensorflow.lite)
     ksp(libs.androidx.room.compiler)
     detektPlugins(libs.compose.detekt)
 }
