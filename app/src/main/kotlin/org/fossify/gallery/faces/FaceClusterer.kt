@@ -3,19 +3,18 @@ package org.fossify.gallery.faces
 import kotlin.math.sqrt
 
 // Jednoduché greedy zoskupovanie L2-normalizovaných odtlačkov (cosine = dot product).
-// Pre B2 zatiaľ len spočíta počet osôb; v B3 sa pridá perzistencia + učenie z korekcií.
+// Prah sa kalibruje — preto vie spočítať počet osôb pri viacerých prahoch naraz.
 object FaceClusterer {
-    // Prah podobnosti (cosine) pre "tá istá osoba". Treba kalibrovať na reálnych dátach.
-    const val THRESHOLD = 0.62f
+    const val THRESHOLD = 0.5f
 
-    fun countPersons(embeddings: List<FloatArray>): Int {
+    fun countPersons(embeddings: List<FloatArray>, threshold: Float = THRESHOLD): Int {
         if (embeddings.isEmpty()) return 0
         val centroids = ArrayList<FloatArray>()
         val counts = ArrayList<Int>()
         for (emb in embeddings) {
             if (emb.isEmpty()) continue
             var bestIdx = -1
-            var bestSim = THRESHOLD
+            var bestSim = threshold
             for (i in centroids.indices) {
                 val sim = dot(emb, centroids[i])
                 if (sim > bestSim) {
@@ -37,6 +36,10 @@ object FaceClusterer {
             }
         }
         return centroids.size
+    }
+
+    fun countPersonsAtThresholds(embeddings: List<FloatArray>, thresholds: FloatArray): IntArray {
+        return IntArray(thresholds.size) { countPersons(embeddings, thresholds[it]) }
     }
 
     private fun dot(a: FloatArray, b: FloatArray): Float {

@@ -26,7 +26,7 @@ object FaceIndexer {
     fun index(
         context: Context,
         onProgress: (done: Int, total: Int) -> Unit,
-        onDone: (faces: Int, photos: Int, persons: Int) -> Unit,
+        onDone: (faces: Int, photos: Int, info: String) -> Unit,
         onError: (message: String) -> Unit,
     ) {
         if (isRunning) return
@@ -81,12 +81,15 @@ object FaceIndexer {
                     }
                 }
                 cancelNotification(appCtx)
-                val persons = try {
-                    FaceClusterer.countPersons(dao.getAllEmbeddings().map { FaceEmbedder.toFloats(it) })
+                val info = try {
+                    val embs = dao.getAllEmbeddings().map { FaceEmbedder.toFloats(it) }
+                    val thresholds = floatArrayOf(0.35f, 0.40f, 0.45f, 0.50f, 0.55f, 0.60f, 0.65f, 0.70f)
+                    val counts = FaceClusterer.countPersonsAtThresholds(embs, thresholds)
+                    thresholds.indices.joinToString("  ") { "${thresholds[it]}->${counts[it]}" }
                 } catch (e: Throwable) {
-                    0
+                    "?"
                 }
-                onDone(safeFaceCount(dao), safePhotoCount(dao), persons)
+                onDone(safeFaceCount(dao), safePhotoCount(dao), info)
             } catch (e: Throwable) {
                 cancelNotification(appCtx)
                 onError(describe(e))

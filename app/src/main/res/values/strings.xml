@@ -20,7 +20,7 @@
     <string name="face_indexing_running">Indexujem tváre… (ťuknutím zastavíš)</string>
     <string name="face_indexing_progress">Indexujem %1$d / %2$d (ťuknutím zastavíš)</string>
     <string name="face_indexing_result">Našlo %1$d tvárí v %2$d fotkách (ťuknutím znova)</string>
-    <string name="face_indexing_result_persons">Našlo %1$d tvárí (%2$d osôb) v %3$d fotkách (ťuknutím znova)</string>
+    <string name="face_indexing_result_persons">Tvárí %1$d v %2$d fotkách. Osôb podľa prahu:\n%3$s</string>
     <string name="face_indexing_error">Chyba: %1$s (ťuknutím skús znova)</string>
     <string name="search_settings_hint">Hľadať v nastaveniach</string>
     <string name="check_updates_title">Skontrolovať aktualizácie</string>
