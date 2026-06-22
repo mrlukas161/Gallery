@@ -7,7 +7,7 @@ import kotlin.math.sqrt
 object FaceClusterer {
     const val THRESHOLD = 0.55f
 
-    fun cluster(faces: List<FaceEntity>, threshold: Float = THRESHOLD): List<Person> {
+    fun clusterGroups(faces: List<FaceEntity>, threshold: Float = THRESHOLD): List<List<FaceEntity>> {
         val centroids = ArrayList<FloatArray>()
         val groups = ArrayList<ArrayList<FaceEntity>>()
         for (face in faces) {
@@ -33,7 +33,7 @@ object FaceClusterer {
                 groups.add(arrayListOf(face))
             }
         }
-        return groups.map { Person(it) }
+        return groups
     }
 
     fun countPersons(embeddings: List<FloatArray>, threshold: Float = THRESHOLD): Int {

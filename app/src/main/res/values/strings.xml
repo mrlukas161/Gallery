@@ -24,6 +24,19 @@
     <string name="people">Ľudia</string>
     <string name="people_empty">Zatiaľ žiadne osoby — spusti „Rozpoznávanie tvárí" v Nastaveniach</string>
     <string name="loading">Načítavam…</string>
+    <!-- Ľudia / opravy (B3) -->
+    <string name="person_suggested">Navrhovaná skupina</string>
+    <string name="person_saved">Uložené</string>
+    <string name="enter_name">Zadaj meno osoby</string>
+    <string name="new_person">Nová osoba…</string>
+    <string name="action_rename">Premenovať</string>
+    <string name="action_merge">Zlúčiť s inou osobou</string>
+    <string name="action_delete_person">Odstrániť osobu</string>
+    <string name="action_move_to_person">Presunúť k inej osobe</string>
+    <string name="action_not_this_person">Toto nie je táto osoba</string>
+    <string name="delete_person_confirm">Odstrániť túto osobu? Tváre sa vrátia medzi návrhy.</string>
+    <string name="no_other_person">Nie je iná osoba na zlúčenie</string>
+    <string name="person_long_press_hint">Podržaním tváre ju opravíš (presun k osobe / toto nie je táto osoba)</string>
     <string name="face_indexing_error">Chyba: %1$s (ťuknutím skús znova)</string>
     <string name="search_settings_hint">Hľadať v nastaveniach</string>
     <string name="check_updates_title">Skontrolovať aktualizácie</string>

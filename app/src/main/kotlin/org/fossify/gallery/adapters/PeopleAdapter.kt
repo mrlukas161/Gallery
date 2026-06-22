@@ -12,6 +12,7 @@ class PeopleAdapter(
     val activity: Activity,
     val people: List<Person>,
     val onClick: (Person) -> Unit,
+    val onLongClick: (Person) -> Unit,
 ) : RecyclerView.Adapter<PeopleAdapter.ViewHolder>() {
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ViewHolder {
@@ -27,9 +28,19 @@ class PeopleAdapter(
 
     inner class ViewHolder(val binding: ItemPersonBinding) : RecyclerView.ViewHolder(binding.root) {
         fun bind(person: Person) {
-            FaceCropLoader.load(person.cover, binding.personImage)
-            binding.personCount.text = person.faceCount.toString()
+            val cover = person.cover
+            if (cover != null) {
+                FaceCropLoader.load(cover, binding.personImage)
+            } else {
+                binding.personImage.setImageBitmap(null)
+            }
+            // potvrdená osoba ukáže meno, návrh ukáže počet tvárí
+            binding.personCount.text = person.name ?: person.faceCount.toString()
             binding.root.setOnClickListener { onClick(person) }
+            binding.root.setOnLongClickListener {
+                onLongClick(person)
+                true
+            }
         }
     }
 }
