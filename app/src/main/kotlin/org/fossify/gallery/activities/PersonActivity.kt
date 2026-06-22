@@ -4,7 +4,6 @@ import android.content.Intent
 import android.os.Bundle
 import androidx.core.content.FileProvider
 import androidx.recyclerview.widget.GridLayoutManager
-import org.fossify.commons.extensions.setupToolbar
 import org.fossify.commons.extensions.viewBinding
 import org.fossify.commons.helpers.NavigationIcon
 import org.fossify.gallery.adapters.PersonPhotosAdapter
@@ -24,7 +23,7 @@ class PersonActivity : SimpleActivity() {
 
     override fun onResume() {
         super.onResume()
-        setupToolbar(binding.personToolbar, NavigationIcon.Arrow)
+        setupTopAppBar(binding.personAppbar, NavigationIcon.Arrow)
     }
 
     private fun openPhoto(path: String) {

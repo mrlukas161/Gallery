@@ -5,7 +5,6 @@ import android.os.Bundle
 import androidx.recyclerview.widget.GridLayoutManager
 import org.fossify.commons.extensions.beGone
 import org.fossify.commons.extensions.beVisible
-import org.fossify.commons.extensions.setupToolbar
 import org.fossify.commons.extensions.viewBinding
 import org.fossify.commons.helpers.NavigationIcon
 import org.fossify.commons.helpers.ensureBackgroundThread
@@ -26,7 +25,7 @@ class PeopleActivity : SimpleActivity() {
 
     override fun onResume() {
         super.onResume()
-        setupToolbar(binding.peopleToolbar, NavigationIcon.Arrow)
+        setupTopAppBar(binding.peopleAppbar, NavigationIcon.Arrow)
     }
 
     private fun loadPeople() {
