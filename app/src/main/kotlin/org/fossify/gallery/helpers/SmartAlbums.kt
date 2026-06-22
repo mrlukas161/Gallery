@@ -15,9 +15,10 @@ const val SMART_ALBUM_DOWNLOADS = "smart_album_downloads"
 const val SMART_ALBUM_CAMERA = "smart_album_camera"
 const val SMART_ALBUM_RAW = "smart_album_raw"
 
+// Len typové (zlučujú naprieč priečinkami) — path-based (Screenshoty/Stiahnuté/Kamera)
+// boli odstránené, lebo duplikovali existujúce reálne priečinky-albumy.
 val SMART_ALBUM_PATHS = arrayListOf(
-    SMART_ALBUM_VIDEOS, SMART_ALBUM_GIFS, SMART_ALBUM_SCREENSHOTS,
-    SMART_ALBUM_DOWNLOADS, SMART_ALBUM_CAMERA, SMART_ALBUM_RAW
+    SMART_ALBUM_VIDEOS, SMART_ALBUM_GIFS, SMART_ALBUM_RAW
 )
 
 fun isSmartAlbumPath(path: String) = path in SMART_ALBUM_PATHS

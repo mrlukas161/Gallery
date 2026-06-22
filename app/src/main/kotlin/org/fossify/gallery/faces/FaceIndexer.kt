@@ -1,41 +1,46 @@
 package org.fossify.gallery.faces
 
+import android.app.NotificationChannel
+import android.app.NotificationManager
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.os.Build
 import android.provider.MediaStore
+import androidx.core.app.NotificationCompat
+import androidx.core.app.NotificationManagerCompat
 import org.fossify.commons.helpers.ensureBackgroundThread
 import java.io.File
 
 // B1: manuálne spustené indexovanie tvárí na pozadí (bežné vlákno). Prejde fotky z MediaStore,
 // zmenší ich, spustí detekciu a uloží tváre do faces.db. Resumovateľné (preskočí už spracované).
-// Robustnosť (WorkManager + foreground service) príde v B4.
+// Všetko je obalené v zachytení chýb, aby pád nepoložil apku. Robustnosť (foreground service /
+// WorkManager) príde v B4.
 object FaceIndexer {
     @Volatile
     var isRunning = false
         private set
 
     private const val MAX_DECODE_SIZE = 1024
+    private const val CHANNEL_ID = "face_indexing"
+    private const val NOTIF_ID = 49231
 
     fun index(
         context: Context,
         onProgress: (done: Int, total: Int) -> Unit,
         onDone: (faces: Int, photos: Int) -> Unit,
+        onError: (message: String) -> Unit,
     ) {
         if (isRunning) return
         isRunning = true
         val appCtx = context.applicationContext
         ensureBackgroundThread {
-            val dao = FacesDatabase.getInstance(appCtx).FaceDao()
-            val detector = try {
-                FaceDetectionHelper(appCtx)
-            } catch (e: Exception) {
-                isRunning = false
-                onDone(safeFaceCount(dao), safePhotoCount(dao))
-                return@ensureBackgroundThread
-            }
-
+            var detector: FaceDetectionHelper? = null
             try {
+                val dao = FacesDatabase.getInstance(appCtx).FaceDao()
+                detector = FaceDetectionHelper(appCtx)
+                ensureChannel(appCtx)
+
                 val processed = dao.getProcessedPaths().toHashSet()
                 val todo = queryImages(appCtx).filter { it.second !in processed }
                 val total = todo.size
@@ -49,37 +54,35 @@ object FaceIndexer {
                             val detected = detector.detect(bmp)
                             faceCount = detected.size
                             if (detected.isNotEmpty()) {
-                                val faces = detected.mapIndexed { i, f ->
+                                dao.insertFaces(detected.mapIndexed { i, f ->
                                     FaceEntity(
-                                        id = null,
-                                        mediaFullPath = path,
-                                        mediaStoreId = mediaStoreId,
-                                        faceIndex = i,
-                                        bboxLeft = f.left,
-                                        bboxTop = f.top,
-                                        bboxRight = f.right,
-                                        bboxBottom = f.bottom,
-                                        score = f.score,
-                                        detectedAt = System.currentTimeMillis(),
+                                        id = null, mediaFullPath = path, mediaStoreId = mediaStoreId, faceIndex = i,
+                                        bboxLeft = f.left, bboxTop = f.top, bboxRight = f.right, bboxBottom = f.bottom,
+                                        score = f.score, detectedAt = System.currentTimeMillis(),
                                     )
-                                }
-                                dao.insertFaces(faces)
+                                })
                             }
                             bmp.recycle()
                         }
                         dao.insertIndexedPhoto(IndexedPhotoEntity(path, faceCount, System.currentTimeMillis()))
-                    } catch (ignored: Exception) {
+                    } catch (ignored: Throwable) {
+                        // jedna pokazená fotka nesmie zastaviť celé indexovanie
                     }
                     done++
-                    if (done % 20 == 0 || done == total) {
+                    if (done % 5 == 0 || done == total) {
                         onProgress(done, total)
+                        notifyProgress(appCtx, done, total)
                     }
                 }
+                cancelNotification(appCtx)
+                onDone(safeFaceCount(dao), safePhotoCount(dao))
+            } catch (e: Throwable) {
+                cancelNotification(appCtx)
+                onError(e.message ?: e.javaClass.simpleName)
             } finally {
-                detector.close()
+                detector?.close()
                 isRunning = false
             }
-            onDone(safeFaceCount(dao), safePhotoCount(dao))
         }
     }
 
@@ -87,8 +90,41 @@ object FaceIndexer {
         isRunning = false
     }
 
-    private fun safeFaceCount(dao: FaceDao) = try { dao.getFaceCount() } catch (e: Exception) { 0 }
-    private fun safePhotoCount(dao: FaceDao) = try { dao.getPhotosWithFacesCount() } catch (e: Exception) { 0 }
+    private fun safeFaceCount(dao: FaceDao) = try { dao.getFaceCount() } catch (e: Throwable) { 0 }
+    private fun safePhotoCount(dao: FaceDao) = try { dao.getPhotosWithFacesCount() } catch (e: Throwable) { 0 }
+
+    private fun ensureChannel(context: Context) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val nm = context.getSystemService(NotificationManager::class.java) ?: return
+            if (nm.getNotificationChannel(CHANNEL_ID) == null) {
+                nm.createNotificationChannel(
+                    NotificationChannel(CHANNEL_ID, "Rozpoznávanie tvárí", NotificationManager.IMPORTANCE_LOW)
+                )
+            }
+        }
+    }
+
+    private fun notifyProgress(context: Context, done: Int, total: Int) {
+        try {
+            val notification = NotificationCompat.Builder(context, CHANNEL_ID)
+                .setSmallIcon(android.R.drawable.stat_notify_sync)
+                .setContentTitle("Hľadám tváre")
+                .setContentText("$done / $total")
+                .setProgress(total, done, false)
+                .setOngoing(true)
+                .setOnlyAlertOnce(true)
+                .build()
+            NotificationManagerCompat.from(context).notify(NOTIF_ID, notification)
+        } catch (ignored: Throwable) {
+        }
+    }
+
+    private fun cancelNotification(context: Context) {
+        try {
+            NotificationManagerCompat.from(context).cancel(NOTIF_ID)
+        } catch (ignored: Throwable) {
+        }
+    }
 
     private fun queryImages(context: Context): List<Pair<Long, String>> {
         val list = ArrayList<Pair<Long, String>>()
@@ -104,7 +140,7 @@ object FaceIndexer {
                     list.add(id to data)
                 }
             }
-        } catch (ignored: Exception) {
+        } catch (ignored: Throwable) {
         }
         return list
     }

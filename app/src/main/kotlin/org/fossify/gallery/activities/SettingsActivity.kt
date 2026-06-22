@@ -807,6 +807,13 @@ class SettingsActivity : SimpleActivity() {
                             }
                         }
                     },
+                    onError = { msg ->
+                        runOnUiThread {
+                            if (!isDestroyed) {
+                                binding.settingsFaceIndexingSummary.text = getString(R.string.face_indexing_error, msg)
+                            }
+                        }
+                    },
                 )
             }
         }

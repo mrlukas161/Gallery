@@ -36,6 +36,12 @@ android {
         targetSdk = project.libs.versions.app.build.targetSDK.get().toInt()
         versionName = project.property("VERSION_NAME").toString()
         versionCode = project.property("VERSION_CODE").toString().toInt()
+
+        ndk {
+            // len arm64 (Xiaomi 15) — drží APK malé, nech MediaPipe natívne knižnice
+            // nie sú pre 4 architektúry naraz
+            abiFilters += "arm64-v8a"
+        }
     }
 
     signingConfigs {
