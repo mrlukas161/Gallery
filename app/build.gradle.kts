@@ -74,7 +74,10 @@ android {
             applicationIdSuffix = ".debug"
         }
         release {
-            isMinifyEnabled = true
+            // Vypnuté kvôli MediaPipe: R8 obfuskácia premenuje volajúce triedy a MediaPipe
+            // si pri inicializácii hľadá volajúceho na zásobníku → "no caller found ... ke1" pád.
+            // Pri verejnom vydaní zapnúť späť s presnými keep/keepnames pravidlami.
+            isMinifyEnabled = false
             isShrinkResources = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
