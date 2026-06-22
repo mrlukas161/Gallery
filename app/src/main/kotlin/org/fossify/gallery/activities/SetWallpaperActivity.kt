@@ -44,9 +44,7 @@ class SetWallpaperActivity : BaseCropActivity() {
         )
         setupBottomActions()
 
-        if (checkAppSideloading()) {
-            return
-        }
+        // anti-fork sideloading kontrola odstránená (legitímny fork)
 
         setupOptionsMenu()
         if (intent.data == null) {

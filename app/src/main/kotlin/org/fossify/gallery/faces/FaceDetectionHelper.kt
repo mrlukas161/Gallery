@@ -18,7 +18,7 @@ class FaceDetectionHelper(context: Context) {
                     .build()
             )
             .setRunningMode(RunningMode.IMAGE)
-            .setMinDetectionConfidence(0.5f)
+            .setMinDetectionConfidence(0.7f)
             .build()
     )
 

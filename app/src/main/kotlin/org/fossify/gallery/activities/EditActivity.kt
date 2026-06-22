@@ -142,9 +142,7 @@ class EditActivity : BaseCropActivity() {
             )
         )
 
-        if (checkAppSideloading()) {
-            return
-        }
+        // anti-fork sideloading kontrola odstránená (legitímny fork)
 
         setupOptionsMenu()
         handlePermission(getPermissionToRequest()) {

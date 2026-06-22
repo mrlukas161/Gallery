@@ -101,9 +101,7 @@ open class PhotoVideoActivity : BaseViewerActivity(), ViewPagerFragment.Fragment
         setupEdgeToEdge(
             padBottomSystem = listOf(binding.bottomActions.bottomActionsWrapper),
         )
-        if (checkAppSideloading()) {
-            return
-        }
+        // anti-fork sideloading kontrola odstránená (legitímny fork)
 
         setupOptionsMenu()
         refreshMenuItems()

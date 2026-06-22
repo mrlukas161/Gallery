@@ -30,10 +30,14 @@ class PeopleActivity : SimpleActivity() {
 
     private fun loadPeople() {
         ensureBackgroundThread {
-            val faces = try {
+            val allFaces = try {
                 FacesDatabase.getInstance(this).FaceDao().getAllFaces()
             } catch (e: Throwable) {
                 emptyList()
+            }
+            // odfiltruj falošné nálezy (nízka istota / drobné "tváre" na textúrach, stenách)
+            val faces = allFaces.filter {
+                it.score >= MIN_FACE_SCORE && (it.bboxRight - it.bboxLeft) >= MIN_FACE_SIZE
             }
             val people = FaceClusterer.cluster(faces)
                 .filter { it.faceCount >= 2 }
@@ -60,5 +64,7 @@ class PeopleActivity : SimpleActivity() {
         const val PERSON_PHOTO_PATHS = "person_photo_paths"
         private const val COLUMNS = 3
         private const val MAX_PHOTOS = 1000
+        private const val MIN_FACE_SCORE = 0.8f
+        private const val MIN_FACE_SIZE = 40
     }
 }
