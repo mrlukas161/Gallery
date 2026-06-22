@@ -16,6 +16,12 @@ import org.fossify.gallery.R
 import org.fossify.gallery.databinding.ActivitySettingsBinding
 import org.fossify.gallery.dialogs.*
 import org.fossify.gallery.extensions.*
+import android.text.Editable
+import android.text.TextWatcher
+import android.view.View
+import android.view.ViewGroup
+import android.widget.TextView
+import org.fossify.commons.dialogs.ConfirmationDialog
 import org.fossify.gallery.faces.FaceIndexer
 import org.fossify.gallery.faces.FacesDatabase
 import org.fossify.gallery.helpers.*
@@ -110,6 +116,8 @@ class SettingsActivity : SimpleActivity() {
         updateTextColors(binding.settingsHolder)
         setupClearCache()
         setupFaceIndexing()
+        setupCheckForUpdates()
+        setupSettingsSearch()
         setupExportFavorites()
         setupImportFavorites()
         setupExportSettings()
@@ -781,6 +789,95 @@ class SettingsActivity : SimpleActivity() {
                 }
             }
         }
+    }
+
+    private fun setupCheckForUpdates() {
+        binding.settingsCheckUpdatesHolder.setOnClickListener {
+            binding.settingsCheckUpdatesSummary.text = getString(R.string.checking_updates)
+            AppUpdater.checkForUpdate(this, force = true) { update ->
+                if (!isDestroyed) {
+                    if (update == null) {
+                        binding.settingsCheckUpdatesSummary.text = getString(R.string.up_to_date)
+                    } else {
+                        binding.settingsCheckUpdatesSummary.text = getString(R.string.update_available_short, update.versionName)
+                        ConfirmationDialog(
+                            this,
+                            getString(R.string.update_available_msg, update.versionName),
+                            positive = R.string.update_now,
+                            negative = R.string.update_later,
+                        ) {
+                            binding.settingsCheckUpdatesSummary.text = getString(R.string.update_downloading)
+                            AppUpdater.downloadAndInstall(this, update) {
+                                runOnUiThread {
+                                    if (!isDestroyed) {
+                                        binding.settingsCheckUpdatesSummary.text = getString(R.string.update_check_failed)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private fun setupSettingsSearch() {
+        binding.settingsSearch.addTextChangedListener(object : TextWatcher {
+            override fun afterTextChanged(s: Editable?) {
+                filterSettings(s?.toString().orEmpty())
+            }
+
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+        })
+    }
+
+    // Filtruje riadky nastavení podľa textu. settings_holder obsahuje striedavo nadpisy sekcií
+    // (raw TextView), riadky (ViewGroup) a oddeľovače. Nadpis sekcie ukáže iba ak má zhodný riadok.
+    private fun filterSettings(rawQuery: String) {
+        val query = rawQuery.trim().lowercase()
+        val holder = binding.settingsHolder
+        var sectionLabel: View? = null
+        var sectionHasMatch = false
+
+        fun finishSection() {
+            sectionLabel?.visibility = if (query.isEmpty() || sectionHasMatch) View.VISIBLE else View.GONE
+        }
+
+        for (i in 0 until holder.childCount) {
+            val child = holder.getChildAt(i)
+            if (child.id == R.id.settings_search) continue
+            when {
+                child is ViewGroup -> {
+                    val matches = query.isEmpty() || collectText(child).contains(query)
+                    child.visibility = if (matches) View.VISIBLE else View.GONE
+                    if (matches) sectionHasMatch = true
+                }
+                child is TextView -> {
+                    finishSection()
+                    sectionLabel = child
+                    sectionHasMatch = false
+                }
+                else -> {
+                    child.visibility = if (query.isEmpty()) View.VISIBLE else View.GONE
+                }
+            }
+        }
+        finishSection()
+    }
+
+    private fun collectText(view: View): String {
+        val sb = StringBuilder()
+        if (view is TextView) {
+            view.text?.let { sb.append(it).append(' ') }
+            view.hint?.let { sb.append(it).append(' ') }
+        }
+        if (view is ViewGroup) {
+            for (i in 0 until view.childCount) {
+                sb.append(collectText(view.getChildAt(i)))
+            }
+        }
+        return sb.toString().lowercase()
     }
 
     private fun setupFaceIndexing() {
