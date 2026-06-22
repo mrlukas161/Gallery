@@ -130,6 +130,11 @@ android {
     }
 
     packaging {
+        jniLibs {
+            // natívne knižnice rozbaliť pri inštalácii (obchádza problémy so zarovnaním
+            // .so v APK na Androide 15+/16 so 16 KB stránkami) — pokus o fix MediaPipe pádu
+            useLegacyPackaging = true
+        }
         resources {
             excludes += "META-INF/library_release.kotlin_module"
         }

@@ -23,6 +23,14 @@ val SMART_ALBUM_PATHS = arrayListOf(
 
 fun isSmartAlbumPath(path: String) = path in SMART_ALBUM_PATHS
 
+// Typ média pre daný smart album (rýchle načítanie z DB cez MediumDao.getMediaOfType).
+fun smartAlbumMediaType(path: String): Int? = when (path) {
+    SMART_ALBUM_VIDEOS -> TYPE_VIDEOS
+    SMART_ALBUM_GIFS -> TYPE_GIFS
+    SMART_ALBUM_RAW -> TYPE_RAWS
+    else -> null
+}
+
 fun matchesSmartAlbum(albumPath: String, medium: Medium): Boolean = when (albumPath) {
     SMART_ALBUM_VIDEOS -> medium.isVideo()
     SMART_ALBUM_GIFS -> medium.isGIF()

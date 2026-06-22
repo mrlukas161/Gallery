@@ -25,3 +25,8 @@ native <methods>;
 # MediaPipe (rozpoznávanie tvárí) — prístup cez JNI/reflexiu, nesmie sa odstrániť
 -keep class com.google.mediapipe.** { *; }
 -dontwarn com.google.mediapipe.**
+-keep class com.google.protobuf.** { *; }
+-dontwarn com.google.protobuf.**
+-keep class com.google.auto.value.** { *; }
+-dontwarn com.google.auto.value.**
+-keep class autovalue.** { *; }

@@ -24,7 +24,6 @@ import java.util.Locale
 
 class MediaFetcher(val context: Context) {
     var shouldStop = false
-    private var smartAlbumScanCache: ArrayList<Medium>? = null
 
     // on Android 11 we fetch all files at once from MediaStore and have it split by folder, use it if available
     fun getFilesFrom(
@@ -38,10 +37,7 @@ class MediaFetcher(val context: Context) {
         }
 
         if (isSmartAlbumPath(curPath)) {
-            return getSmartAlbumFiles(
-                curPath, isPickImage, isPickVideo, getProperDateTaken, getProperLastModified,
-                getProperFileSize, favoritePaths, getVideoDurations, lastModifieds, dateTakens, android11Files
-            )
+            return getSmartAlbumFiles(curPath)
         }
 
         val curMedia = ArrayList<Medium>()
@@ -89,32 +85,16 @@ class MediaFetcher(val context: Context) {
         return curMedia
     }
 
-    private fun getSmartAlbumFiles(
-        curPath: String, isPickImage: Boolean, isPickVideo: Boolean, getProperDateTaken: Boolean, getProperLastModified: Boolean,
-        getProperFileSize: Boolean, favoritePaths: ArrayList<String>, getVideoDurations: Boolean,
-        lastModifieds: HashMap<String, Long>, dateTakens: HashMap<String, Long>, android11Files: HashMap<String, ArrayList<Medium>>?
-    ): ArrayList<Medium> {
-        val allMedia = smartAlbumScanCache ?: run {
-            val scanned = ArrayList<Medium>()
-            val folders = getFoldersToScan().filter {
-                it != FAVORITES && it != RECYCLE_BIN && !context.config.isFolderProtected(it)
-            }.distinct()
-            for (folder in folders) {
-                if (shouldStop) break
-                scanned.addAll(
-                    getFilesFrom(
-                        folder, isPickImage, isPickVideo, getProperDateTaken, getProperLastModified, getProperFileSize,
-                        favoritePaths, getVideoDurations, lastModifieds, dateTakens, android11Files
-                    )
-                )
-            }
-            smartAlbumScanCache = scanned
-            scanned
+    // Obsah smart albumu = rýchly a STABILNÝ dopyt do media DB podľa typu (žiadny sken úložiska,
+    // ktorý sa pri obnove zoznamu prerušoval a spôsoboval blikanie/miznutie dlaždice).
+    private fun getSmartAlbumFiles(curPath: String): ArrayList<Medium> {
+        val type = smartAlbumMediaType(curPath) ?: return ArrayList()
+        val media = ArrayList(context.mediaDB.getMediaOfType(type))
+        if (!context.config.shouldShowHidden) {
+            media.removeAll { it.path.contains("/.") }
         }
-
-        val filtered = allMedia.filter { matchesSmartAlbum(curPath, it) } as ArrayList<Medium>
-        sortMedia(filtered, context.config.getFolderSorting(curPath))
-        return filtered
+        sortMedia(media, context.config.getFolderSorting(curPath))
+        return media
     }
 
     fun getFoldersToScan(): ArrayList<String> {

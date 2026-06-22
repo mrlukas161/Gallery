@@ -78,7 +78,7 @@ object FaceIndexer {
                 onDone(safeFaceCount(dao), safePhotoCount(dao))
             } catch (e: Throwable) {
                 cancelNotification(appCtx)
-                onError(e.message ?: e.javaClass.simpleName)
+                onError(describe(e))
             } finally {
                 detector?.close()
                 isRunning = false
@@ -88,6 +88,21 @@ object FaceIndexer {
 
     fun stop() {
         isRunning = false
+    }
+
+    // Zostaví celý reťazec príčin (ExceptionInInitializerError -> skutočná príčina), aby sme
+    // vedeli, čo presne MediaPipe pri inicializácii zhodilo.
+    private fun describe(t: Throwable): String {
+        val chain = ArrayList<Throwable>()
+        var cur: Throwable? = t
+        while (cur != null && chain.size < 5) {
+            chain.add(cur)
+            cur = cur.cause
+        }
+        // koreňová príčina ako prvá (najinformatívnejšia)
+        return chain.asReversed().joinToString(" <- ") { e ->
+            e.javaClass.simpleName + (e.message?.let { ": " + it.take(160) } ?: "")
+        }
     }
 
     private fun safeFaceCount(dao: FaceDao) = try { dao.getFaceCount() } catch (e: Throwable) { 0 }
