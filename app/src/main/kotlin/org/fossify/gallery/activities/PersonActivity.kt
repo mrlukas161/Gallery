@@ -32,6 +32,8 @@ class PersonActivity : SimpleActivity() {
             val intent = Intent(Intent.ACTION_VIEW).apply {
                 setDataAndType(uri, "image/*")
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                // otvor rovno v našej apke (žiadny výber appky)
+                setPackage(packageName)
             }
             startActivity(intent)
         } catch (ignored: Throwable) {

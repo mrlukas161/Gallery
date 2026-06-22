@@ -5,7 +5,7 @@ import kotlin.math.sqrt
 // Greedy zoskupovanie L2-normalizovaných odtlačkov (cosine = dot product).
 // Prah 0.45 kalibrovaný na reálnych dátach (Lukáš); v B3 bude nastaviteľný + učenie z korekcií.
 object FaceClusterer {
-    const val THRESHOLD = 0.45f
+    const val THRESHOLD = 0.55f
 
     fun cluster(faces: List<FaceEntity>, threshold: Float = THRESHOLD): List<Person> {
         val centroids = ArrayList<FloatArray>()
