@@ -601,5 +601,17 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity-alias>
+        <activity
+            android:name=".activities.PeopleActivity"
+            android:configChanges="orientation"
+            android:exported="false"
+            android:parentActivityName=".activities.MainActivity" />
+
+        <activity
+            android:name=".activities.PersonActivity"
+            android:configChanges="orientation"
+            android:exported="false"
+            android:parentActivityName=".activities.PeopleActivity" />
+
     </application>
 </manifest>
