@@ -4,6 +4,7 @@ import android.content.Intent
 import android.os.Bundle
 import androidx.core.content.FileProvider
 import androidx.recyclerview.widget.GridLayoutManager
+import org.fossify.commons.extensions.setupToolbar
 import org.fossify.commons.extensions.viewBinding
 import org.fossify.commons.helpers.NavigationIcon
 import org.fossify.gallery.adapters.PersonPhotosAdapter
