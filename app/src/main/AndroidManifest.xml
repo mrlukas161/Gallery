@@ -613,5 +613,11 @@
             android:exported="false"
             android:parentActivityName=".activities.PeopleActivity" />
 
+        <activity
+            android:name=".activities.FaceTaggingActivity"
+            android:configChanges="orientation"
+            android:exported="false"
+            android:parentActivityName=".activities.PeopleActivity" />
+
     </application>
 </manifest>

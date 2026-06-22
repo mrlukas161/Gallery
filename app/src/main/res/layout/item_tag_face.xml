@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:padding="2dp">
+
+    <org.fossify.commons.views.MySquareImageView
+        android:id="@+id/tag_face_image"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:scaleType="centerCrop" />
+
+    <ImageView
+        android:id="@+id/tag_face_check"
+        android:layout_width="26dp"
+        android:layout_height="26dp"
+        android:layout_gravity="top|end"
+        android:layout_margin="4dp"
+        android:background="#CC1976D2"
+        android:contentDescription="@string/tag_faces_title"
+        android:padding="3dp"
+        android:src="@android:drawable/checkbox_on_background"
+        android:visibility="gone" />
+
+</FrameLayout>

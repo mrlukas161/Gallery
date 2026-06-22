@@ -43,6 +43,26 @@ class PersonActivity : SimpleActivity() {
         super.onResume()
         setupTopAppBar(binding.personAppbar, NavigationIcon.Arrow)
         binding.personToolbar.title = personName ?: getString(R.string.person_suggested)
+        binding.personToolbar.menu.clear()
+        if (personId >= 0) {
+            binding.personToolbar.inflateMenu(R.menu.menu_person)
+            binding.personToolbar.setOnMenuItemClickListener { item ->
+                if (item.itemId == R.id.suggestions) {
+                    openSuggestions()
+                    true
+                } else {
+                    false
+                }
+            }
+        }
+    }
+
+    private fun openSuggestions() {
+        val intent = Intent(this, FaceTaggingActivity::class.java)
+        intent.putExtra(FaceTaggingActivity.MODE, FaceTaggingActivity.MODE_SUGGESTIONS)
+        intent.putExtra(FaceTaggingActivity.PERSON_ID, personId)
+        intent.putExtra(FaceTaggingActivity.PERSON_NAME, personName)
+        startActivity(intent)
     }
 
     private fun loadFaces(faceIds: List<Long>) {

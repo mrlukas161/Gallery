@@ -46,6 +46,16 @@
     <string name="picasa_import_already">Táto sada už bola naimportovaná</string>
     <string name="picasa_import_error">Chyba importu: %1$s</string>
     <string name="picasa_import_failed">Nepodarilo sa otvoriť výber súboru</string>
+    <!-- Označovanie tvárí + návrhy -->
+    <string name="tag_faces_title">Označiť tváre</string>
+    <string name="suggestions_title">Návrhy</string>
+    <string name="suggestions_for">Návrhy: %1$s</string>
+    <string name="this_is_person">Toto je %1$s</string>
+    <string name="this_is_not">Toto nie je</string>
+    <string name="assign_to_person">Priradiť k osobe</string>
+    <string name="selected_count">Vybrané: %1$d</string>
+    <string name="no_suggestions">Žiadne návrhy — najprv priraď zopár tvárí (alebo importuj Picasa vzory)</string>
+    <string name="no_unlabeled_faces">Žiadne neoznačené tváre</string>
     <string name="face_indexing_error">Chyba: %1$s (ťuknutím skús znova)</string>
     <string name="search_settings_hint">Hľadať v nastaveniach</string>
     <string name="check_updates_title">Skontrolovať aktualizácie</string>

@@ -33,6 +33,16 @@ class PeopleActivity : SimpleActivity() {
     override fun onResume() {
         super.onResume()
         setupTopAppBar(binding.peopleAppbar, NavigationIcon.Arrow)
+        binding.peopleToolbar.menu.clear()
+        binding.peopleToolbar.inflateMenu(R.menu.menu_people)
+        binding.peopleToolbar.setOnMenuItemClickListener { item ->
+            if (item.itemId == R.id.tag_faces) {
+                startActivity(Intent(this, FaceTaggingActivity::class.java))
+                true
+            } else {
+                false
+            }
+        }
         loadPeople()
     }
 
@@ -66,12 +76,8 @@ class PeopleActivity : SimpleActivity() {
         val faces = facesDao.getAllFaces().filter {
             it.score >= MIN_FACE_SCORE && (it.bboxRight - it.bboxLeft) >= MIN_FACE_SIZE
         }
-        val anchors = peopleDao.getAllAnchors().groupBy({ it.personId }, { it.embedding })
-        val grouped = PersonGrouper.build(
-            faces, peopleDao.getPersons(), peopleDao.getAssignments(), peopleDao.getCannotLinks(), anchors,
-        )
-        // pomenované osoby (aj naseedované z Picasy, aj s 0 telefónnymi tvárami) hore, návrhy dole
-        return grouped.confirmed + grouped.suggestions
+        // osoba = LEN potvrdené tváre; žiadne auto-skupiny ani domiešavanie
+        return PersonGrouper.confirmedPersons(faces, peopleDao.getPersons(), peopleDao.getAssignments())
     }
 
     private fun openPerson(person: Person) {
