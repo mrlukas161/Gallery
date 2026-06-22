@@ -1176,20 +1176,6 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
             }
         }
 
-        if (config.showSmartAlbums) {
-            SMART_ALBUM_PATHS.reversed().forEach { albumPath ->
-                if (!dirs.map { it.path }.contains(albumPath)) {
-                    val smartAlbum = Directory().apply {
-                        path = albumPath
-                        name = getSmartAlbumName(albumPath)
-                        location = LOCATION_INTERNAL
-                    }
-
-                    dirs.add(0, smartAlbum)
-                }
-            }
-        }
-
         // fetch files from MediaStore only, unless the app has the MANAGE_EXTERNAL_STORAGE permission on Android 11+
         val android11Files = mLastMediaFetcher?.getAndroid11FolderMedia(
             isPickImage = getImagesOnly,

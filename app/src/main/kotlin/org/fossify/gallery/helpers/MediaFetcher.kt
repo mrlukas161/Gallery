@@ -36,10 +36,6 @@ class MediaFetcher(val context: Context) {
             return ArrayList()
         }
 
-        if (isSmartAlbumPath(curPath)) {
-            return getSmartAlbumFiles(curPath)
-        }
-
         val curMedia = ArrayList<Medium>()
         if (context.isPathOnOTG(curPath)) {
             if (context.hasOTGConnected()) {
@@ -83,18 +79,6 @@ class MediaFetcher(val context: Context) {
 
         sortMedia(curMedia, context.config.getFolderSorting(curPath))
         return curMedia
-    }
-
-    // Obsah smart albumu = rýchly a STABILNÝ dopyt do media DB podľa typu (žiadny sken úložiska,
-    // ktorý sa pri obnove zoznamu prerušoval a spôsoboval blikanie/miznutie dlaždice).
-    private fun getSmartAlbumFiles(curPath: String): ArrayList<Medium> {
-        val type = smartAlbumMediaType(curPath) ?: return ArrayList()
-        val media = ArrayList(context.mediaDB.getMediaOfType(type))
-        if (!context.config.shouldShowHidden) {
-            media.removeAll { it.path.contains("/.") }
-        }
-        sortMedia(media, context.config.getFolderSorting(curPath))
-        return media
     }
 
     fun getFoldersToScan(): ArrayList<String> {

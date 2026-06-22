@@ -958,21 +958,6 @@
             </RelativeLayout>
 
             <RelativeLayout
-                android:id="@+id/settings_show_smart_albums_holder"
-                style="@style/SettingsHolderSwitchStyle"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content">
-
-                <org.fossify.commons.views.MyMaterialSwitch
-                    android:id="@+id/settings_show_smart_albums"
-                    style="@style/SettingsSwitchStyle"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:text="@string/show_smart_albums" />
-
-            </RelativeLayout>
-
-            <RelativeLayout
                 android:id="@+id/settings_show_recycle_bin_holder"
                 style="@style/SettingsHolderSwitchStyle"
                 android:layout_width="match_parent"

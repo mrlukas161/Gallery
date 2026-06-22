@@ -112,7 +112,6 @@ class SettingsActivity : SimpleActivity() {
         setupShowRecycleBin()
         setupShowRecycleBinLast()
         setupEmptyRecycleBin()
-        setupShowSmartAlbums()
         updateTextColors(binding.settingsHolder)
         setupClearCache()
         setupFaceIndexing()
@@ -711,14 +710,6 @@ class SettingsActivity : SimpleActivity() {
                     config.visibleBottomActions = DEFAULT_BOTTOM_ACTIONS
                 }
             }
-        }
-    }
-
-    private fun setupShowSmartAlbums() {
-        binding.settingsShowSmartAlbums.isChecked = config.showSmartAlbums
-        binding.settingsShowSmartAlbumsHolder.setOnClickListener {
-            binding.settingsShowSmartAlbums.toggle()
-            config.showSmartAlbums = binding.settingsShowSmartAlbums.isChecked
         }
     }
 
