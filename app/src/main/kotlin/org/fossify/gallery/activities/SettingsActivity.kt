@@ -926,7 +926,7 @@ class SettingsActivity : SimpleActivity() {
     }
 
     private val picasaImportPicker =
-        registerForActivityResult(androidx.activity.result.contracts.ActivityResultContracts.OpenDocument()) { uri: android.net.Uri? ->
+        registerForActivityResult(androidx.activity.result.contract.ActivityResultContracts.OpenDocument()) { uri: android.net.Uri? ->
             if (uri != null) startPicasaImport(uri)
         }
 
