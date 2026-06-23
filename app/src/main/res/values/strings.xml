@@ -65,6 +65,13 @@
     <string name="sort_oldest">Najstaršie</string>
     <string name="sort_action">Zoradiť</string>
     <string name="chronological">Chronologicky (podľa dátumu)</string>
+    <!-- Hľadanie osôb -->
+    <string name="search_people_title">Hľadať osoby</string>
+    <string name="search_hint_people">Mená alebo skratky, napr. Luk Ver Šim</string>
+    <string name="search_all_together">Všetci spolu (A)</string>
+    <string name="search_anyone">Ktokoľvek (ALEBO)</string>
+    <string name="search_no_results">Nič sa nenašlo</string>
+    <string name="search_count">Fotiek: %1$d</string>
     <string name="face_indexing_error">Chyba: %1$s (ťuknutím skús znova)</string>
     <string name="search_settings_hint">Hľadať v nastaveniach</string>
     <string name="check_updates_title">Skontrolovať aktualizácie</string>

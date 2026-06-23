@@ -36,11 +36,18 @@ class PeopleActivity : SimpleActivity() {
         binding.peopleToolbar.menu.clear()
         binding.peopleToolbar.inflateMenu(R.menu.menu_people)
         binding.peopleToolbar.setOnMenuItemClickListener { item ->
-            if (item.itemId == R.id.tag_faces) {
-                startActivity(Intent(this, FaceTaggingActivity::class.java))
-                true
-            } else {
-                false
+            when (item.itemId) {
+                R.id.tag_faces -> {
+                    startActivity(Intent(this, FaceTaggingActivity::class.java))
+                    true
+                }
+
+                R.id.search_people -> {
+                    startActivity(Intent(this, PeopleSearchActivity::class.java))
+                    true
+                }
+
+                else -> false
             }
         }
         loadPeople()
