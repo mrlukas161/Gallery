@@ -13,13 +13,16 @@ import org.fossify.gallery.R
 import org.fossify.gallery.adapters.PersonFacesAdapter
 import org.fossify.gallery.adapters.PersonPhotosAdapter
 import org.fossify.gallery.databinding.ActivityPersonBinding
+import org.fossify.gallery.dialogs.ChangeSortingDialog
+import org.fossify.gallery.extensions.config
 import org.fossify.gallery.faces.CannotLinkEntity
 import org.fossify.gallery.faces.FaceAssignmentEntity
 import org.fossify.gallery.faces.FaceEntity
+import org.fossify.gallery.faces.FaceMediaMeta
+import org.fossify.gallery.faces.FaceSorter
 import org.fossify.gallery.faces.FacesDatabase
 import org.fossify.gallery.faces.PeopleDatabase
 import org.fossify.gallery.faces.PersonEntity
-import java.io.File
 
 class PersonActivity : SimpleActivity() {
     private val binding by viewBinding(ActivityPersonBinding::inflate)
@@ -29,9 +32,10 @@ class PersonActivity : SimpleActivity() {
     private var facesAdapter: PersonFacesAdapter? = null
     private var loadedFaces: List<FaceEntity> = emptyList()
     private var photoPaths: ArrayList<String> = arrayListOf()
-    private val dateCache = HashMap<String, Long>()
+    private var meta: Map<String, FaceMediaMeta.Meta> = emptyMap()
     private var showFullPhotos = false
-    private var sortNewestFirst = true
+
+    private fun sortPath() = "person_$personId"
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -66,9 +70,7 @@ class PersonActivity : SimpleActivity() {
                 }
 
                 R.id.sort_order -> {
-                    sortNewestFirst = !sortNewestFirst
-                    updateMenuTitles()
-                    render()
+                    ChangeSortingDialog(this, false, true, sortPath()) { render() }
                     true
                 }
 
@@ -80,8 +82,6 @@ class PersonActivity : SimpleActivity() {
     private fun updateMenuTitles() {
         binding.personToolbar.menu.findItem(R.id.toggle_view)?.title =
             getString(if (showFullPhotos) R.string.show_faces else R.string.show_photos)
-        binding.personToolbar.menu.findItem(R.id.sort_order)?.title =
-            getString(if (sortNewestFirst) R.string.sort_newest else R.string.sort_oldest)
     }
 
     private fun loadFaces(faceIds: List<Long>) {
@@ -92,30 +92,22 @@ class PersonActivity : SimpleActivity() {
             } catch (e: Throwable) {
                 emptyList()
             }
-            faces.map { it.mediaFullPath }.distinct().forEach { p ->
-                if (!dateCache.containsKey(p)) {
-                    dateCache[p] = try {
-                        File(p).lastModified()
-                    } catch (e: Throwable) {
-                        0L
-                    }
-                }
-            }
+            val loadedMeta = FaceMediaMeta.load(this, faces.map { it.mediaFullPath }.distinct())
             runOnUiThread {
                 if (isDestroyed || isFinishing) return@runOnUiThread
                 loadedFaces = faces
+                meta = loadedMeta
                 render()
             }
         }
     }
 
     private fun render() {
-        val facesSorted = if (sortNewestFirst) {
-            loadedFaces.sortedByDescending { dateCache[it.mediaFullPath] ?: 0L }
-        } else {
-            loadedFaces.sortedBy { dateCache[it.mediaFullPath] ?: 0L }
-        }
-        photoPaths = ArrayList(facesSorted.map { it.mediaFullPath }.distinct().take(2000))
+        val sorting = config.getFolderSorting(sortPath())
+        val facesSorted = FaceSorter.sortFaces(loadedFaces, meta, sorting)
+        photoPaths = ArrayList(
+            FaceSorter.sortPaths(loadedFaces.map { it.mediaFullPath }.distinct(), meta, sorting).take(2000)
+        )
         binding.personGrid.layoutManager = GridLayoutManager(this, COLUMNS)
         if (showFullPhotos) {
             binding.personGrid.adapter = PersonPhotosAdapter(this, photoPaths) { path -> openPhoto(path) }

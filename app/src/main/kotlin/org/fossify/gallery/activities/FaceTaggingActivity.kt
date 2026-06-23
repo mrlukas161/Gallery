@@ -14,19 +14,23 @@ import org.fossify.commons.helpers.ensureBackgroundThread
 import org.fossify.gallery.R
 import org.fossify.gallery.adapters.FaceTagAdapter
 import org.fossify.gallery.databinding.ActivityFaceTaggingBinding
-import org.fossify.gallery.helpers.DragSelectListener
+import org.fossify.gallery.dialogs.ChangeSortingDialog
+import org.fossify.gallery.extensions.config
 import org.fossify.gallery.faces.CannotLinkEntity
 import org.fossify.gallery.faces.FaceAssignmentEntity
 import org.fossify.gallery.faces.FaceEmbedder
 import org.fossify.gallery.faces.FaceEntity
+import org.fossify.gallery.faces.FaceMediaMeta
+import org.fossify.gallery.faces.FaceSorter
 import org.fossify.gallery.faces.FacesDatabase
 import org.fossify.gallery.faces.PeopleDatabase
 import org.fossify.gallery.faces.PersonEntity
 import org.fossify.gallery.faces.PersonGrouper
+import org.fossify.gallery.helpers.DragSelectListener
 
-// UNLABELED   = mriežka všetkých NEoznačených tvárí, multi-výber -> priradiť k osobe
-// SUGGESTIONS = kandidáti blízki centroidu osoby (z potvrdených + Picasa anchorov),
-//               POSUVNÍK podobnosti, multi-výber -> "Toto je X" / "Toto nie je" (učenie)
+// UNLABELED   = všetky NEoznačené tváre, multi-výber -> priradiť k osobe (triedenie jednotným dialógom)
+// SUGGESTIONS = kandidáti blízki centroidu osoby, posuvník podobnosti, multi-výber -> "Toto je X" / "Toto nie je";
+//               voliteľne CHRONOLOGICKY (podľa dátumu) — užitočné pri deťoch.
 class FaceTaggingActivity : SimpleActivity() {
     private val binding by viewBinding(ActivityFaceTaggingBinding::inflate)
     private var mode = MODE_UNLABELED
@@ -35,6 +39,9 @@ class FaceTaggingActivity : SimpleActivity() {
     private var adapter: FaceTagAdapter? = null
     private var dragListener: DragSelectListener? = null
     private var allCandidates: List<Pair<FaceEntity, Float>> = emptyList()
+    private var unlabeledFaces: List<FaceEntity> = emptyList()
+    private var meta: Map<String, FaceMediaMeta.Meta> = emptyMap()
+    private var chronological = false
     private val prefs by lazy { getSharedPreferences(PREFS, Context.MODE_PRIVATE) }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -62,6 +69,11 @@ class FaceTaggingActivity : SimpleActivity() {
         }
         binding.taggingToolbar.menu.clear()
         binding.taggingToolbar.inflateMenu(R.menu.menu_tagging)
+        binding.taggingToolbar.menu.findItem(R.id.sort_order)?.isVisible = mode != MODE_SUGGESTIONS
+        binding.taggingToolbar.menu.findItem(R.id.chronological)?.apply {
+            isVisible = mode == MODE_SUGGESTIONS
+            isChecked = chronological
+        }
         binding.taggingToolbar.setOnMenuItemClickListener { item ->
             when (item.itemId) {
                 R.id.select_all -> {
@@ -71,6 +83,18 @@ class FaceTaggingActivity : SimpleActivity() {
 
                 R.id.clear_selection -> {
                     adapter?.clearSelection()
+                    true
+                }
+
+                R.id.sort_order -> {
+                    ChangeSortingDialog(this, false, true, FACES_SORT_PATH) { reSortUnlabeled() }
+                    true
+                }
+
+                R.id.chronological -> {
+                    chronological = !chronological
+                    item.isChecked = chronological
+                    applyThreshold()
                     true
                 }
 
@@ -129,9 +153,11 @@ class FaceTaggingActivity : SimpleActivity() {
                 } catch (e: Throwable) {
                     emptyList()
                 }
+                val m = FaceMediaMeta.load(this, cands.map { it.first.mediaFullPath }.distinct())
                 runOnUiThread {
                     if (isDestroyed || isFinishing) return@runOnUiThread
                     allCandidates = cands
+                    meta = m
                     applyThreshold()
                 }
             } else {
@@ -140,13 +166,21 @@ class FaceTaggingActivity : SimpleActivity() {
                 } catch (e: Throwable) {
                     emptyList()
                 }
+                val m = FaceMediaMeta.load(this, faces.map { it.mediaFullPath }.distinct())
                 runOnUiThread {
                     if (isDestroyed || isFinishing) return@runOnUiThread
-                    showList(faces)
-                    if (faces.isEmpty()) showPlaceholder(R.string.no_unlabeled_faces) else hidePlaceholder()
+                    unlabeledFaces = faces
+                    meta = m
+                    reSortUnlabeled()
                 }
             }
         }
+    }
+
+    private fun reSortUnlabeled() {
+        val sorted = FaceSorter.sortFaces(unlabeledFaces, meta, config.getFolderSorting(FACES_SORT_PATH))
+        showList(sorted)
+        if (sorted.isEmpty()) showPlaceholder(R.string.no_unlabeled_faces) else hidePlaceholder()
     }
 
     private fun showList(faces: List<FaceEntity>) {
@@ -166,7 +200,10 @@ class FaceTaggingActivity : SimpleActivity() {
 
     private fun applyThreshold() {
         val th = binding.taggingThresholdSeek.progress / 100f
-        val visible = allCandidates.filter { it.second >= th }.take(SUGGEST_MAX).map { it.first }
+        var visible = allCandidates.filter { it.second >= th }.take(SUGGEST_MAX).map { it.first }
+        if (chronological) {
+            visible = visible.sortedBy { meta[it.mediaFullPath]?.taken ?: 0L }
+        }
         binding.taggingThresholdLabel.text = getString(R.string.threshold_label, th, visible.size)
         showList(visible)
         if (visible.isEmpty()) showPlaceholder(R.string.no_suggestions) else hidePlaceholder()
@@ -192,7 +229,6 @@ class FaceTaggingActivity : SimpleActivity() {
             .take(UNLABELED_CAP)
     }
 
-    // všetci nepriradení kandidáti s podobnosťou k centroidu osoby (zoradené), filter rieši posuvník
     private fun computeCandidates(): List<Pair<FaceEntity, Float>> {
         val facesDao = FacesDatabase.getInstance(this).FaceDao()
         val peopleDao = PeopleDatabase.getInstance(this).PeopleDao()
@@ -308,6 +344,7 @@ class FaceTaggingActivity : SimpleActivity() {
         private const val PREFS = "galeria_faces"
         private const val KEY_THRESHOLD = "suggest_threshold_pct"
         private const val DEFAULT_THRESHOLD_PCT = 30
+        private const val FACES_SORT_PATH = "faces_tagging"
         private const val MIN_FACE_SCORE = 0.8f
         private const val MIN_FACE_SIZE = 40
     }

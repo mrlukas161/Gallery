@@ -11,4 +11,14 @@
         android:icon="@android:drawable/ic_menu_close_clear_cancel"
         android:title="@string/clear_selection"
         app:showAsAction="ifRoom" />
+    <item
+        android:id="@+id/sort_order"
+        android:icon="@android:drawable/ic_menu_sort_by_size"
+        android:title="@string/sort_action"
+        app:showAsAction="ifRoom" />
+    <item
+        android:id="@+id/chronological"
+        android:checkable="true"
+        android:title="@string/chronological"
+        app:showAsAction="never" />
 </menu>

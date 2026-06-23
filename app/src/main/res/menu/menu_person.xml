@@ -9,7 +9,7 @@
     <item
         android:id="@+id/sort_order"
         android:icon="@android:drawable/ic_menu_sort_by_size"
-        android:title="@string/sort_newest"
+        android:title="@string/sort_action"
         app:showAsAction="ifRoom" />
     <item
         android:id="@+id/suggestions"

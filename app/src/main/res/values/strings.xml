@@ -63,6 +63,8 @@
     <string name="show_faces">Tváre</string>
     <string name="sort_newest">Najnovšie</string>
     <string name="sort_oldest">Najstaršie</string>
+    <string name="sort_action">Zoradiť</string>
+    <string name="chronological">Chronologicky (podľa dátumu)</string>
     <string name="face_indexing_error">Chyba: %1$s (ťuknutím skús znova)</string>
     <string name="search_settings_hint">Hľadať v nastaveniach</string>
     <string name="check_updates_title">Skontrolovať aktualizácie</string>
