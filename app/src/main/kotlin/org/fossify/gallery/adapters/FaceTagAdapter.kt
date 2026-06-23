@@ -8,17 +8,42 @@ import androidx.recyclerview.widget.RecyclerView
 import org.fossify.gallery.databinding.ItemTagFaceBinding
 import org.fossify.gallery.faces.FaceCropLoader
 import org.fossify.gallery.faces.FaceEntity
+import kotlin.math.max
+import kotlin.math.min
 
-// Mriežka tvárí s viacnásobným výberom (označovanie / potvrdzovanie návrhov).
+// Mriežka tvárí s viacnásobným výberom: ťuk = jednotlivo, podrž+ťahaj = interval, + Vybrať všetko / Zrušiť.
 class FaceTagAdapter(
     val activity: Activity,
     val faces: MutableList<FaceEntity>,
     val onSelectionChanged: (Int) -> Unit,
+    val onLongPress: (Int) -> Unit,
 ) : RecyclerView.Adapter<FaceTagAdapter.ViewHolder>() {
 
     private val selected = HashSet<Long>()
 
     fun selectedIds(): List<Long> = selected.toList()
+
+    fun selectRange(from: Int, to: Int) {
+        val a = max(0, min(from, to))
+        val b = min(faces.size - 1, max(from, to))
+        if (a > b) return
+        for (i in a..b) faces[i].id?.let { selected.add(it) }
+        notifyItemRangeChanged(a, b - a + 1)
+        onSelectionChanged(selected.size)
+    }
+
+    fun selectAll() {
+        faces.forEach { f -> f.id?.let { selected.add(it) } }
+        notifyDataSetChanged()
+        onSelectionChanged(selected.size)
+    }
+
+    fun clearSelection() {
+        if (selected.isEmpty()) return
+        selected.clear()
+        notifyDataSetChanged()
+        onSelectionChanged(0)
+    }
 
     fun removeSelected() {
         faces.removeAll { it.id != null && selected.contains(it.id) }
@@ -48,6 +73,10 @@ class FaceTagAdapter(
                 if (selected.contains(id)) selected.remove(id) else selected.add(id)
                 notifyItemChanged(bindingAdapterPosition)
                 onSelectionChanged(selected.size)
+            }
+            binding.root.setOnLongClickListener {
+                onLongPress(bindingAdapterPosition)
+                true
             }
         }
     }

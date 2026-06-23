@@ -57,6 +57,12 @@
     <string name="no_suggestions">Žiadne návrhy — najprv priraď zopár tvárí (alebo importuj Picasa vzory)</string>
     <string name="no_unlabeled_faces">Žiadne neoznačené tváre</string>
     <string name="threshold_label">Podobnosť ≥ %1$.2f · %2$d návrhov</string>
+    <string name="select_all">Vybrať všetko</string>
+    <string name="clear_selection">Zrušiť výber</string>
+    <string name="show_photos">Celé fotky</string>
+    <string name="show_faces">Tváre</string>
+    <string name="sort_newest">Najnovšie</string>
+    <string name="sort_oldest">Najstaršie</string>
     <string name="face_indexing_error">Chyba: %1$s (ťuknutím skús znova)</string>
     <string name="search_settings_hint">Hľadať v nastaveniach</string>
     <string name="check_updates_title">Skontrolovať aktualizácie</string>

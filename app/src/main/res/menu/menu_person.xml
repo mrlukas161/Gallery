@@ -2,8 +2,18 @@
 <menu xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto">
     <item
+        android:id="@+id/toggle_view"
+        android:icon="@android:drawable/ic_menu_gallery"
+        android:title="@string/show_photos"
+        app:showAsAction="ifRoom" />
+    <item
+        android:id="@+id/sort_order"
+        android:icon="@android:drawable/ic_menu_sort_by_size"
+        android:title="@string/sort_newest"
+        app:showAsAction="ifRoom" />
+    <item
         android:id="@+id/suggestions"
         android:icon="@android:drawable/ic_menu_search"
         android:title="@string/suggestions_title"
-        app:showAsAction="ifRoom|withText" />
+        app:showAsAction="ifRoom" />
 </menu>

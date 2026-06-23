@@ -4,7 +4,6 @@ import android.content.Intent
 import android.os.Bundle
 import android.widget.EditText
 import androidx.appcompat.app.AlertDialog
-import androidx.core.content.FileProvider
 import androidx.recyclerview.widget.GridLayoutManager
 import org.fossify.commons.extensions.toast
 import org.fossify.commons.extensions.viewBinding
@@ -12,6 +11,7 @@ import org.fossify.commons.helpers.NavigationIcon
 import org.fossify.commons.helpers.ensureBackgroundThread
 import org.fossify.gallery.R
 import org.fossify.gallery.adapters.PersonFacesAdapter
+import org.fossify.gallery.adapters.PersonPhotosAdapter
 import org.fossify.gallery.databinding.ActivityPersonBinding
 import org.fossify.gallery.faces.CannotLinkEntity
 import org.fossify.gallery.faces.FaceAssignmentEntity
@@ -26,8 +26,12 @@ class PersonActivity : SimpleActivity() {
     private var personId: Long = -1L
     private var personName: String? = null
     private var manualIds: Set<Long> = emptySet()
-    private var adapter: PersonFacesAdapter? = null
+    private var facesAdapter: PersonFacesAdapter? = null
+    private var loadedFaces: List<FaceEntity> = emptyList()
     private var photoPaths: ArrayList<String> = arrayListOf()
+    private val dateCache = HashMap<String, Long>()
+    private var showFullPhotos = false
+    private var sortNewestFirst = true
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -45,25 +49,39 @@ class PersonActivity : SimpleActivity() {
         setupTopAppBar(binding.personAppbar, NavigationIcon.Arrow)
         binding.personToolbar.title = personName ?: getString(R.string.person_suggested)
         binding.personToolbar.menu.clear()
-        if (personId >= 0) {
-            binding.personToolbar.inflateMenu(R.menu.menu_person)
-            binding.personToolbar.setOnMenuItemClickListener { item ->
-                if (item.itemId == R.id.suggestions) {
-                    openSuggestions()
+        binding.personToolbar.inflateMenu(R.menu.menu_person)
+        updateMenuTitles()
+        binding.personToolbar.setOnMenuItemClickListener { item ->
+            when (item.itemId) {
+                R.id.suggestions -> {
+                    if (personId >= 0) openSuggestions()
                     true
-                } else {
-                    false
                 }
+
+                R.id.toggle_view -> {
+                    showFullPhotos = !showFullPhotos
+                    updateMenuTitles()
+                    render()
+                    true
+                }
+
+                R.id.sort_order -> {
+                    sortNewestFirst = !sortNewestFirst
+                    updateMenuTitles()
+                    render()
+                    true
+                }
+
+                else -> false
             }
         }
     }
 
-    private fun openSuggestions() {
-        val intent = Intent(this, FaceTaggingActivity::class.java)
-        intent.putExtra(FaceTaggingActivity.MODE, FaceTaggingActivity.MODE_SUGGESTIONS)
-        intent.putExtra(FaceTaggingActivity.PERSON_ID, personId)
-        intent.putExtra(FaceTaggingActivity.PERSON_NAME, personName)
-        startActivity(intent)
+    private fun updateMenuTitles() {
+        binding.personToolbar.menu.findItem(R.id.toggle_view)?.title =
+            getString(if (showFullPhotos) R.string.show_faces else R.string.show_photos)
+        binding.personToolbar.menu.findItem(R.id.sort_order)?.title =
+            getString(if (sortNewestFirst) R.string.sort_newest else R.string.sort_oldest)
     }
 
     private fun loadFaces(faceIds: List<Long>) {
@@ -74,24 +92,45 @@ class PersonActivity : SimpleActivity() {
             } catch (e: Throwable) {
                 emptyList()
             }
-            val sorted = faces.sortedByDescending { it.score }.toMutableList()
-            val paths = ArrayList(sorted.map { it.mediaFullPath }.distinct().take(2000))
+            faces.map { it.mediaFullPath }.distinct().forEach { p ->
+                if (!dateCache.containsKey(p)) {
+                    dateCache[p] = try {
+                        File(p).lastModified()
+                    } catch (e: Throwable) {
+                        0L
+                    }
+                }
+            }
             runOnUiThread {
                 if (isDestroyed || isFinishing) return@runOnUiThread
-                photoPaths = paths
-                adapter = PersonFacesAdapter(
-                    this, sorted,
-                    onClick = { face -> openPhoto(face.mediaFullPath) },
-                    onLongClick = { face -> showFaceMenu(face) },
-                )
-                binding.personGrid.adapter = adapter
+                loadedFaces = faces
+                render()
             }
+        }
+    }
+
+    private fun render() {
+        val facesSorted = if (sortNewestFirst) {
+            loadedFaces.sortedByDescending { dateCache[it.mediaFullPath] ?: 0L }
+        } else {
+            loadedFaces.sortedBy { dateCache[it.mediaFullPath] ?: 0L }
+        }
+        photoPaths = ArrayList(facesSorted.map { it.mediaFullPath }.distinct().take(2000))
+        binding.personGrid.layoutManager = GridLayoutManager(this, COLUMNS)
+        if (showFullPhotos) {
+            binding.personGrid.adapter = PersonPhotosAdapter(this, photoPaths) { path -> openPhoto(path) }
+        } else {
+            facesAdapter = PersonFacesAdapter(
+                this, facesSorted.toMutableList(),
+                onClick = { face -> openPhoto(face.mediaFullPath) },
+                onLongClick = { face -> showFaceMenu(face) },
+            )
+            binding.personGrid.adapter = facesAdapter
         }
     }
 
     private fun showFaceMenu(face: FaceEntity) {
         val options = arrayListOf(getString(R.string.action_move_to_person))
-        // "toto nie je X" má zmysel len v potvrdenej osobe
         val canReject = personId >= 0
         if (canReject) options.add(getString(R.string.action_not_this_person))
         AlertDialog.Builder(this)
@@ -133,7 +172,7 @@ class PersonActivity : SimpleActivity() {
                 .upsertAssignment(FaceAssignmentEntity(faceId, targetId, true, System.currentTimeMillis()))
             runOnUiThread {
                 toast(R.string.person_saved)
-                adapter?.removeFace(face)
+                facesAdapter?.removeFace(face)
             }
         }
     }
@@ -145,7 +184,7 @@ class PersonActivity : SimpleActivity() {
             dao.upsertAssignment(FaceAssignmentEntity(faceId, newId, true, System.currentTimeMillis()))
             runOnUiThread {
                 toast(R.string.person_saved)
-                adapter?.removeFace(face)
+                facesAdapter?.removeFace(face)
             }
         }
     }
@@ -156,14 +195,20 @@ class PersonActivity : SimpleActivity() {
         ensureBackgroundThread {
             val dao = PeopleDatabase.getInstance(this).PeopleDao()
             if (manualIds.contains(fid)) {
-                // bola ručne priradená → len zruš priradenie
                 dao.deleteAssignment(fid)
             } else {
-                // bola len navrhnutá → zapamätaj, že k tejto osobe NEpatrí (učenie)
                 dao.insertCannotLink(CannotLinkEntity(fid, personId))
             }
-            runOnUiThread { adapter?.removeFace(face) }
+            runOnUiThread { facesAdapter?.removeFace(face) }
         }
+    }
+
+    private fun openSuggestions() {
+        val intent = Intent(this, FaceTaggingActivity::class.java)
+        intent.putExtra(FaceTaggingActivity.MODE, FaceTaggingActivity.MODE_SUGGESTIONS)
+        intent.putExtra(FaceTaggingActivity.PERSON_ID, personId)
+        intent.putExtra(FaceTaggingActivity.PERSON_NAME, personName)
+        startActivity(intent)
     }
 
     private fun openPhoto(path: String) {

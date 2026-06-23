@@ -14,6 +14,7 @@ import org.fossify.commons.helpers.ensureBackgroundThread
 import org.fossify.gallery.R
 import org.fossify.gallery.adapters.FaceTagAdapter
 import org.fossify.gallery.databinding.ActivityFaceTaggingBinding
+import org.fossify.gallery.helpers.DragSelectListener
 import org.fossify.gallery.faces.CannotLinkEntity
 import org.fossify.gallery.faces.FaceAssignmentEntity
 import org.fossify.gallery.faces.FaceEmbedder
@@ -32,6 +33,7 @@ class FaceTaggingActivity : SimpleActivity() {
     private var personId = -1L
     private var personName: String? = null
     private var adapter: FaceTagAdapter? = null
+    private var dragListener: DragSelectListener? = null
     private var allCandidates: List<Pair<FaceEntity, Float>> = emptyList()
     private val prefs by lazy { getSharedPreferences(PREFS, Context.MODE_PRIVATE) }
 
@@ -42,6 +44,9 @@ class FaceTaggingActivity : SimpleActivity() {
         personId = intent.getLongExtra(PERSON_ID, -1L)
         personName = intent.getStringExtra(PERSON_NAME)
         binding.taggingGrid.layoutManager = GridLayoutManager(this, COLUMNS)
+        val dl = DragSelectListener { from, to -> adapter?.selectRange(from, to) }
+        dragListener = dl
+        binding.taggingGrid.addOnItemTouchListener(dl)
         setupBottomBar()
         setupThresholdBar()
         load()
@@ -54,6 +59,23 @@ class FaceTaggingActivity : SimpleActivity() {
             getString(R.string.suggestions_for, personName ?: "")
         } else {
             getString(R.string.tag_faces_title)
+        }
+        binding.taggingToolbar.menu.clear()
+        binding.taggingToolbar.inflateMenu(R.menu.menu_tagging)
+        binding.taggingToolbar.setOnMenuItemClickListener { item ->
+            when (item.itemId) {
+                R.id.select_all -> {
+                    adapter?.selectAll()
+                    true
+                }
+
+                R.id.clear_selection -> {
+                    adapter?.clearSelection()
+                    true
+                }
+
+                else -> false
+            }
         }
     }
 
@@ -128,9 +150,18 @@ class FaceTaggingActivity : SimpleActivity() {
     }
 
     private fun showList(faces: List<FaceEntity>) {
-        adapter = FaceTagAdapter(this, faces.toMutableList()) { n -> updateCount(n) }
+        adapter = FaceTagAdapter(
+            this, faces.toMutableList(),
+            onSelectionChanged = { n -> updateCount(n) },
+            onLongPress = { pos -> startDrag(pos) },
+        )
         binding.taggingGrid.adapter = adapter
         updateCount(0)
+    }
+
+    private fun startDrag(pos: Int) {
+        adapter?.selectRange(pos, pos)
+        dragListener?.startDrag(pos)
     }
 
     private fun applyThreshold() {
