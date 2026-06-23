@@ -1,8 +1,10 @@
 package org.fossify.gallery.activities
 
+import android.content.Context
 import android.os.Bundle
 import android.view.View
 import android.widget.EditText
+import android.widget.SeekBar
 import androidx.appcompat.app.AlertDialog
 import androidx.recyclerview.widget.GridLayoutManager
 import org.fossify.commons.extensions.toast
@@ -21,16 +23,17 @@ import org.fossify.gallery.faces.PeopleDatabase
 import org.fossify.gallery.faces.PersonEntity
 import org.fossify.gallery.faces.PersonGrouper
 
-// Dva režimy:
-//  UNLABELED   = mriežka všetkých NEoznačených tvárí, multi-výber -> priradiť k osobe
-//  SUGGESTIONS = kandidáti blízki centroidu osoby (z potvrdených + Picasa anchorov),
-//                multi-výber -> "Toto je X" (potvrď) / "Toto nie je" (cannot-link = učenie)
+// UNLABELED   = mriežka všetkých NEoznačených tvárí, multi-výber -> priradiť k osobe
+// SUGGESTIONS = kandidáti blízki centroidu osoby (z potvrdených + Picasa anchorov),
+//               POSUVNÍK podobnosti, multi-výber -> "Toto je X" / "Toto nie je" (učenie)
 class FaceTaggingActivity : SimpleActivity() {
     private val binding by viewBinding(ActivityFaceTaggingBinding::inflate)
     private var mode = MODE_UNLABELED
     private var personId = -1L
     private var personName: String? = null
     private var adapter: FaceTagAdapter? = null
+    private var allCandidates: List<Pair<FaceEntity, Float>> = emptyList()
+    private val prefs by lazy { getSharedPreferences(PREFS, Context.MODE_PRIVATE) }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -40,6 +43,7 @@ class FaceTaggingActivity : SimpleActivity() {
         personName = intent.getStringExtra(PERSON_NAME)
         binding.taggingGrid.layoutManager = GridLayoutManager(this, COLUMNS)
         setupBottomBar()
+        setupThresholdBar()
         load()
     }
 
@@ -68,6 +72,27 @@ class FaceTaggingActivity : SimpleActivity() {
         updateCount(0)
     }
 
+    private fun setupThresholdBar() {
+        if (mode != MODE_SUGGESTIONS) {
+            binding.taggingThresholdBar.visibility = View.GONE
+            return
+        }
+        binding.taggingThresholdBar.visibility = View.VISIBLE
+        binding.taggingThresholdSeek.max = 100
+        binding.taggingThresholdSeek.progress = prefs.getInt(KEY_THRESHOLD, DEFAULT_THRESHOLD_PCT)
+        binding.taggingThresholdSeek.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(sb: SeekBar?, progress: Int, fromUser: Boolean) {
+                applyThreshold()
+            }
+
+            override fun onStartTrackingTouch(sb: SeekBar?) {}
+
+            override fun onStopTrackingTouch(sb: SeekBar?) {
+                prefs.edit().putInt(KEY_THRESHOLD, binding.taggingThresholdSeek.progress).apply()
+            }
+        })
+    }
+
     private fun updateCount(n: Int) {
         binding.taggingCount.text = getString(R.string.selected_count, n)
         binding.taggingBtnPrimary.isEnabled = n > 0
@@ -76,26 +101,53 @@ class FaceTaggingActivity : SimpleActivity() {
 
     private fun load() {
         ensureBackgroundThread {
-            val faces = try {
-                if (mode == MODE_SUGGESTIONS) loadSuggestions() else loadUnlabeled()
-            } catch (e: Throwable) {
-                emptyList()
-            }
-            runOnUiThread {
-                if (isDestroyed || isFinishing) return@runOnUiThread
-                if (faces.isEmpty()) {
-                    binding.taggingPlaceholder.visibility = View.VISIBLE
-                    binding.taggingPlaceholder.text = getString(
-                        if (mode == MODE_SUGGESTIONS) R.string.no_suggestions else R.string.no_unlabeled_faces
-                    )
-                } else {
-                    binding.taggingPlaceholder.visibility = View.GONE
+            if (mode == MODE_SUGGESTIONS) {
+                val cands = try {
+                    computeCandidates()
+                } catch (e: Throwable) {
+                    emptyList()
                 }
-                adapter = FaceTagAdapter(this, faces.toMutableList()) { n -> updateCount(n) }
-                binding.taggingGrid.adapter = adapter
-                updateCount(0)
+                runOnUiThread {
+                    if (isDestroyed || isFinishing) return@runOnUiThread
+                    allCandidates = cands
+                    applyThreshold()
+                }
+            } else {
+                val faces = try {
+                    loadUnlabeled()
+                } catch (e: Throwable) {
+                    emptyList()
+                }
+                runOnUiThread {
+                    if (isDestroyed || isFinishing) return@runOnUiThread
+                    showList(faces)
+                    if (faces.isEmpty()) showPlaceholder(R.string.no_unlabeled_faces) else hidePlaceholder()
+                }
             }
         }
+    }
+
+    private fun showList(faces: List<FaceEntity>) {
+        adapter = FaceTagAdapter(this, faces.toMutableList()) { n -> updateCount(n) }
+        binding.taggingGrid.adapter = adapter
+        updateCount(0)
+    }
+
+    private fun applyThreshold() {
+        val th = binding.taggingThresholdSeek.progress / 100f
+        val visible = allCandidates.filter { it.second >= th }.take(SUGGEST_MAX).map { it.first }
+        binding.taggingThresholdLabel.text = getString(R.string.threshold_label, th, visible.size)
+        showList(visible)
+        if (visible.isEmpty()) showPlaceholder(R.string.no_suggestions) else hidePlaceholder()
+    }
+
+    private fun showPlaceholder(res: Int) {
+        binding.taggingPlaceholder.visibility = View.VISIBLE
+        binding.taggingPlaceholder.text = getString(res)
+    }
+
+    private fun hidePlaceholder() {
+        binding.taggingPlaceholder.visibility = View.GONE
     }
 
     private fun loadUnlabeled(): List<FaceEntity> {
@@ -109,7 +161,8 @@ class FaceTaggingActivity : SimpleActivity() {
             .take(UNLABELED_CAP)
     }
 
-    private fun loadSuggestions(): List<FaceEntity> {
+    // všetci nepriradení kandidáti s podobnosťou k centroidu osoby (zoradené), filter rieši posuvník
+    private fun computeCandidates(): List<Pair<FaceEntity, Float>> {
         val facesDao = FacesDatabase.getInstance(this).FaceDao()
         val peopleDao = PeopleDatabase.getInstance(this).PeopleDao()
         val all = facesDao.getAllFaces()
@@ -125,10 +178,7 @@ class FaceTaggingActivity : SimpleActivity() {
         return all
             .filter { val id = it.id; id != null && !assigned.contains(id) && !cannot.contains(id) }
             .mapNotNull { f -> f.embedding?.let { b -> f to PersonGrouper.cosine(FaceEmbedder.toFloats(b), centroid) } }
-            .filter { it.second >= SUGGEST_FLOOR }
             .sortedByDescending { it.second }
-            .take(SUGGEST_K)
-            .map { it.first }
     }
 
     private fun confirmSelected() {
@@ -140,6 +190,7 @@ class FaceTaggingActivity : SimpleActivity() {
             ids.forEach { dao.upsertAssignment(FaceAssignmentEntity(it, personId, true, now)) }
             runOnUiThread {
                 toast(R.string.person_saved)
+                pruneCandidates(ids)
                 adapter?.removeSelected()
             }
         }
@@ -151,8 +202,17 @@ class FaceTaggingActivity : SimpleActivity() {
         ensureBackgroundThread {
             val dao = PeopleDatabase.getInstance(this).PeopleDao()
             ids.forEach { dao.insertCannotLink(CannotLinkEntity(it, personId)) }
-            runOnUiThread { adapter?.removeSelected() }
+            runOnUiThread {
+                pruneCandidates(ids)
+                adapter?.removeSelected()
+            }
         }
+    }
+
+    private fun pruneCandidates(ids: List<Long>) {
+        if (allCandidates.isEmpty()) return
+        val s = ids.toHashSet()
+        allCandidates = allCandidates.filter { it.first.id != null && !s.contains(it.first.id) }
     }
 
     private fun assignSelectedToPicked() {
@@ -213,8 +273,10 @@ class FaceTaggingActivity : SimpleActivity() {
         const val MODE_SUGGESTIONS = 1
         private const val COLUMNS = 4
         private const val UNLABELED_CAP = 1500
-        private const val SUGGEST_K = 80
-        private const val SUGGEST_FLOOR = 0.30f
+        private const val SUGGEST_MAX = 300
+        private const val PREFS = "galeria_faces"
+        private const val KEY_THRESHOLD = "suggest_threshold_pct"
+        private const val DEFAULT_THRESHOLD_PCT = 30
         private const val MIN_FACE_SCORE = 0.8f
         private const val MIN_FACE_SIZE = 40
     }

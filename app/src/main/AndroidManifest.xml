@@ -619,5 +619,11 @@
             android:exported="false"
             android:parentActivityName=".activities.PeopleActivity" />
 
+        <activity
+            android:name=".activities.PersonPhotoPagerActivity"
+            android:configChanges="orientation|screenSize"
+            android:exported="false"
+            android:parentActivityName=".activities.PersonActivity" />
+
     </application>
 </manifest>

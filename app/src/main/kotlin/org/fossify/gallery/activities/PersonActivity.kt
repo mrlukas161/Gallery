@@ -27,6 +27,7 @@ class PersonActivity : SimpleActivity() {
     private var personName: String? = null
     private var manualIds: Set<Long> = emptySet()
     private var adapter: PersonFacesAdapter? = null
+    private var photoPaths: ArrayList<String> = arrayListOf()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -74,8 +75,10 @@ class PersonActivity : SimpleActivity() {
                 emptyList()
             }
             val sorted = faces.sortedByDescending { it.score }.toMutableList()
+            val paths = ArrayList(sorted.map { it.mediaFullPath }.distinct().take(2000))
             runOnUiThread {
                 if (isDestroyed || isFinishing) return@runOnUiThread
+                photoPaths = paths
                 adapter = PersonFacesAdapter(
                     this, sorted,
                     onClick = { face -> openPhoto(face.mediaFullPath) },
@@ -164,16 +167,11 @@ class PersonActivity : SimpleActivity() {
     }
 
     private fun openPhoto(path: String) {
-        try {
-            val uri = FileProvider.getUriForFile(this, "$packageName.provider", File(path))
-            val intent = Intent(Intent.ACTION_VIEW).apply {
-                setDataAndType(uri, "image/*")
-                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                setPackage(packageName)
-            }
-            startActivity(intent)
-        } catch (ignored: Throwable) {
-        }
+        val idx = photoPaths.indexOf(path).coerceAtLeast(0)
+        val intent = Intent(this, PersonPhotoPagerActivity::class.java)
+        intent.putStringArrayListExtra(PersonPhotoPagerActivity.PATHS, photoPaths)
+        intent.putExtra(PersonPhotoPagerActivity.START_INDEX, idx)
+        startActivity(intent)
     }
 
     private fun promptName(initial: String?, onName: (String) -> Unit) {
