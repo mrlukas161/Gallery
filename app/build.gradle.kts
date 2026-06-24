@@ -190,6 +190,7 @@ dependencies {
     implementation(libs.bundles.room)
     implementation(libs.mediapipe.tasks.vision)
     implementation(libs.tensorflow.lite)
+    implementation("cz.adaptech.tesseract4android:tesseract4android-openmp:4.7.0")
     ksp(libs.androidx.room.compiler)
     detektPlugins(libs.compose.detekt)
 }

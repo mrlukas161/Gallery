@@ -47,6 +47,27 @@
                 android:orientation="horizontal">
 
                 <org.fossify.commons.views.MyTextView
+                    android:id="@+id/search_scope_label"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:textColor="#FFFFFFFF"
+                    tools:text="Hľadám: Osoby" />
+
+                <androidx.appcompat.widget.SwitchCompat
+                    android:id="@+id/search_scope_switch"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content" />
+
+            </LinearLayout>
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <org.fossify.commons.views.MyTextView
                     android:id="@+id/search_mode_label"
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"

@@ -76,6 +76,16 @@
     <string name="share">Zdieľať</string>
     <string name="delete_confirm">Vymazať túto fotku?</string>
     <string name="action_failed">Akcia zlyhala</string>
+    <!-- Rozsah hľadania + OCR -->
+    <string name="search_scope_people">Hľadám: Osoby</string>
+    <string name="search_scope_text">Hľadám: Text (OCR)</string>
+    <string name="ocr_title">OCR – text na fotkách (beta)</string>
+    <string name="ocr_tap_to_start">Ťuknutím spustíš čítanie textu z fotiek (pomalé, na pozadí)</string>
+    <string name="ocr_starting">Spúšťam…</string>
+    <string name="ocr_running">Čítam text… (ťuknutím zastavíš)</string>
+    <string name="ocr_progress">Čítam %1$d / %2$d (ťuknutím zastavíš)</string>
+    <string name="ocr_result">Spracované %1$d fotiek, s textom %2$d (ťuknutím znova)</string>
+    <string name="ocr_error">Chyba: %1$s (ťuknutím skús znova)</string>
     <string name="face_indexing_error">Chyba: %1$s (ťuknutím skús znova)</string>
     <string name="search_settings_hint">Hľadať v nastaveniach</string>
     <string name="check_updates_title">Skontrolovať aktualizácie</string>

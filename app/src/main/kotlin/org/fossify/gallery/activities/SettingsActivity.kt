@@ -116,6 +116,7 @@ class SettingsActivity : SimpleActivity() {
         setupClearCache()
         setupFaceIndexing()
         setupPicasaImport()
+        setupOcrIndexing()
         setupCheckForUpdates()
         setupSettingsSearch()
         setupExportFavorites()
@@ -988,6 +989,67 @@ class SettingsActivity : SimpleActivity() {
                         getString(R.string.picasa_import_state, anchors)
                     } else {
                         getString(R.string.picasa_import_tap)
+                    }
+                }
+            }
+        }
+    }
+
+    private fun setupOcrIndexing() {
+        updateOcrSummary()
+        binding.settingsOcrHolder.setOnClickListener {
+            if (org.fossify.gallery.faces.OcrIndexer.isRunning) {
+                org.fossify.gallery.faces.OcrIndexer.stop()
+                updateOcrSummary()
+            } else {
+                binding.settingsOcrSummary.text = getString(R.string.ocr_starting)
+                org.fossify.gallery.faces.OcrIndexer.index(
+                    this,
+                    onProgress = { done, total ->
+                        runOnUiThread {
+                            if (!isDestroyed) {
+                                binding.settingsOcrSummary.text = getString(R.string.ocr_progress, done, total)
+                            }
+                        }
+                    },
+                    onDone = { indexed, withText ->
+                        runOnUiThread {
+                            if (!isDestroyed) {
+                                binding.settingsOcrSummary.text = getString(R.string.ocr_result, indexed, withText)
+                            }
+                        }
+                    },
+                    onError = { msg ->
+                        runOnUiThread {
+                            if (!isDestroyed) {
+                                binding.settingsOcrSummary.text = getString(R.string.ocr_error, msg)
+                            }
+                        }
+                    },
+                )
+            }
+        }
+    }
+
+    private fun updateOcrSummary() {
+        ensureBackgroundThread {
+            val dao = org.fossify.gallery.faces.OcrDatabase.getInstance(this).OcrDao()
+            val indexed = try {
+                dao.count()
+            } catch (e: Exception) {
+                0
+            }
+            val withText = try {
+                dao.countWithText()
+            } catch (e: Exception) {
+                0
+            }
+            runOnUiThread {
+                if (!isDestroyed) {
+                    binding.settingsOcrSummary.text = when {
+                        org.fossify.gallery.faces.OcrIndexer.isRunning -> getString(R.string.ocr_running)
+                        indexed > 0 -> getString(R.string.ocr_result, indexed, withText)
+                        else -> getString(R.string.ocr_tap_to_start)
                     }
                 }
             }

@@ -15,18 +15,18 @@ import org.fossify.gallery.adapters.PersonPhotosAdapter
 import org.fossify.gallery.databinding.ActivityPeopleSearchBinding
 import org.fossify.gallery.faces.FaceMediaMeta
 import org.fossify.gallery.faces.FacesDatabase
+import org.fossify.gallery.faces.OcrDatabase
 import org.fossify.gallery.faces.PeopleDatabase
 import org.fossify.gallery.faces.PersonEntity
 import org.fossify.gallery.helpers.TextNormalizer
 
-// Hľadanie osôb na fotkách. Napíšeš mená/skratky (Luk Ver Šim), prepínač A/ALEBO.
-// Funguje nad POTVRDENÝMI priradeniami (fotka -> osoby). Fuzzy + bez diakritiky.
+// Jednotné hľadanie: rozsah OSOBY (mená/skratky, A/ALEBO) alebo TEXT (OCR na fotkách). Fuzzy + bez diakritiky.
 class PeopleSearchActivity : SimpleActivity() {
     private val binding by viewBinding(ActivityPeopleSearchBinding::inflate)
     private var persons: List<PersonEntity> = emptyList()
     private var photoPersons: Map<String, Set<Long>> = emptyMap()
     private var meta: Map<String, FaceMediaMeta.Meta> = emptyMap()
-    private val ignoreDiacritics = true // default zapnuté (nastaviteľné neskôr)
+    private val ignoreDiacritics = true
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -41,7 +41,12 @@ class PeopleSearchActivity : SimpleActivity() {
             updateModeLabel()
             runSearch()
         }
+        binding.searchScopeSwitch.setOnCheckedChangeListener { _, _ ->
+            updateScopeLabel()
+            runSearch()
+        }
         updateModeLabel()
+        updateScopeLabel()
         loadIndex()
     }
 
@@ -53,6 +58,12 @@ class PeopleSearchActivity : SimpleActivity() {
     private fun updateModeLabel() {
         binding.searchModeLabel.text = getString(
             if (binding.searchAndSwitch.isChecked) R.string.search_all_together else R.string.search_anyone
+        )
+    }
+
+    private fun updateScopeLabel() {
+        binding.searchScopeLabel.text = getString(
+            if (binding.searchScopeSwitch.isChecked) R.string.search_scope_text else R.string.search_scope_people
         )
     }
 
@@ -82,26 +93,57 @@ class PeopleSearchActivity : SimpleActivity() {
     private fun runSearch() {
         val raw = binding.searchInput.text?.toString().orEmpty()
         val tokens = raw.trim().split(Regex("\\s+")).filter { it.isNotBlank() }
-        if (tokens.isEmpty() || photoPersons.isEmpty()) {
-            showResults(emptyList(), hint = tokens.isEmpty())
+        if (tokens.isEmpty()) {
+            showResults(emptyList(), hint = true)
             return
         }
+        val textMode = binding.searchScopeSwitch.isChecked
+        val and = binding.searchAndSwitch.isChecked
+        ensureBackgroundThread {
+            val results = try {
+                if (textMode) searchText(tokens, and) else searchPeople(tokens, and)
+            } catch (e: Throwable) {
+                emptyList()
+            }
+            runOnUiThread {
+                if (isDestroyed || isFinishing) return@runOnUiThread
+                showResults(results, hint = false)
+            }
+        }
+    }
+
+    private fun searchPeople(tokens: List<String>, and: Boolean): List<String> {
+        if (photoPersons.isEmpty()) return emptyList()
         val normTokens = tokens.map { TextNormalizer.normalize(it, ignoreDiacritics) }.filter { it.isNotEmpty() }
         val tokenSets = normTokens.map { t ->
             persons.filter { TextNormalizer.normalize(it.name ?: "", ignoreDiacritics).contains(t) }
                 .map { it.id }
                 .toSet()
         }
-        val and = binding.searchAndSwitch.isChecked
-        val matched = photoPersons.entries.filter { (_, pids) ->
+        return photoPersons.entries.filter { (_, pids) ->
             if (and) {
                 tokenSets.all { set -> set.any { pids.contains(it) } }
             } else {
                 tokenSets.any { set -> set.any { pids.contains(it) } }
             }
-        }.map { it.key }
-        val sorted = matched.sortedByDescending { meta[it]?.taken ?: 0L }
-        showResults(sorted, hint = false)
+        }.map { it.key }.sortedByDescending { meta[it]?.taken ?: 0L }
+    }
+
+    private fun searchText(tokens: List<String>, and: Boolean): List<String> {
+        val dao = OcrDatabase.getInstance(this).OcrDao()
+        val sets = tokens
+            .map { TextNormalizer.normalize(it, ignoreDiacritics) }
+            .filter { it.isNotEmpty() }
+            .map { dao.search(it).toHashSet() }
+        if (sets.isEmpty()) return emptyList()
+        val combined: Set<String> = if (and) {
+            sets.reduce { acc, s -> acc.intersect(s).toHashSet() }
+        } else {
+            val u = HashSet<String>()
+            sets.forEach { u.addAll(it) }
+            u
+        }
+        return combined.sortedDescending() // názvy IMG_YYYYMMDD… ≈ chronologicky najnovšie prvé
     }
 
     private fun showResults(paths: List<String>, hint: Boolean) {
