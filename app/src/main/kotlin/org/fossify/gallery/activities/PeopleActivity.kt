@@ -15,6 +15,7 @@ import org.fossify.gallery.R
 import org.fossify.gallery.adapters.PeopleAdapter
 import org.fossify.gallery.databinding.ActivityPeopleBinding
 import org.fossify.gallery.faces.FaceAssignmentEntity
+import org.fossify.gallery.faces.FaceFilter
 import org.fossify.gallery.faces.FacesDatabase
 import org.fossify.gallery.faces.PeopleDatabase
 import org.fossify.gallery.faces.Person
@@ -80,9 +81,7 @@ class PeopleActivity : SimpleActivity() {
     private fun buildItems(): List<Person> {
         val facesDao = FacesDatabase.getInstance(this).FaceDao()
         val peopleDao = PeopleDatabase.getInstance(this).PeopleDao()
-        val faces = facesDao.getAllFaces().filter {
-            it.score >= MIN_FACE_SCORE && (it.bboxRight - it.bboxLeft) >= MIN_FACE_SIZE
-        }
+        val faces = facesDao.getAllFaces().filter { FaceFilter.isGood(it) }
         // osoba = LEN potvrdené tváre; žiadne auto-skupiny ani domiešavanie
         return PersonGrouper.confirmedPersons(faces, peopleDao.getPersons(), peopleDao.getAssignments())
     }
@@ -208,7 +207,5 @@ class PeopleActivity : SimpleActivity() {
 
     companion object {
         private const val COLUMNS = 3
-        private const val MIN_FACE_SCORE = 0.8f
-        private const val MIN_FACE_SIZE = 40
     }
 }

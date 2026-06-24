@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
     android:id="@+id/person_pager_root"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
@@ -11,16 +11,85 @@
         android:layout_width="match_parent"
         android:layout_height="match_parent" />
 
-    <ImageView
-        android:id="@+id/pager_back"
-        android:layout_width="48dp"
-        android:layout_height="48dp"
-        android:layout_gravity="top|start"
-        android:layout_margin="8dp"
-        android:background="#66000000"
-        android:contentDescription="@android:string/cancel"
-        android:padding="10dp"
-        android:src="@android:drawable/ic_menu_close_clear_cancel"
-        app:tint="#FFFFFFFF" />
+    <LinearLayout
+        android:id="@+id/pager_top_bar"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top"
+        android:background="#88000000"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingTop="4dp"
+        android:paddingBottom="4dp">
+
+        <ImageView
+            android:id="@+id/pager_back"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="@android:string/cancel"
+            android:padding="12dp"
+            android:src="@android:drawable/ic_menu_close_clear_cancel"
+            android:tint="#FFFFFFFF" />
+
+        <org.fossify.commons.views.MyTextView
+            android:id="@+id/pager_title"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:layout_marginStart="4dp"
+            android:layout_marginEnd="8dp"
+            android:ellipsize="middle"
+            android:maxLines="1"
+            android:textColor="#FFFFFFFF"
+            android:textSize="16sp"
+            tools:text="IMG_20260621_120000.jpg" />
+
+    </LinearLayout>
+
+    <LinearLayout
+        android:id="@+id/pager_bottom_bar"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom"
+        android:background="#88000000"
+        android:gravity="center"
+        android:orientation="horizontal"
+        android:paddingTop="6dp"
+        android:paddingBottom="6dp">
+
+        <ImageView
+            android:id="@+id/pager_share"
+            android:layout_width="56dp"
+            android:layout_height="48dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="@string/share"
+            android:padding="12dp"
+            android:src="@android:drawable/ic_menu_share"
+            android:tint="#FFFFFFFF" />
+
+        <ImageView
+            android:id="@+id/pager_edit"
+            android:layout_width="56dp"
+            android:layout_height="48dp"
+            android:layout_marginStart="24dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="@string/edit"
+            android:padding="12dp"
+            android:src="@android:drawable/ic_menu_edit"
+            android:tint="#FFFFFFFF" />
+
+        <ImageView
+            android:id="@+id/pager_delete"
+            android:layout_width="56dp"
+            android:layout_height="48dp"
+            android:layout_marginStart="24dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="@string/delete_confirm"
+            android:padding="12dp"
+            android:src="@android:drawable/ic_menu_delete"
+            android:tint="#FFFFFFFF" />
+
+    </LinearLayout>
 
 </FrameLayout>

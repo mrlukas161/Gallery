@@ -20,6 +20,7 @@ import org.fossify.gallery.faces.CannotLinkEntity
 import org.fossify.gallery.faces.FaceAssignmentEntity
 import org.fossify.gallery.faces.FaceEmbedder
 import org.fossify.gallery.faces.FaceEntity
+import org.fossify.gallery.faces.FaceFilter
 import org.fossify.gallery.faces.FaceMediaMeta
 import org.fossify.gallery.faces.FaceSorter
 import org.fossify.gallery.faces.FacesDatabase
@@ -223,7 +224,7 @@ class FaceTaggingActivity : SimpleActivity() {
         val peopleDao = PeopleDatabase.getInstance(this).PeopleDao()
         val assigned = peopleDao.getAssignments().map { it.faceId }.toHashSet()
         return facesDao.getAllFaces()
-            .filter { it.score >= MIN_FACE_SCORE && (it.bboxRight - it.bboxLeft) >= MIN_FACE_SIZE }
+            .filter { FaceFilter.isGood(it) }
             .filter { val id = it.id; id != null && !assigned.contains(id) }
             .sortedByDescending { it.score }
             .take(UNLABELED_CAP)
@@ -233,7 +234,7 @@ class FaceTaggingActivity : SimpleActivity() {
         val facesDao = FacesDatabase.getInstance(this).FaceDao()
         val peopleDao = PeopleDatabase.getInstance(this).PeopleDao()
         val all = facesDao.getAllFaces()
-            .filter { it.score >= MIN_FACE_SCORE && (it.bboxRight - it.bboxLeft) >= MIN_FACE_SIZE }
+            .filter { FaceFilter.isGood(it) }
         val assignments = peopleDao.getAssignments()
         val assigned = assignments.map { it.faceId }.toHashSet()
         val mineIds = assignments.filter { it.personId == personId }.map { it.faceId }.toHashSet()
@@ -257,8 +258,7 @@ class FaceTaggingActivity : SimpleActivity() {
             ids.forEach { dao.upsertAssignment(FaceAssignmentEntity(it, personId, true, now)) }
             runOnUiThread {
                 toast(R.string.person_saved)
-                pruneCandidates(ids)
-                adapter?.removeSelected()
+                load() // prepočítaj návrhy z nového vzoru = real-time učenie
             }
         }
     }
@@ -270,16 +270,9 @@ class FaceTaggingActivity : SimpleActivity() {
             val dao = PeopleDatabase.getInstance(this).PeopleDao()
             ids.forEach { dao.insertCannotLink(CannotLinkEntity(it, personId)) }
             runOnUiThread {
-                pruneCandidates(ids)
-                adapter?.removeSelected()
+                load() // prepočítaj (zohľadní cannot-link aj nové potvrdenia)
             }
         }
-    }
-
-    private fun pruneCandidates(ids: List<Long>) {
-        if (allCandidates.isEmpty()) return
-        val s = ids.toHashSet()
-        allCandidates = allCandidates.filter { it.first.id != null && !s.contains(it.first.id) }
     }
 
     private fun assignSelectedToPicked() {
@@ -345,7 +338,5 @@ class FaceTaggingActivity : SimpleActivity() {
         private const val KEY_THRESHOLD = "suggest_threshold_pct"
         private const val DEFAULT_THRESHOLD_PCT = 30
         private const val FACES_SORT_PATH = "faces_tagging"
-        private const val MIN_FACE_SCORE = 0.8f
-        private const val MIN_FACE_SIZE = 40
     }
 }
