@@ -86,6 +86,15 @@
     <string name="ocr_progress">Čítam %1$d / %2$d (ťuknutím zastavíš)</string>
     <string name="ocr_result">Spracované %1$d fotiek, s textom %2$d (ťuknutím znova)</string>
     <string name="ocr_error">Chyba: %1$s (ťuknutím skús znova)</string>
+    <!-- Ignorovanie tvárí + skupiny osôb -->
+    <string name="ignore_faces">Ignorovať</string>
+    <string name="restore">Vrátiť</string>
+    <string name="show_ignored">Zobraziť ignorované</string>
+    <string name="action_groups">Skupiny…</string>
+    <string name="new_group">Nová skupina</string>
+    <string name="all_people">Všetci</string>
+    <string name="filter_group">Filtrovať skupinu</string>
+    <string name="groups_title">Skupiny</string>
     <string name="face_indexing_error">Chyba: %1$s (ťuknutím skús znova)</string>
     <string name="search_settings_hint">Hľadať v nastaveniach</string>
     <string name="check_updates_title">Skontrolovať aktualizácie</string>

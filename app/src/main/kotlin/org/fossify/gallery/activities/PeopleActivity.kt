@@ -14,12 +14,15 @@ import org.fossify.commons.helpers.ensureBackgroundThread
 import org.fossify.gallery.R
 import org.fossify.gallery.adapters.PeopleAdapter
 import org.fossify.gallery.databinding.ActivityPeopleBinding
+import org.fossify.gallery.faces.ExtrasDatabase
 import org.fossify.gallery.faces.FaceAssignmentEntity
 import org.fossify.gallery.faces.FaceFilter
+import org.fossify.gallery.faces.GroupMemberEntity
 import org.fossify.gallery.faces.FacesDatabase
 import org.fossify.gallery.faces.PeopleDatabase
 import org.fossify.gallery.faces.Person
 import org.fossify.gallery.faces.PersonEntity
+import org.fossify.gallery.faces.PersonGroupEntity
 import org.fossify.gallery.faces.PersonGrouper
 import org.fossify.gallery.helpers.GridZoom
 
@@ -27,6 +30,8 @@ class PeopleActivity : SimpleActivity() {
     private val binding by viewBinding(ActivityPeopleBinding::inflate)
 
     private val prefs by lazy { getSharedPreferences("galeria_faces", android.content.Context.MODE_PRIVATE) }
+    private var filterGroupId: Long = -1L
+    private var filterGroupName: String? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -39,6 +44,7 @@ class PeopleActivity : SimpleActivity() {
     override fun onResume() {
         super.onResume()
         setupTopAppBar(binding.peopleAppbar, NavigationIcon.Arrow)
+        binding.peopleToolbar.title = filterGroupName ?: getString(R.string.people)
         binding.peopleToolbar.menu.clear()
         binding.peopleToolbar.inflateMenu(R.menu.menu_people)
         binding.peopleToolbar.setOnMenuItemClickListener { item ->
@@ -50,6 +56,11 @@ class PeopleActivity : SimpleActivity() {
 
                 R.id.search_people -> {
                     startActivity(Intent(this, PeopleSearchActivity::class.java))
+                    true
+                }
+
+                R.id.groups_filter -> {
+                    showGroupFilter()
                     true
                 }
 
@@ -88,7 +99,10 @@ class PeopleActivity : SimpleActivity() {
         val peopleDao = PeopleDatabase.getInstance(this).PeopleDao()
         val faces = facesDao.getAllFaces().filter { FaceFilter.isGood(it) }
         // osoba = LEN potvrdené tváre; žiadne auto-skupiny ani domiešavanie
-        return PersonGrouper.confirmedPersons(faces, peopleDao.getPersons(), peopleDao.getAssignments())
+        val all = PersonGrouper.confirmedPersons(faces, peopleDao.getPersons(), peopleDao.getAssignments())
+        if (filterGroupId < 0) return all
+        val members = ExtrasDatabase.getInstance(this).ExtrasDao().getMembers(filterGroupId).toHashSet()
+        return all.filter { p -> p.id != null && members.contains(p.id) }
     }
 
     private fun openPerson(person: Person) {
@@ -104,6 +118,7 @@ class PeopleActivity : SimpleActivity() {
         if (person.isConfirmed) {
             val options = arrayOf(
                 getString(R.string.action_rename),
+                getString(R.string.action_groups),
                 getString(R.string.action_merge),
                 getString(R.string.action_delete_person),
             )
@@ -112,8 +127,9 @@ class PeopleActivity : SimpleActivity() {
                 .setItems(options) { _, which ->
                     when (which) {
                         0 -> renamePerson(person)
-                        1 -> mergePerson(person)
-                        2 -> deletePerson(person)
+                        1 -> manageGroups(person)
+                        2 -> mergePerson(person)
+                        3 -> deletePerson(person)
                     }
                 }
                 .show()
@@ -194,6 +210,77 @@ class PeopleActivity : SimpleActivity() {
             }
             .setNegativeButton(android.R.string.cancel, null)
             .show()
+    }
+
+    private fun manageGroups(person: Person) {
+        val pid = person.id ?: return
+        ensureBackgroundThread {
+            val dao = ExtrasDatabase.getInstance(this).ExtrasDao()
+            val groups = dao.getGroups()
+            val memberOf = dao.getGroupsForPerson(pid).toHashSet()
+            runOnUiThread {
+                if (isDestroyed || isFinishing) return@runOnUiThread
+                if (groups.isEmpty()) {
+                    promptName(null) { name -> createGroupWith(name, pid) }
+                    return@runOnUiThread
+                }
+                val names = groups.map { it.name }.toTypedArray()
+                val checked = groups.map { memberOf.contains(it.id) }.toBooleanArray()
+                AlertDialog.Builder(this)
+                    .setTitle(R.string.action_groups)
+                    .setMultiChoiceItems(names, checked) { _, which, isChecked -> checked[which] = isChecked }
+                    .setPositiveButton(android.R.string.ok) { _, _ ->
+                        ensureBackgroundThread {
+                            groups.forEachIndexed { i, g ->
+                                val want = checked[i]
+                                val was = memberOf.contains(g.id)
+                                if (want && !was) dao.addMember(GroupMemberEntity(g.id, pid))
+                                else if (!want && was) dao.removeMember(g.id, pid)
+                            }
+                        }
+                    }
+                    .setNeutralButton(R.string.new_group) { _, _ ->
+                        promptName(null) { name -> createGroupWith(name, pid) }
+                    }
+                    .setNegativeButton(android.R.string.cancel, null)
+                    .show()
+            }
+        }
+    }
+
+    private fun createGroupWith(name: String, personId: Long) {
+        ensureBackgroundThread {
+            val dao = ExtrasDatabase.getInstance(this).ExtrasDao()
+            val gid = dao.insertGroup(PersonGroupEntity(name = name, createdAt = System.currentTimeMillis()))
+            dao.addMember(GroupMemberEntity(gid, personId))
+            runOnUiThread { toast(R.string.person_saved) }
+        }
+    }
+
+    private fun showGroupFilter() {
+        ensureBackgroundThread {
+            val groups = ExtrasDatabase.getInstance(this).ExtrasDao().getGroups()
+            runOnUiThread {
+                if (isDestroyed || isFinishing) return@runOnUiThread
+                val labels = ArrayList<String>()
+                labels.add(getString(R.string.all_people))
+                groups.forEach { labels.add(it.name) }
+                AlertDialog.Builder(this)
+                    .setTitle(R.string.filter_group)
+                    .setItems(labels.toTypedArray()) { _, which ->
+                        if (which == 0) {
+                            filterGroupId = -1L
+                            filterGroupName = null
+                        } else {
+                            filterGroupId = groups[which - 1].id
+                            filterGroupName = groups[which - 1].name
+                        }
+                        binding.peopleToolbar.title = filterGroupName ?: getString(R.string.people)
+                        loadPeople()
+                    }
+                    .show()
+            }
+        }
     }
 
     private fun promptName(initial: String?, onName: (String) -> Unit) {

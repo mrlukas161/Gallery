@@ -17,11 +17,13 @@ import org.fossify.gallery.databinding.ActivityFaceTaggingBinding
 import org.fossify.gallery.dialogs.ChangeSortingDialog
 import org.fossify.gallery.extensions.config
 import org.fossify.gallery.faces.CannotLinkEntity
+import org.fossify.gallery.faces.ExtrasDatabase
 import org.fossify.gallery.faces.FaceAssignmentEntity
 import org.fossify.gallery.faces.FaceEmbedder
 import org.fossify.gallery.faces.FaceEntity
 import org.fossify.gallery.faces.FaceFilter
 import org.fossify.gallery.faces.FaceMediaMeta
+import org.fossify.gallery.faces.IgnoredFaceEntity
 import org.fossify.gallery.faces.FaceSorter
 import org.fossify.gallery.faces.FacesDatabase
 import org.fossify.gallery.faces.PeopleDatabase
@@ -44,6 +46,7 @@ class FaceTaggingActivity : SimpleActivity() {
     private var unlabeledFaces: List<FaceEntity> = emptyList()
     private var meta: Map<String, FaceMediaMeta.Meta> = emptyMap()
     private var chronological = false
+    private var showingIgnored = false
     private val prefs by lazy { getSharedPreferences(PREFS, Context.MODE_PRIVATE) }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -78,6 +81,10 @@ class FaceTaggingActivity : SimpleActivity() {
             isVisible = mode == MODE_SUGGESTIONS
             isChecked = chronological
         }
+        binding.taggingToolbar.menu.findItem(R.id.show_ignored)?.apply {
+            isVisible = mode != MODE_SUGGESTIONS
+            isChecked = showingIgnored
+        }
         binding.taggingToolbar.setOnMenuItemClickListener { item ->
             when (item.itemId) {
                 R.id.select_all -> {
@@ -102,6 +109,14 @@ class FaceTaggingActivity : SimpleActivity() {
                     true
                 }
 
+                R.id.show_ignored -> {
+                    showingIgnored = !showingIgnored
+                    item.isChecked = showingIgnored
+                    setupBottomBar()
+                    load()
+                    true
+                }
+
                 else -> false
             }
         }
@@ -116,8 +131,13 @@ class FaceTaggingActivity : SimpleActivity() {
             binding.taggingBtnSecondary.setOnClickListener { rejectSelected() }
         } else {
             binding.taggingBtnPrimary.text = getString(R.string.assign_to_person)
-            binding.taggingBtnSecondary.visibility = View.GONE
+            binding.taggingBtnSecondary.visibility = View.VISIBLE
+            binding.taggingBtnSecondary.text =
+                getString(if (showingIgnored) R.string.restore else R.string.ignore_faces)
             binding.taggingBtnPrimary.setOnClickListener { assignSelectedToPicked() }
+            binding.taggingBtnSecondary.setOnClickListener {
+                if (showingIgnored) unignoreSelected() else ignoreSelected()
+            }
         }
         updateCount(0)
     }
@@ -226,11 +246,17 @@ class FaceTaggingActivity : SimpleActivity() {
         val facesDao = FacesDatabase.getInstance(this).FaceDao()
         val peopleDao = PeopleDatabase.getInstance(this).PeopleDao()
         val assigned = peopleDao.getAssignments().map { it.faceId }.toHashSet()
-        return facesDao.getAllFaces()
-            .filter { FaceFilter.isGood(it) }
-            .filter { val id = it.id; id != null && !assigned.contains(id) }
-            .sortedByDescending { it.score }
-            .take(UNLABELED_CAP)
+        val ignored = ExtrasDatabase.getInstance(this).ExtrasDao().getIgnoredIds().toHashSet()
+        val all = facesDao.getAllFaces().filter { FaceFilter.isGood(it) }
+        return if (showingIgnored) {
+            all.filter { val id = it.id; id != null && ignored.contains(id) }
+                .sortedByDescending { it.score }
+                .take(UNLABELED_CAP)
+        } else {
+            all.filter { val id = it.id; id != null && !assigned.contains(id) && !ignored.contains(id) }
+                .sortedByDescending { it.score }
+                .take(UNLABELED_CAP)
+        }
     }
 
     private fun computeCandidates(): List<Pair<FaceEntity, Float>> {
@@ -246,8 +272,9 @@ class FaceTaggingActivity : SimpleActivity() {
         val anchorEmb = peopleDao.getAnchorEmbeddings(personId).map { FaceEmbedder.toFloats(it) }
         val centroid = PersonGrouper.centroidOf(confirmedEmb + anchorEmb) ?: return emptyList()
         val cannot = peopleDao.getCannotLinks().filter { it.personId == personId }.map { it.faceId }.toHashSet()
+        val ignored = ExtrasDatabase.getInstance(this).ExtrasDao().getIgnoredIds().toHashSet()
         return all
-            .filter { val id = it.id; id != null && !assigned.contains(id) && !cannot.contains(id) }
+            .filter { val id = it.id; id != null && !assigned.contains(id) && !cannot.contains(id) && !ignored.contains(id) }
             .mapNotNull { f -> f.embedding?.let { b -> f to PersonGrouper.cosine(FaceEmbedder.toFloats(b), centroid) } }
             .sortedByDescending { it.second }
     }
@@ -305,13 +332,37 @@ class FaceTaggingActivity : SimpleActivity() {
     private fun doAssign(ids: List<Long>, existingId: Long?, newName: String?) {
         ensureBackgroundThread {
             val dao = PeopleDatabase.getInstance(this).PeopleDao()
+            val extras = ExtrasDatabase.getInstance(this).ExtrasDao()
             val now = System.currentTimeMillis()
             val targetId = existingId ?: dao.insertPerson(PersonEntity(name = newName, createdAt = now))
-            ids.forEach { dao.upsertAssignment(FaceAssignmentEntity(it, targetId, true, now)) }
+            ids.forEach {
+                dao.upsertAssignment(FaceAssignmentEntity(it, targetId, true, now))
+                extras.deleteIgnored(it) // priradenie zruší prípadné ignorovanie
+            }
             runOnUiThread {
                 toast(R.string.person_saved)
                 adapter?.removeSelected()
             }
+        }
+    }
+
+    private fun ignoreSelected() {
+        val ids = adapter?.selectedIds().orEmpty()
+        if (ids.isEmpty()) return
+        ensureBackgroundThread {
+            val dao = ExtrasDatabase.getInstance(this).ExtrasDao()
+            ids.forEach { dao.insertIgnored(IgnoredFaceEntity(it)) }
+            runOnUiThread { adapter?.removeSelected() }
+        }
+    }
+
+    private fun unignoreSelected() {
+        val ids = adapter?.selectedIds().orEmpty()
+        if (ids.isEmpty()) return
+        ensureBackgroundThread {
+            val dao = ExtrasDatabase.getInstance(this).ExtrasDao()
+            ids.forEach { dao.deleteIgnored(it) }
+            runOnUiThread { adapter?.removeSelected() }
         }
     }
 

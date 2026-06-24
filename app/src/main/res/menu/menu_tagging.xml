@@ -21,4 +21,9 @@
         android:checkable="true"
         android:title="@string/chronological"
         app:showAsAction="never" />
+    <item
+        android:id="@+id/show_ignored"
+        android:checkable="true"
+        android:title="@string/show_ignored"
+        app:showAsAction="never" />
 </menu>
