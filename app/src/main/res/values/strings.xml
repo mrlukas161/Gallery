@@ -98,6 +98,15 @@
     <!-- Mapa -->
     <string name="map_title">Mapa</string>
     <string name="map_indexing">Indexujem polohu %1$d / %2$d</string>
+    <!-- Indexovanie na pozadí -->
+    <string name="indexing_running">Indexujem…</string>
+    <string name="indexing_faces">Tváre</string>
+    <string name="indexing_geo">Poloha</string>
+    <string name="indexing_ocr">Text (OCR)</string>
+    <string name="indexing_started_bg">Spustené na pozadí (sleduj notifikáciu)</string>
+    <string name="auto_index_title">Automatické indexovanie</string>
+    <string name="auto_index_on">Zapnuté — tváre a poloha sa indexujú samé na pozadí</string>
+    <string name="auto_index_off">Vypnuté (indexovať len ručne)</string>
     <string name="face_indexing_error">Chyba: %1$s (ťuknutím skús znova)</string>
     <string name="search_settings_hint">Hľadať v nastaveniach</string>
     <string name="check_updates_title">Skontrolovať aktualizácie</string>

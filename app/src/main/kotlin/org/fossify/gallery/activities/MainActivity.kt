@@ -272,6 +272,11 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
         updateWidgets()
         registerFileUpdateListener()
 
+        // automatické indexovanie tvárí + polohy na pozadí (raz za spustenie), ak je zapnuté
+        if (getSharedPreferences("galeria_faces", android.content.Context.MODE_PRIVATE).getBoolean("auto_index", true)) {
+            org.fossify.gallery.services.IndexingService.startAutoOnce(this)
+        }
+
         binding.directoriesSwitchSearching.setOnClickListener {
             launchSearchActivity()
         }

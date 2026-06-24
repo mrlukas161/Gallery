@@ -114,6 +114,7 @@ class SettingsActivity : SimpleActivity() {
         setupEmptyRecycleBin()
         updateTextColors(binding.settingsHolder)
         setupClearCache()
+        setupAutoIndex()
         setupFaceIndexing()
         setupPicasaImport()
         setupOcrIndexing()
@@ -880,31 +881,8 @@ class SettingsActivity : SimpleActivity() {
                 FaceIndexer.stop()
                 updateFaceIndexingSummary()
             } else {
-                binding.settingsFaceIndexingSummary.text = getString(R.string.face_indexing_starting)
-                FaceIndexer.index(
-                    this,
-                    onProgress = { done, total ->
-                        runOnUiThread {
-                            if (!isDestroyed) {
-                                binding.settingsFaceIndexingSummary.text = getString(R.string.face_indexing_progress, done, total)
-                            }
-                        }
-                    },
-                    onDone = { faces, photos, info ->
-                        runOnUiThread {
-                            if (!isDestroyed) {
-                                binding.settingsFaceIndexingSummary.text = getString(R.string.face_indexing_result_persons, faces, photos, info)
-                            }
-                        }
-                    },
-                    onError = { msg ->
-                        runOnUiThread {
-                            if (!isDestroyed) {
-                                binding.settingsFaceIndexingSummary.text = getString(R.string.face_indexing_error, msg)
-                            }
-                        }
-                    },
-                )
+                org.fossify.gallery.services.IndexingService.start(this, org.fossify.gallery.services.IndexingService.TASK_FACES)
+                binding.settingsFaceIndexingSummary.text = getString(R.string.indexing_started_bg)
             }
         }
     }
@@ -1002,31 +980,8 @@ class SettingsActivity : SimpleActivity() {
                 org.fossify.gallery.faces.OcrIndexer.stop()
                 updateOcrSummary()
             } else {
-                binding.settingsOcrSummary.text = getString(R.string.ocr_starting)
-                org.fossify.gallery.faces.OcrIndexer.index(
-                    this,
-                    onProgress = { done, total ->
-                        runOnUiThread {
-                            if (!isDestroyed) {
-                                binding.settingsOcrSummary.text = getString(R.string.ocr_progress, done, total)
-                            }
-                        }
-                    },
-                    onDone = { indexed, withText ->
-                        runOnUiThread {
-                            if (!isDestroyed) {
-                                binding.settingsOcrSummary.text = getString(R.string.ocr_result, indexed, withText)
-                            }
-                        }
-                    },
-                    onError = { msg ->
-                        runOnUiThread {
-                            if (!isDestroyed) {
-                                binding.settingsOcrSummary.text = getString(R.string.ocr_error, msg)
-                            }
-                        }
-                    },
-                )
+                org.fossify.gallery.services.IndexingService.start(this, org.fossify.gallery.services.IndexingService.TASK_OCR)
+                binding.settingsOcrSummary.text = getString(R.string.indexing_started_bg)
             }
         }
     }
@@ -1054,6 +1009,22 @@ class SettingsActivity : SimpleActivity() {
                 }
             }
         }
+    }
+
+    private fun setupAutoIndex() {
+        updateAutoIndexSummary()
+        binding.settingsAutoIndexHolder.setOnClickListener {
+            val prefs = getSharedPreferences("galeria_faces", android.content.Context.MODE_PRIVATE)
+            val now = !prefs.getBoolean("auto_index", true)
+            prefs.edit().putBoolean("auto_index", now).apply()
+            updateAutoIndexSummary()
+            if (now) org.fossify.gallery.services.IndexingService.startAutoOnce(this)
+        }
+    }
+
+    private fun updateAutoIndexSummary() {
+        val on = getSharedPreferences("galeria_faces", android.content.Context.MODE_PRIVATE).getBoolean("auto_index", true)
+        binding.settingsAutoIndexSummary.text = getString(if (on) R.string.auto_index_on else R.string.auto_index_off)
     }
 
     private fun setupClearCache() {

@@ -25,6 +25,7 @@ object FaceIndexer {
 
     fun index(
         context: Context,
+        notify: Boolean = true,
         onProgress: (done: Int, total: Int) -> Unit,
         onDone: (faces: Int, photos: Int, info: String) -> Unit,
         onError: (message: String) -> Unit,
@@ -39,7 +40,7 @@ object FaceIndexer {
                 val dao = FacesDatabase.getInstance(appCtx).FaceDao()
                 detector = FaceDetectionHelper(appCtx)
                 embedder = FaceEmbedder(appCtx)
-                ensureChannel(appCtx)
+                if (notify) ensureChannel(appCtx)
 
                 val processed = dao.getProcessedPaths().toHashSet()
                 val todo = queryImages(appCtx).filter { it.second !in processed }
@@ -77,7 +78,7 @@ object FaceIndexer {
                     done++
                     if (done % 5 == 0 || done == total) {
                         onProgress(done, total)
-                        notifyProgress(appCtx, done, total)
+                        if (notify) notifyProgress(appCtx, done, total)
                     }
                 }
                 cancelNotification(appCtx)

@@ -27,6 +27,7 @@ object OcrIndexer {
 
     fun index(
         context: Context,
+        notify: Boolean = true,
         onProgress: (done: Int, total: Int) -> Unit,
         onDone: (indexed: Int, withText: Int) -> Unit,
         onError: (message: String) -> Unit,
@@ -40,7 +41,7 @@ object OcrIndexer {
                 val dao = OcrDatabase.getInstance(appCtx).OcrDao()
                 engine = OcrEngine(appCtx)
                 if (!engine.isReady()) throw IllegalStateException("Tesseract sa nepodarilo inicializovať (slk)")
-                ensureChannel(appCtx)
+                if (notify) ensureChannel(appCtx)
 
                 val processed = dao.getIndexedPaths().toHashSet()
                 val todo = queryImages(appCtx).filter { it !in processed }
@@ -65,7 +66,7 @@ object OcrIndexer {
                     done++
                     if (done % 3 == 0 || done == total) {
                         onProgress(done, total)
-                        notifyProgress(appCtx, done, total)
+                        if (notify) notifyProgress(appCtx, done, total)
                     }
                 }
                 cancelNotification(appCtx)

@@ -1045,6 +1045,29 @@
             </RelativeLayout>
 
             <RelativeLayout
+                android:id="@+id/settings_auto_index_holder"
+                style="@style/SettingsHolderTextViewStyle"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content">
+
+                <org.fossify.commons.views.MyTextView
+                    android:id="@+id/settings_auto_index_label"
+                    style="@style/SettingsTextLabelStyle"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/auto_index_title" />
+
+                <org.fossify.commons.views.MyTextView
+                    android:id="@+id/settings_auto_index_summary"
+                    style="@style/SettingsTextValueStyle"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_below="@+id/settings_auto_index_label"
+                    tools:text="Zapnuté" />
+
+            </RelativeLayout>
+
+            <RelativeLayout
                 android:id="@+id/settings_face_indexing_holder"
                 style="@style/SettingsHolderTextViewStyle"
                 android:layout_width="match_parent"
