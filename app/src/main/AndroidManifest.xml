@@ -631,5 +631,17 @@
             android:exported="false"
             android:parentActivityName=".activities.PeopleActivity" />
 
+        <activity
+            android:name=".activities.MapActivity"
+            android:configChanges="orientation|screenSize"
+            android:exported="false"
+            android:parentActivityName=".activities.PeopleActivity" />
+
+        <activity
+            android:name=".activities.PhotoGridActivity"
+            android:configChanges="orientation"
+            android:exported="false"
+            android:parentActivityName=".activities.MapActivity" />
+
     </application>
 </manifest>

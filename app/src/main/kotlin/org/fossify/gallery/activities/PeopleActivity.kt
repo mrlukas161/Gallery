@@ -64,6 +64,11 @@ class PeopleActivity : SimpleActivity() {
                     true
                 }
 
+                R.id.show_map -> {
+                    startActivity(Intent(this, MapActivity::class.java))
+                    true
+                }
+
                 else -> false
             }
         }

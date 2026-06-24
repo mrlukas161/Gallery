@@ -95,6 +95,9 @@
     <string name="all_people">Všetci</string>
     <string name="filter_group">Filtrovať skupinu</string>
     <string name="groups_title">Skupiny</string>
+    <!-- Mapa -->
+    <string name="map_title">Mapa</string>
+    <string name="map_indexing">Indexujem polohu %1$d / %2$d</string>
     <string name="face_indexing_error">Chyba: %1$s (ťuknutím skús znova)</string>
     <string name="search_settings_hint">Hľadať v nastaveniach</string>
     <string name="check_updates_title">Skontrolovať aktualizácie</string>

@@ -7,6 +7,11 @@
         android:title="@string/search_people_title"
         app:showAsAction="ifRoom" />
     <item
+        android:id="@+id/show_map"
+        android:icon="@android:drawable/ic_menu_mapmode"
+        android:title="@string/map_title"
+        app:showAsAction="ifRoom" />
+    <item
         android:id="@+id/groups_filter"
         android:icon="@android:drawable/ic_menu_agenda"
         android:title="@string/groups_title"

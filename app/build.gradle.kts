@@ -191,6 +191,7 @@ dependencies {
     implementation(libs.mediapipe.tasks.vision)
     implementation(libs.tensorflow.lite)
     implementation("cz.adaptech.tesseract4android:tesseract4android-openmp:4.7.0")
+    implementation("org.osmdroid:osmdroid-android:6.1.18")
     ksp(libs.androidx.room.compiler)
     detektPlugins(libs.compose.detekt)
 }
