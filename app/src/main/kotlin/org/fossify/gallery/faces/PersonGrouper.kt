@@ -25,7 +25,10 @@ object PersonGrouper {
             val fs = (byPerson[p.id] ?: arrayListOf()).sortedByDescending { it.score }
             val ids = fs.mapNotNull { it.id }.toSet()
             Person(p.id, p.name, fs, ids) // všetky priradené tváre sú "potvrdené"
-        }.sortedWith(compareBy(nullsLast<String>()) { it.name?.lowercase() })
+        }.sortedWith(
+            // priorita: najprv osoby s najviac fotkami, potom abecedne
+            compareByDescending<Person> { it.faceCount }.thenBy { (it.name ?: "").lowercase() }
+        )
     }
 
     // centroid osoby = priemer (potvrdené tváre ⊕ Picasa anchory), L2-normalizovaný

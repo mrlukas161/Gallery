@@ -28,6 +28,7 @@ import org.fossify.gallery.faces.PeopleDatabase
 import org.fossify.gallery.faces.PersonEntity
 import org.fossify.gallery.faces.PersonGrouper
 import org.fossify.gallery.helpers.DragSelectListener
+import org.fossify.gallery.helpers.GridZoom
 
 // UNLABELED   = všetky NEoznačené tváre, multi-výber -> priradiť k osobe (triedenie jednotným dialógom)
 // SUGGESTIONS = kandidáti blízki centroidu osoby, posuvník podobnosti, multi-výber -> "Toto je X" / "Toto nie je";
@@ -51,7 +52,9 @@ class FaceTaggingActivity : SimpleActivity() {
         mode = intent.getIntExtra(MODE, MODE_UNLABELED)
         personId = intent.getLongExtra(PERSON_ID, -1L)
         personName = intent.getStringExtra(PERSON_NAME)
-        binding.taggingGrid.layoutManager = GridLayoutManager(this, COLUMNS)
+        val lm = GridLayoutManager(this, prefs.getInt("tagging_columns", COLUMNS))
+        binding.taggingGrid.layoutManager = lm
+        GridZoom.setup(binding.taggingGrid, lm, prefs, "tagging_columns")
         val dl = DragSelectListener { from, to -> adapter?.selectRange(from, to) }
         dragListener = dl
         binding.taggingGrid.addOnItemTouchListener(dl)

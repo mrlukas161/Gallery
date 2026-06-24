@@ -18,6 +18,10 @@ import org.fossify.gallery.faces.FacesDatabase
 import org.fossify.gallery.faces.OcrDatabase
 import org.fossify.gallery.faces.PeopleDatabase
 import org.fossify.gallery.faces.PersonEntity
+import org.fossify.gallery.helpers.GridZoom
+import org.fossify.gallery.helpers.PATH
+import org.fossify.gallery.helpers.SHOW_ALL
+import org.fossify.gallery.helpers.SKIP_AUTHENTICATION
 import org.fossify.gallery.helpers.TextNormalizer
 
 // Jednotné hľadanie: rozsah OSOBY (mená/skratky, A/ALEBO) alebo TEXT (OCR na fotkách). Fuzzy + bez diakritiky.
@@ -27,11 +31,14 @@ class PeopleSearchActivity : SimpleActivity() {
     private var photoPersons: Map<String, Set<Long>> = emptyMap()
     private var meta: Map<String, FaceMediaMeta.Meta> = emptyMap()
     private val ignoreDiacritics = true
+    private val prefs by lazy { getSharedPreferences("galeria_faces", android.content.Context.MODE_PRIVATE) }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(binding.root)
-        binding.searchGrid.layoutManager = GridLayoutManager(this, COLUMNS)
+        val lm = GridLayoutManager(this, prefs.getInt("search_columns", COLUMNS))
+        binding.searchGrid.layoutManager = lm
+        GridZoom.setup(binding.searchGrid, lm, prefs, "search_columns")
         binding.searchInput.addTextChangedListener(object : TextWatcher {
             override fun afterTextChanged(s: Editable?) = runSearch()
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
@@ -156,14 +163,16 @@ class PeopleSearchActivity : SimpleActivity() {
         }
         binding.searchCount.text = getString(R.string.search_count, paths.size)
         val list = ArrayList(paths)
-        binding.searchGrid.adapter = PersonPhotosAdapter(this, list) { path -> openPager(list, path) }
+        binding.searchGrid.adapter = PersonPhotosAdapter(this, list) { path -> openPhoto(path) }
     }
 
-    private fun openPager(paths: ArrayList<String>, path: String) {
-        val intent = Intent(this, PersonPhotoPagerActivity::class.java)
-        intent.putStringArrayListExtra(PersonPhotoPagerActivity.PATHS, paths)
-        intent.putExtra(PersonPhotoPagerActivity.START_INDEX, paths.indexOf(path).coerceAtLeast(0))
-        startActivity(intent)
+    private fun openPhoto(path: String) {
+        Intent(this, ViewPagerActivity::class.java).apply {
+            putExtra(PATH, path)
+            putExtra(SKIP_AUTHENTICATION, true)
+            putExtra(SHOW_ALL, false)
+            startActivity(this)
+        }
     }
 
     companion object {

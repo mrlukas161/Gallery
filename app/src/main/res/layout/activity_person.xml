@@ -20,7 +20,7 @@
 
     </org.fossify.commons.views.MyAppBarLayout>
 
-    <androidx.recyclerview.widget.RecyclerView
+    <org.fossify.commons.views.MyRecyclerView
         android:id="@+id/person_grid"
         android:layout_width="match_parent"
         android:layout_height="match_parent"

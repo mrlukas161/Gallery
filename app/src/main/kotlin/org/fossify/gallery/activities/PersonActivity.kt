@@ -23,6 +23,10 @@ import org.fossify.gallery.faces.FaceSorter
 import org.fossify.gallery.faces.FacesDatabase
 import org.fossify.gallery.faces.PeopleDatabase
 import org.fossify.gallery.faces.PersonEntity
+import org.fossify.gallery.helpers.GridZoom
+import org.fossify.gallery.helpers.PATH
+import org.fossify.gallery.helpers.SHOW_ALL
+import org.fossify.gallery.helpers.SKIP_AUTHENTICATION
 
 class PersonActivity : SimpleActivity() {
     private val binding by viewBinding(ActivityPersonBinding::inflate)
@@ -34,6 +38,7 @@ class PersonActivity : SimpleActivity() {
     private var photoPaths: ArrayList<String> = arrayListOf()
     private var meta: Map<String, FaceMediaMeta.Meta> = emptyMap()
     private var showFullPhotos = false
+    private val prefs by lazy { getSharedPreferences("galeria_faces", android.content.Context.MODE_PRIVATE) }
 
     private fun sortPath() = "person_$personId"
 
@@ -44,7 +49,9 @@ class PersonActivity : SimpleActivity() {
         personName = intent.getStringExtra(PERSON_NAME)
         manualIds = intent.getLongArrayExtra(MANUAL_IDS)?.toSet() ?: emptySet()
         val faceIds = intent.getLongArrayExtra(FACE_IDS)?.toList() ?: emptyList()
-        binding.personGrid.layoutManager = GridLayoutManager(this, COLUMNS)
+        val lm = GridLayoutManager(this, prefs.getInt("person_columns", COLUMNS))
+        binding.personGrid.layoutManager = lm
+        GridZoom.setup(binding.personGrid, lm, prefs, "person_columns")
         loadFaces(faceIds)
     }
 
@@ -108,7 +115,6 @@ class PersonActivity : SimpleActivity() {
         photoPaths = ArrayList(
             FaceSorter.sortPaths(loadedFaces.map { it.mediaFullPath }.distinct(), meta, sorting).take(2000)
         )
-        binding.personGrid.layoutManager = GridLayoutManager(this, COLUMNS)
         if (showFullPhotos) {
             binding.personGrid.adapter = PersonPhotosAdapter(this, photoPaths) { path -> openPhoto(path) }
         } else {
@@ -204,11 +210,13 @@ class PersonActivity : SimpleActivity() {
     }
 
     private fun openPhoto(path: String) {
-        val idx = photoPaths.indexOf(path).coerceAtLeast(0)
-        val intent = Intent(this, PersonPhotoPagerActivity::class.java)
-        intent.putStringArrayListExtra(PersonPhotoPagerActivity.PATHS, photoPaths)
-        intent.putExtra(PersonPhotoPagerActivity.START_INDEX, idx)
-        startActivity(intent)
+        // otvor v ŠTANDARDNOM prehliadači Fossify (názov, vlastnosti, kopírovať/presunúť, mapa, tlač…)
+        Intent(this, ViewPagerActivity::class.java).apply {
+            putExtra(PATH, path)
+            putExtra(SKIP_AUTHENTICATION, true)
+            putExtra(SHOW_ALL, false)
+            startActivity(this)
+        }
     }
 
     private fun promptName(initial: String?, onName: (String) -> Unit) {

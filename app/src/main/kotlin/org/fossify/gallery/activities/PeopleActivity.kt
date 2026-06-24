@@ -21,14 +21,19 @@ import org.fossify.gallery.faces.PeopleDatabase
 import org.fossify.gallery.faces.Person
 import org.fossify.gallery.faces.PersonEntity
 import org.fossify.gallery.faces.PersonGrouper
+import org.fossify.gallery.helpers.GridZoom
 
 class PeopleActivity : SimpleActivity() {
     private val binding by viewBinding(ActivityPeopleBinding::inflate)
 
+    private val prefs by lazy { getSharedPreferences("galeria_faces", android.content.Context.MODE_PRIVATE) }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(binding.root)
-        binding.peopleGrid.layoutManager = GridLayoutManager(this, COLUMNS)
+        val lm = GridLayoutManager(this, prefs.getInt("people_columns", COLUMNS))
+        binding.peopleGrid.layoutManager = lm
+        GridZoom.setup(binding.peopleGrid, lm, prefs, "people_columns")
     }
 
     override fun onResume() {
