@@ -35,13 +35,15 @@ class MapActivity : SimpleActivity() {
     private val binding by viewBinding(ActivityMapBinding::inflate)
     private var points: List<GeoEntity> = emptyList()
     private var filterPaths: HashSet<String>? = null
+    private val iconCache = HashMap<Int, BitmapDrawable>()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         Configuration.getInstance().load(this, getSharedPreferences("osmdroid", Context.MODE_PRIVATE))
         Configuration.getInstance().userAgentValue = packageName
         setContentView(binding.root)
-        filterPaths = intent.getStringArrayListExtra(FILTER_PATHS)?.toHashSet()
+        filterPaths = org.fossify.gallery.helpers.PathTransfer.forMap?.toHashSet()
+        org.fossify.gallery.helpers.PathTransfer.forMap = null
         binding.mapView.setTileSource(TileSourceFactory.MAPNIK)
         binding.mapView.setMultiTouchControls(true)
         binding.mapView.controller.setZoom(6.0)
@@ -131,9 +133,9 @@ class MapActivity : SimpleActivity() {
             marker.position = GeoPoint(cluster.lat, cluster.lon)
             marker.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
             marker.icon = makeClusterIcon(cluster.paths.size)
-            val paths = cluster.paths
+            val cl = cluster
             marker.setOnMarkerClickListener { _, _ ->
-                openCluster(paths)
+                onClusterTap(cl)
                 true
             }
             binding.mapView.overlays.add(marker)
@@ -160,10 +162,32 @@ class MapActivity : SimpleActivity() {
         }
     }
 
-    private fun openCluster(paths: List<String>) {
-        val intent = Intent(this, PhotoGridActivity::class.java)
-        intent.putStringArrayListExtra(PhotoGridActivity.PATHS, ArrayList(paths))
-        startActivity(intent)
+    // Klik na cluster: 1 fotka -> otvor; viac -> PRIBLÍŽ mapu (rozpadne sa na menšie); na maxime zoomu -> mriežka.
+    private fun onClusterTap(cluster: Cluster) {
+        if (cluster.paths.size == 1) {
+            openPhotoStandard(cluster.paths.first())
+            return
+        }
+        val zoom = binding.mapView.zoomLevelDouble
+        if (zoom < MAX_ZOOM) {
+            binding.mapView.controller.animateTo(
+                GeoPoint(cluster.lat, cluster.lon),
+                (zoom + 2.0).coerceAtMost(MAX_ZOOM),
+                500L,
+            )
+        } else {
+            org.fossify.gallery.helpers.PathTransfer.forGrid = cluster.paths.take(1000)
+            startActivity(Intent(this, PhotoGridActivity::class.java))
+        }
+    }
+
+    private fun openPhotoStandard(path: String) {
+        Intent(this, ViewPagerActivity::class.java).apply {
+            putExtra(org.fossify.gallery.helpers.PATH, path)
+            putExtra(org.fossify.gallery.helpers.SKIP_AUTHENTICATION, true)
+            putExtra(org.fossify.gallery.helpers.SHOW_ALL, false)
+            startActivity(this)
+        }
     }
 
     private data class Cluster(val lat: Double, val lon: Double, val paths: List<String>)
@@ -183,6 +207,7 @@ class MapActivity : SimpleActivity() {
     }
 
     private fun makeClusterIcon(count: Int): BitmapDrawable {
+        iconCache[count]?.let { return it }
         val size = (48 * resources.displayMetrics.density).toInt()
         val bmp = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
         val c = Canvas(bmp)
@@ -202,10 +227,13 @@ class MapActivity : SimpleActivity() {
         }
         val y = size / 2f - (tp.descent() + tp.ascent()) / 2f
         c.drawText(count.toString(), size / 2f, y, tp)
-        return BitmapDrawable(resources, bmp)
+        val drawable = BitmapDrawable(resources, bmp)
+        iconCache[count] = drawable
+        return drawable
     }
 
     companion object {
         const val FILTER_PATHS = "filter_paths"
+        private const val MAX_ZOOM = 19.0
     }
 }

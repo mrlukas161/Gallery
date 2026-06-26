@@ -20,7 +20,8 @@ class PhotoGridActivity : SimpleActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(binding.root)
-        paths = intent.getStringArrayListExtra(PATHS) ?: arrayListOf()
+        paths = ArrayList(org.fossify.gallery.helpers.PathTransfer.forGrid ?: emptyList())
+        org.fossify.gallery.helpers.PathTransfer.forGrid = null
         binding.photoGrid.layoutManager = GridLayoutManager(this, 3)
         binding.photoGrid.adapter = PersonPhotosAdapter(this, paths) { path -> openPhoto(path) }
     }

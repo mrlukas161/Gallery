@@ -83,9 +83,8 @@ class PeopleSearchActivity : SimpleActivity() {
     }
 
     private fun openMap() {
-        val intent = Intent(this, MapActivity::class.java)
-        intent.putStringArrayListExtra(MapActivity.FILTER_PATHS, ArrayList(lastResults))
-        startActivity(intent)
+        org.fossify.gallery.helpers.PathTransfer.forMap = lastResults
+        startActivity(Intent(this, MapActivity::class.java))
     }
 
     private fun updateModeLabel() {
