@@ -125,11 +125,9 @@ class ComparatorActivity : SimpleActivity() {
     private fun setupSync() {
         binding.compareLeft.controller.addOnStateChangeListener(object : GestureController.OnStateChangeListener {
             override fun onStateChanged(state: State) = mirror(binding.compareRight, state)
-            override fun onStateReset(oldState: State?, newState: State?) {}
         })
         binding.compareRight.controller.addOnStateChangeListener(object : GestureController.OnStateChangeListener {
             override fun onStateChanged(state: State) = mirror(binding.compareLeft, state)
-            override fun onStateReset(oldState: State?, newState: State?) {}
         })
     }
 
