@@ -270,12 +270,14 @@ class FaceTaggingActivity : SimpleActivity() {
         val confirmedEmb = all.filter { it.id != null && mineIds.contains(it.id) }
             .mapNotNull { it.embedding?.let { b -> FaceEmbedder.toFloats(b) } }
         val anchorEmb = peopleDao.getAnchorEmbeddings(personId).map { FaceEmbedder.toFloats(it) }
-        val centroid = PersonGrouper.centroidOf(confirmedEmb + anchorEmb) ?: return emptyList()
+        // viac ťažísk (okuliare/starnutie/deti) → porovnaj s najbližším
+        val centroids = PersonGrouper.subCentroids(confirmedEmb + anchorEmb)
+        if (centroids.isEmpty()) return emptyList()
         val cannot = peopleDao.getCannotLinks().filter { it.personId == personId }.map { it.faceId }.toHashSet()
         val ignored = ExtrasDatabase.getInstance(this).ExtrasDao().getIgnoredIds().toHashSet()
         return all
             .filter { val id = it.id; id != null && !assigned.contains(id) && !cannot.contains(id) && !ignored.contains(id) }
-            .mapNotNull { f -> f.embedding?.let { b -> f to PersonGrouper.cosine(FaceEmbedder.toFloats(b), centroid) } }
+            .mapNotNull { f -> f.embedding?.let { b -> f to PersonGrouper.maxCosine(FaceEmbedder.toFloats(b), centroids) } }
             .sortedByDescending { it.second }
     }
 
