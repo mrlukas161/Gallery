@@ -520,6 +520,7 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
                 R.id.open_recycle_bin -> openRecycleBin()
                 R.id.column_count -> changeColumnCount()
                 R.id.people -> launchPeople()
+                R.id.smart_search -> startActivity(Intent(this, PeopleSearchActivity::class.java))
                 R.id.set_as_default_folder -> setAsDefaultFolder()
                 R.id.more_apps_from_us -> launchMoreAppsFromUsIntent()
                 R.id.settings -> launchSettings()

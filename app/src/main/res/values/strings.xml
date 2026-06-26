@@ -107,6 +107,14 @@
     <string name="auto_index_title">Automatické indexovanie</string>
     <string name="auto_index_on">Zapnuté — tváre a poloha sa indexujú samé na pozadí</string>
     <string name="auto_index_off">Vypnuté (indexovať len ručne)</string>
+    <!-- Kombinované hľadanie -->
+    <string name="smart_search_title">Hľadať (osoby / text)</string>
+    <string name="search_time_from">Od dátumu</string>
+    <string name="search_time_to">Do dátumu</string>
+    <string name="search_time_from_x">Od: %1$s</string>
+    <string name="search_time_to_x">Do: %1$s</string>
+    <string name="map_action">Mapa</string>
+    <string name="map_selection">Mapa (výber)</string>
     <string name="face_indexing_error">Chyba: %1$s (ťuknutím skús znova)</string>
     <string name="search_settings_hint">Hľadať v nastaveniach</string>
     <string name="check_updates_title">Skontrolovať aktualizácie</string>

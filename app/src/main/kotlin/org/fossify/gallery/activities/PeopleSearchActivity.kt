@@ -1,5 +1,6 @@
 package org.fossify.gallery.activities
 
+import android.app.DatePickerDialog
 import android.content.Intent
 import android.os.Bundle
 import android.text.Editable
@@ -23,14 +24,19 @@ import org.fossify.gallery.helpers.PATH
 import org.fossify.gallery.helpers.SHOW_ALL
 import org.fossify.gallery.helpers.SKIP_AUTHENTICATION
 import org.fossify.gallery.helpers.TextNormalizer
+import java.util.Calendar
 
-// Jednotné hľadanie: rozsah OSOBY (mená/skratky, A/ALEBO) alebo TEXT (OCR na fotkách). Fuzzy + bez diakritiky.
+// Kombinované hľadanie: OSOBY (mená/skratky, A/ALEBO) alebo TEXT (OCR) + voliteľný ČASOVÝ rozsah,
+// a tlačidlo MAPA = výsledky podľa MIESTA. (miesto + osoby + čas)
 class PeopleSearchActivity : SimpleActivity() {
     private val binding by viewBinding(ActivityPeopleSearchBinding::inflate)
     private var persons: List<PersonEntity> = emptyList()
     private var photoPersons: Map<String, Set<Long>> = emptyMap()
     private var meta: Map<String, FaceMediaMeta.Meta> = emptyMap()
     private val ignoreDiacritics = true
+    private var timeFrom = 0L
+    private var timeTo = Long.MAX_VALUE
+    private var lastResults: List<String> = emptyList()
     private val prefs by lazy { getSharedPreferences("galeria_faces", android.content.Context.MODE_PRIVATE) }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -52,14 +58,34 @@ class PeopleSearchActivity : SimpleActivity() {
             updateScopeLabel()
             runSearch()
         }
+        binding.searchTimeFrom.setOnClickListener { pickDate(true) }
+        binding.searchTimeTo.setOnClickListener { pickDate(false) }
+        binding.searchTimeClear.setOnClickListener { clearTime() }
         updateModeLabel()
         updateScopeLabel()
+        updateTimeLabels()
         loadIndex()
     }
 
     override fun onResume() {
         super.onResume()
         setupTopAppBar(binding.searchAppbar, NavigationIcon.Arrow)
+        binding.searchToolbar.menu.clear()
+        binding.searchToolbar.inflateMenu(R.menu.menu_people_search)
+        binding.searchToolbar.setOnMenuItemClickListener { item ->
+            if (item.itemId == R.id.show_on_map) {
+                openMap()
+                true
+            } else {
+                false
+            }
+        }
+    }
+
+    private fun openMap() {
+        val intent = Intent(this, MapActivity::class.java)
+        intent.putStringArrayListExtra(MapActivity.FILTER_PATHS, ArrayList(lastResults))
+        startActivity(intent)
     }
 
     private fun updateModeLabel() {
@@ -72,6 +98,50 @@ class PeopleSearchActivity : SimpleActivity() {
         binding.searchScopeLabel.text = getString(
             if (binding.searchScopeSwitch.isChecked) R.string.search_scope_text else R.string.search_scope_people
         )
+    }
+
+    private fun pickDate(isFrom: Boolean) {
+        val cal = Calendar.getInstance()
+        val cur = if (isFrom) timeFrom else timeTo
+        if (cur in 1 until Long.MAX_VALUE) cal.timeInMillis = cur
+        DatePickerDialog(
+            this,
+            { _, y, m, d ->
+                val c = Calendar.getInstance()
+                if (isFrom) {
+                    c.set(y, m, d, 0, 0, 0)
+                    c.set(Calendar.MILLISECOND, 0)
+                    timeFrom = c.timeInMillis
+                } else {
+                    c.set(y, m, d, 23, 59, 59)
+                    c.set(Calendar.MILLISECOND, 999)
+                    timeTo = c.timeInMillis
+                }
+                updateTimeLabels()
+                runSearch()
+            },
+            cal.get(Calendar.YEAR), cal.get(Calendar.MONTH), cal.get(Calendar.DAY_OF_MONTH),
+        ).show()
+    }
+
+    private fun clearTime() {
+        timeFrom = 0L
+        timeTo = Long.MAX_VALUE
+        updateTimeLabels()
+        runSearch()
+    }
+
+    private fun updateTimeLabels() {
+        binding.searchTimeFrom.text =
+            if (timeFrom > 0L) getString(R.string.search_time_from_x, fmt(timeFrom)) else getString(R.string.search_time_from)
+        binding.searchTimeTo.text =
+            if (timeTo < Long.MAX_VALUE) getString(R.string.search_time_to_x, fmt(timeTo)) else getString(R.string.search_time_to)
+    }
+
+    private fun fmt(millis: Long): String {
+        val c = Calendar.getInstance()
+        c.timeInMillis = millis
+        return "${c.get(Calendar.DAY_OF_MONTH)}.${c.get(Calendar.MONTH) + 1}.${c.get(Calendar.YEAR)}"
     }
 
     private fun loadIndex() {
@@ -98,8 +168,8 @@ class PeopleSearchActivity : SimpleActivity() {
     }
 
     private fun runSearch() {
-        val raw = binding.searchInput.text?.toString().orEmpty()
-        val tokens = raw.trim().split(Regex("\\s+")).filter { it.isNotBlank() }
+        val tokens = binding.searchInput.text?.toString().orEmpty().trim()
+            .split(Regex("\\s+")).filter { it.isNotBlank() }
         if (tokens.isEmpty()) {
             showResults(emptyList(), hint = true)
             return
@@ -107,19 +177,26 @@ class PeopleSearchActivity : SimpleActivity() {
         val textMode = binding.searchScopeSwitch.isChecked
         val and = binding.searchAndSwitch.isChecked
         ensureBackgroundThread {
-            val results = try {
-                if (textMode) searchText(tokens, and) else searchPeople(tokens, and)
+            val rawPaths = try {
+                if (textMode) searchTextPaths(tokens, and) else searchPeoplePaths(tokens, and)
             } catch (e: Throwable) {
                 emptyList()
             }
+            val missing = rawPaths.filter { !meta.containsKey(it) }
+            val extra = if (missing.isNotEmpty()) FaceMediaMeta.load(this, missing) else emptyMap()
+            fun taken(p: String) = meta[p]?.taken ?: extra[p]?.taken ?: 0L
+            val filtered = rawPaths
+                .filter { val t = taken(it); t in timeFrom..timeTo }
+                .sortedByDescending { taken(it) }
             runOnUiThread {
                 if (isDestroyed || isFinishing) return@runOnUiThread
-                showResults(results, hint = false)
+                lastResults = filtered
+                showResults(filtered, hint = false)
             }
         }
     }
 
-    private fun searchPeople(tokens: List<String>, and: Boolean): List<String> {
+    private fun searchPeoplePaths(tokens: List<String>, and: Boolean): List<String> {
         if (photoPersons.isEmpty()) return emptyList()
         val normTokens = tokens.map { TextNormalizer.normalize(it, ignoreDiacritics) }.filter { it.isNotEmpty() }
         val tokenSets = normTokens.map { t ->
@@ -128,29 +205,25 @@ class PeopleSearchActivity : SimpleActivity() {
                 .toSet()
         }
         return photoPersons.entries.filter { (_, pids) ->
-            if (and) {
-                tokenSets.all { set -> set.any { pids.contains(it) } }
-            } else {
-                tokenSets.any { set -> set.any { pids.contains(it) } }
-            }
-        }.map { it.key }.sortedByDescending { meta[it]?.taken ?: 0L }
+            if (and) tokenSets.all { set -> set.any { pids.contains(it) } }
+            else tokenSets.any { set -> set.any { pids.contains(it) } }
+        }.map { it.key }
     }
 
-    private fun searchText(tokens: List<String>, and: Boolean): List<String> {
+    private fun searchTextPaths(tokens: List<String>, and: Boolean): List<String> {
         val dao = OcrDatabase.getInstance(this).OcrDao()
         val sets = tokens
             .map { TextNormalizer.normalize(it, ignoreDiacritics) }
             .filter { it.isNotEmpty() }
             .map { dao.search(it).toHashSet() }
         if (sets.isEmpty()) return emptyList()
-        val combined: Set<String> = if (and) {
-            sets.reduce { acc, s -> acc.intersect(s).toHashSet() }
+        return if (and) {
+            sets.reduce { acc, s -> acc.intersect(s).toHashSet() }.toList()
         } else {
             val u = HashSet<String>()
             sets.forEach { u.addAll(it) }
-            u
+            u.toList()
         }
-        return combined.sortedDescending() // názvy IMG_YYYYMMDD… ≈ chronologicky najnovšie prvé
     }
 
     private fun showResults(paths: List<String>, hint: Boolean) {

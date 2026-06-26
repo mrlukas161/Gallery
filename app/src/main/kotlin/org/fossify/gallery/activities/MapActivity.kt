@@ -34,12 +34,14 @@ import kotlin.math.pow
 class MapActivity : SimpleActivity() {
     private val binding by viewBinding(ActivityMapBinding::inflate)
     private var points: List<GeoEntity> = emptyList()
+    private var filterPaths: HashSet<String>? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         Configuration.getInstance().load(this, getSharedPreferences("osmdroid", Context.MODE_PRIVATE))
         Configuration.getInstance().userAgentValue = packageName
         setContentView(binding.root)
+        filterPaths = intent.getStringArrayListExtra(FILTER_PATHS)?.toHashSet()
         binding.mapView.setTileSource(TileSourceFactory.MAPNIK)
         binding.mapView.setMultiTouchControls(true)
         binding.mapView.controller.setZoom(6.0)
@@ -57,6 +59,7 @@ class MapActivity : SimpleActivity() {
     override fun onResume() {
         super.onResume()
         setupTopAppBar(binding.mapAppbar, NavigationIcon.Arrow)
+        if (filterPaths != null) binding.mapToolbar.title = getString(R.string.map_selection)
         binding.mapView.onResume()
     }
 
@@ -67,11 +70,7 @@ class MapActivity : SimpleActivity() {
 
     private fun load() {
         ensureBackgroundThread {
-            points = try {
-                GeoDatabase.getInstance(this).GeoDao().getGeotagged()
-            } catch (e: Throwable) {
-                emptyList()
-            }
+            points = loadPoints()
             runOnUiThread {
                 if (!isDestroyed) {
                     redraw()
@@ -79,7 +78,7 @@ class MapActivity : SimpleActivity() {
                 }
             }
         }
-        if (!GeoIndexer.isRunning) {
+        if (filterPaths == null && !GeoIndexer.isRunning) {
             binding.mapStatus.text = getString(R.string.map_indexing, 0, 0)
             binding.mapStatus.beVisible()
             GeoIndexer.index(
@@ -100,13 +99,19 @@ class MapActivity : SimpleActivity() {
         }
     }
 
+    private fun loadPoints(): List<GeoEntity> {
+        val all = try {
+            GeoDatabase.getInstance(this).GeoDao().getGeotagged()
+        } catch (e: Throwable) {
+            emptyList()
+        }
+        val f = filterPaths ?: return all
+        return all.filter { f.contains(it.path) }
+    }
+
     private fun reloadPoints() {
         ensureBackgroundThread {
-            val p = try {
-                GeoDatabase.getInstance(this).GeoDao().getGeotagged()
-            } catch (e: Throwable) {
-                emptyList()
-            }
+            val p = loadPoints()
             runOnUiThread {
                 if (!isDestroyed) {
                     points = p
@@ -198,5 +203,9 @@ class MapActivity : SimpleActivity() {
         val y = size / 2f - (tp.descent() + tp.ascent()) / 2f
         c.drawText(count.toString(), size / 2f, y, tp)
         return BitmapDrawable(resources, bmp)
+    }
+
+    companion object {
+        const val FILTER_PATHS = "filter_paths"
     }
 }
