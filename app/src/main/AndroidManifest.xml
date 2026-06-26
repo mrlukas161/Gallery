@@ -645,6 +645,18 @@
             android:exported="false"
             android:parentActivityName=".activities.MapActivity" />
 
+        <activity
+            android:name=".activities.CompareListActivity"
+            android:configChanges="orientation"
+            android:exported="false"
+            android:parentActivityName=".activities.MainActivity" />
+
+        <activity
+            android:name=".activities.ComparatorActivity"
+            android:configChanges="orientation|screenSize"
+            android:exported="false"
+            android:parentActivityName=".activities.CompareListActivity" />
+
         <service
             android:name=".services.IndexingService"
             android:exported="false"

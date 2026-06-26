@@ -115,6 +115,15 @@
     <string name="search_time_to_x">Do: %1$s</string>
     <string name="map_action">Mapa</string>
     <string name="map_selection">Mapa (výber)</string>
+    <!-- Komparátor podobných/burst -->
+    <string name="compare_title">Podobné / burst</string>
+    <string name="compare_none">Žiadne podobné/burst skupiny (fotky z toho istého priečinka do ~3 s)</string>
+    <string name="compare_hint">Ťuk = porovnaj · podrž = označ na zmazanie</string>
+    <string name="compare_delete">Vymazať označené</string>
+    <string name="compare_marked">Označené: %1$d</string>
+    <string name="compare_marked_none">Nič nie je označené</string>
+    <string name="compare_pane_label">%1$s · ostrosť %2$d%%</string>
+    <string name="compare_done">Hotovo</string>
     <string name="face_indexing_error">Chyba: %1$s (ťuknutím skús znova)</string>
     <string name="search_settings_hint">Hľadať v nastaveniach</string>
     <string name="check_updates_title">Skontrolovať aktualizácie</string>

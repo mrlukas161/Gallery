@@ -8,4 +8,7 @@ object PathTransfer {
 
     @Volatile
     var forMap: List<String>? = null
+
+    @Volatile
+    var forCompare: List<String>? = null
 }
