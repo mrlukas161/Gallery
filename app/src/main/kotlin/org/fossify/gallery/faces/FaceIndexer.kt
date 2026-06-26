@@ -36,10 +36,12 @@ object FaceIndexer {
         ensureBackgroundThread {
             var detector: FaceDetectionHelper? = null
             var embedder: FaceEmbedder? = null
+            var landmarker: FaceLandmarkHelper? = null
             try {
                 val dao = FacesDatabase.getInstance(appCtx).FaceDao()
                 detector = FaceDetectionHelper(appCtx)
                 embedder = FaceEmbedder(appCtx)
+                landmarker = FaceLandmarkHelper(appCtx)
                 if (notify) ensureChannel(appCtx)
 
                 val processed = dao.getProcessedPaths().toHashSet()
@@ -56,9 +58,17 @@ object FaceIndexer {
                             faceCount = detected.size
                             if (detected.isNotEmpty()) {
                                 val theEmbedder = embedder
+                                val theLandmarker = landmarker
                                 dao.insertFaces(detected.mapIndexed { i, f ->
                                     val embedding = try {
-                                        FaceEmbedder.toBytes(theEmbedder.embed(bmp, f))
+                                        val crop = FaceAligner.cropRegion(bmp, f.left, f.top, f.right, f.bottom, 0.3f)
+                                        if (crop != null) {
+                                            val e = FaceEmbedder.toBytes(FaceAligner.embedCrop(crop, theLandmarker, theEmbedder))
+                                            crop.recycle()
+                                            e
+                                        } else {
+                                            FaceEmbedder.toBytes(theEmbedder.embed(bmp, f))
+                                        }
                                     } catch (e: Throwable) {
                                         null
                                     }
@@ -97,6 +107,7 @@ object FaceIndexer {
             } finally {
                 detector?.close()
                 embedder?.close()
+                landmarker?.close()
                 isRunning = false
             }
         }

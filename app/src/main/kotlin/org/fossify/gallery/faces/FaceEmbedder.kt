@@ -12,6 +12,9 @@ import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.nio.MappedByteBuffer
 import java.nio.channels.FileChannel
+import kotlin.math.atan2
+import kotlin.math.cos
+import kotlin.math.sin
 import kotlin.math.sqrt
 
 // MobileFaceNet odtlačok tváre (TFLite). Vstup = 112x112 zarovnaná tvár, výstup = vektor (L2-normalizovaný).
@@ -25,6 +28,61 @@ class FaceEmbedder(context: Context) {
         val result = runModel(aligned)
         aligned.recycle()
         return result
+    }
+
+    // 5-bodové zarovnanie (oči/nos/kútiky úst -> ArcFace šablóna) cez podobnostnú transformáciu.
+    fun embed5(source: Bitmap, points: FloatArray): FloatArray {
+        val out = Bitmap.createBitmap(inputSize, inputSize, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(out)
+        canvas.drawBitmap(source, similarityMatrix(points, ARCFACE_TEMPLATE), Paint(Paint.FILTER_BITMAP_FLAG))
+        val result = runModel(out)
+        out.recycle()
+        return result
+    }
+
+    // Fallback bez bodov: len zmenši výrez na 112x112.
+    fun embedResized(source: Bitmap): FloatArray {
+        val out = Bitmap.createBitmap(inputSize, inputSize, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(out)
+        canvas.drawBitmap(source, Rect(0, 0, source.width, source.height), Rect(0, 0, inputSize, inputSize), Paint(Paint.FILTER_BITMAP_FLAG))
+        val result = runModel(out)
+        out.recycle()
+        return result
+    }
+
+    // 2D podobnostná transformácia (Procrustes, bez reflexie) z 5 bodov -> šablóna.
+    private fun similarityMatrix(src: FloatArray, dst: FloatArray): Matrix {
+        var sMeanX = 0f
+        var sMeanY = 0f
+        var dMeanX = 0f
+        var dMeanY = 0f
+        for (i in 0..4) {
+            sMeanX += src[i * 2]; sMeanY += src[i * 2 + 1]
+            dMeanX += dst[i * 2]; dMeanY += dst[i * 2 + 1]
+        }
+        sMeanX /= 5f; sMeanY /= 5f; dMeanX /= 5f; dMeanY /= 5f
+        var sumXX = 0f
+        var sumXY = 0f
+        var sumYX = 0f
+        var sumYY = 0f
+        var srcSumSq = 0f
+        for (i in 0..4) {
+            val sx = src[i * 2] - sMeanX
+            val sy = src[i * 2 + 1] - sMeanY
+            val dx = dst[i * 2] - dMeanX
+            val dy = dst[i * 2 + 1] - dMeanY
+            sumXX += sx * dx; sumXY += sx * dy; sumYX += sy * dx; sumYY += sy * dy
+            srcSumSq += sx * sx + sy * sy
+        }
+        val rot = atan2(sumYX - sumXY, sumXX + sumYY)
+        val cosR = cos(rot)
+        val sinR = sin(rot)
+        val scale = (sumXX * cosR + sumXY * sinR) / (srcSumSq + 1e-8f)
+        val tx = dMeanX - (scale * cosR * sMeanX - scale * sinR * sMeanY)
+        val ty = dMeanY - (scale * sinR * sMeanX + scale * cosR * sMeanY)
+        return Matrix().apply {
+            setValues(floatArrayOf(scale * cosR, -scale * sinR, tx, scale * sinR, scale * cosR, ty, 0f, 0f, 1f))
+        }
     }
 
     private fun alignFace(source: Bitmap, face: FaceDetectionHelper.DetectedFace): Bitmap {
@@ -79,6 +137,14 @@ class FaceEmbedder(context: Context) {
     }
 
     companion object {
+        private val ARCFACE_TEMPLATE = floatArrayOf(
+            38.2946f, 51.6963f,
+            73.5318f, 51.5014f,
+            56.0252f, 71.7366f,
+            41.5493f, 92.3655f,
+            70.7299f, 92.2041f,
+        )
+
         fun toBytes(vector: FloatArray): ByteArray {
             val bb = ByteBuffer.allocate(vector.size * 4).order(ByteOrder.nativeOrder())
             vector.forEach { bb.putFloat(it) }

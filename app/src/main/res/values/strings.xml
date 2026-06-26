@@ -103,7 +103,13 @@
     <string name="indexing_faces">Tváre</string>
     <string name="indexing_geo">Poloha</string>
     <string name="indexing_ocr">Text (OCR)</string>
+    <string name="indexing_reembed">Presnosť tvárí</string>
     <string name="indexing_started_bg">Spustené na pozadí (sleduj notifikáciu)</string>
+    <!-- Vylepšenie presnosti tvárí (5-bodové prepočítanie) -->
+    <string name="reembed_title">Vylepšiť presnosť tvárí</string>
+    <string name="reembed_tap">Prepočíta všetky tváre presnejším zarovnaním (ťukni)</string>
+    <string name="reembed_running">Prepočítavam tváre…</string>
+    <string name="reembed_confirm">Prepočítam odtlačky všetkých tvárí presnejším 5-bodovým zarovnaním. Tvoje pomenovania a skupiny ostanú zachované, no vzorové tváre z Picasy sa vymažú — po dokončení ich treba znova naimportovať. Spustiť?</string>
     <string name="auto_index_title">Automatické indexovanie</string>
     <string name="auto_index_on">Zapnuté — tváre a poloha sa indexujú samé na pozadí</string>
     <string name="auto_index_off">Vypnuté (indexovať len ručne)</string>

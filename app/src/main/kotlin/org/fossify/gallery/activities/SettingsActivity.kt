@@ -117,6 +117,7 @@ class SettingsActivity : SimpleActivity() {
         setupAutoIndex()
         setupFaceIndexing()
         setupPicasaImport()
+        setupReembed()
         setupOcrIndexing()
         setupCheckForUpdates()
         setupSettingsSearch()
@@ -969,6 +970,31 @@ class SettingsActivity : SimpleActivity() {
                         getString(R.string.picasa_import_tap)
                     }
                 }
+            }
+        }
+    }
+
+    private fun setupReembed() {
+        updateReembedSummary()
+        binding.settingsReembedHolder.setOnClickListener {
+            if (org.fossify.gallery.faces.ReindexFaces.isRunning) {
+                org.fossify.gallery.faces.ReindexFaces.stop()
+                updateReembedSummary()
+            } else {
+                org.fossify.commons.dialogs.ConfirmationDialog(this, getString(R.string.reembed_confirm)) {
+                    org.fossify.gallery.services.IndexingService.start(this, org.fossify.gallery.services.IndexingService.TASK_REEMBED)
+                    binding.settingsReembedSummary.text = getString(R.string.indexing_started_bg)
+                }
+            }
+        }
+    }
+
+    private fun updateReembedSummary() {
+        if (!isDestroyed) {
+            binding.settingsReembedSummary.text = if (org.fossify.gallery.faces.ReindexFaces.isRunning) {
+                getString(R.string.reembed_running)
+            } else {
+                getString(R.string.reembed_tap)
             }
         }
     }

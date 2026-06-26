@@ -59,6 +59,9 @@ interface PeopleDao {
     @Query("SELECT * FROM anchor_embeddings")
     fun getAllAnchors(): List<AnchorEmbeddingEntity>
 
+    @Query("DELETE FROM anchor_embeddings")
+    fun deleteAllAnchors()
+
     @Query("SELECT embedding FROM anchor_embeddings WHERE person_id = :personId")
     fun getAnchorEmbeddings(personId: Long): List<ByteArray>
 

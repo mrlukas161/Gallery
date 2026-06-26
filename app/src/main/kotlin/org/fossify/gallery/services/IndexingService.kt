@@ -15,6 +15,7 @@ import org.fossify.gallery.R
 import org.fossify.gallery.faces.FaceIndexer
 import org.fossify.gallery.faces.GeoIndexer
 import org.fossify.gallery.faces.OcrIndexer
+import org.fossify.gallery.faces.ReindexFaces
 
 // Foreground služba pre indexovanie (tváre / poloha / OCR). Drží proces nažive aj keď zhasne obrazovka
 // alebo je apka na pozadí (HyperOS inak background prácu zabíja).
@@ -33,6 +34,7 @@ class IndexingService : Service() {
             TASK_OCR -> runOcr { finish() }
             TASK_FACES -> runFaces { finish() }
             TASK_GEO -> runGeo { finish() }
+            TASK_REEMBED -> runReembed { finish() }
             else -> runFaces { runGeo { finish() } } // TASK_AUTO = tváre + poloha
         }
         return START_NOT_STICKY
@@ -60,6 +62,19 @@ class IndexingService : Service() {
             applicationContext,
             onProgress = { d, t -> update(getString(R.string.indexing_geo), d, t) },
             onDone = { _, _ -> next() },
+            onError = { next() },
+        )
+    }
+
+    private fun runReembed(next: () -> Unit) {
+        if (ReindexFaces.isRunning) {
+            next()
+            return
+        }
+        ReindexFaces.run(
+            applicationContext,
+            onProgress = { d, t -> update(getString(R.string.indexing_reembed), d, t) },
+            onDone = { _ -> next() },
             onError = { next() },
         )
     }
@@ -145,6 +160,7 @@ class IndexingService : Service() {
         const val TASK_FACES = "faces"
         const val TASK_GEO = "geo"
         const val TASK_OCR = "ocr"
+        const val TASK_REEMBED = "reembed"
         private const val CHANNEL_ID = "indexing_service"
         private const val NOTIF_ID = 49240
 

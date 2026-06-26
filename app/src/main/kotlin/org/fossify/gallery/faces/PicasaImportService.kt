@@ -10,7 +10,7 @@ import java.security.MessageDigest
 import java.util.zip.ZipFile
 
 // Import "vzorov" tvárí z Picasy: ZIP (manifest.json + person_xx/crop_*.jpg).
-// Pre každý výrez: detekuj BlazeFace -> embedni MobileFaceNet -> ulož ako anchor embedding osoby.
+// Pre každý výrez: 5-bodové zarovnanie (FaceLandmarker) -> embedni MobileFaceNet -> anchor osoby.
 // Tým vzniknú embeddingy v ROVNAKOM priestore ako telefónne tváre. Jednorazový beh.
 object PicasaImportService {
     @Volatile
@@ -28,7 +28,7 @@ object PicasaImportService {
         isRunning = true
         val appCtx = context.applicationContext
         ensureBackgroundThread {
-            var detector: FaceDetectionHelper? = null
+            var landmarker: FaceLandmarkHelper? = null
             var embedder: FaceEmbedder? = null
             var tmp: File? = null
             try {
@@ -58,7 +58,7 @@ object PicasaImportService {
                         totalCrops += people.getJSONObject(i).optJSONArray("crops")?.length() ?: 0
                     }
 
-                    detector = FaceDetectionHelper(appCtx)
+                    landmarker = FaceLandmarkHelper(appCtx)
                     embedder = FaceEmbedder(appCtx)
                     val now = System.currentTimeMillis()
                     var done = 0
@@ -87,21 +87,16 @@ object PicasaImportService {
                                     val bytes = zip.getInputStream(entry).readBytes()
                                     val bmp = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
                                     if (bmp != null) {
-                                        val best = detector!!.detect(bmp).maxByOrNull { it.score }
-                                        if (best != null) {
-                                            val emb = embedder!!.embed(bmp, best)
-                                            dao.insertAnchor(
-                                                AnchorEmbeddingEntity(
-                                                    personId = personId,
-                                                    embedding = FaceEmbedder.toBytes(emb),
-                                                    source = "picasa",
-                                                    createdAt = now,
-                                                )
+                                        val emb = FaceAligner.embedCrop(bmp, landmarker!!, embedder!!)
+                                        dao.insertAnchor(
+                                            AnchorEmbeddingEntity(
+                                                personId = personId,
+                                                embedding = FaceEmbedder.toBytes(emb),
+                                                source = "picasa",
+                                                createdAt = now,
                                             )
-                                            anchors++
-                                        } else {
-                                            skipped++
-                                        }
+                                        )
+                                        anchors++
                                         bmp.recycle()
                                     } else {
                                         skipped++
@@ -126,7 +121,7 @@ object PicasaImportService {
             } catch (e: Throwable) {
                 onError(e.javaClass.simpleName + (e.message?.let { ": " + it.take(160) } ?: ""))
             } finally {
-                detector?.close()
+                landmarker?.close()
                 embedder?.close()
                 try {
                     tmp?.delete()
