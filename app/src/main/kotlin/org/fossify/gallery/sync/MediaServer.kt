@@ -6,12 +6,11 @@ import android.net.Uri
 import android.provider.MediaStore
 import org.json.JSONArray
 import org.json.JSONObject
-import org.nanohttpd.protocols.http.IHTTPSession
-import org.nanohttpd.protocols.http.NanoHTTPD
-import org.nanohttpd.protocols.http.request.Method
-import org.nanohttpd.protocols.http.response.Response
-import org.nanohttpd.protocols.http.response.Response.newFixedLengthResponse
-import org.nanohttpd.protocols.http.response.Status
+import fi.iki.elonen.NanoHTTPD
+import fi.iki.elonen.NanoHTTPD.IHTTPSession
+import fi.iki.elonen.NanoHTTPD.Method
+import fi.iki.elonen.NanoHTTPD.Response
+import fi.iki.elonen.NanoHTTPD.Response.Status
 import java.io.File
 import java.io.InputStream
 import java.net.URLDecoder
@@ -114,7 +113,7 @@ class MediaServer(
             ?: return json(Status.NOT_FOUND, """{"error":"unknown id"}""")
         val stream: InputStream = resolver.openInputStream(item.uri)
             ?: return json(Status.NOT_FOUND, """{"error":"open failed"}""")
-        val resp = newFixedLengthResponse(Status.OK, item.mime, stream, item.size)
+        val resp = NanoHTTPD.newFixedLengthResponse(Status.OK, item.mime, stream, item.size)
         resp.addHeader("Content-Disposition", "inline; filename=\"${item.name}\"")
         resp.addHeader("Accept-Ranges", "none")
         return resp
@@ -180,7 +179,7 @@ class MediaServer(
         for (it in index.values.take(2000)) {
             sb.append("<a href='/api/file?id=${it.id}&token=${escape(token)}'>${escape(it.relpath)} (${it.size} B)</a>")
         }
-        return newFixedLengthResponse(Status.OK, "text/html; charset=utf-8", sb.toString())
+        return NanoHTTPD.newFixedLengthResponse(Status.OK, "text/html; charset=utf-8", sb.toString())
     }
 
     private fun rebuildIndex() {
@@ -222,7 +221,7 @@ class MediaServer(
     }
 
     private fun json(status: Status, body: String): Response {
-        val r = newFixedLengthResponse(status, "application/json; charset=utf-8", body)
+        val r = NanoHTTPD.newFixedLengthResponse(status, "application/json; charset=utf-8", body)
         r.addHeader("Cache-Control", "no-store")
         return r
     }

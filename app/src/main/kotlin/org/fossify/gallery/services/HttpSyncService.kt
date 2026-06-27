@@ -18,7 +18,7 @@ import org.fossify.commons.helpers.ensureBackgroundThread
 import org.fossify.gallery.R
 import org.fossify.gallery.sync.MediaServer
 import org.fossify.gallery.sync.NetUtil
-import org.nanohttpd.protocols.http.NanoHTTPD
+import fi.iki.elonen.NanoHTTPD
 import java.security.SecureRandom
 
 // Foreground služba (typ specialUse) bežiaca lokálny HTTP server pre PC sync cez WiFi LAN.
