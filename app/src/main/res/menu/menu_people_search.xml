@@ -6,4 +6,9 @@
         android:icon="@android:drawable/ic_menu_mapmode"
         android:title="@string/map_action"
         app:showAsAction="ifRoom" />
+    <item
+        android:id="@+id/toggle_qr_filter"
+        android:checkable="true"
+        android:title="@string/filter_qr_code"
+        app:showAsAction="never" />
 </menu>

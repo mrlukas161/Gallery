@@ -104,12 +104,26 @@
     <string name="indexing_geo">Poloha</string>
     <string name="indexing_ocr">Text (OCR)</string>
     <string name="indexing_reembed">Presnosť tvárí</string>
+    <string name="indexing_qr">QR kódy</string>
     <string name="indexing_started_bg">Spustené na pozadí (sleduj notifikáciu)</string>
     <!-- Vylepšenie presnosti tvárí (5-bodové prepočítanie) -->
     <string name="reembed_title">Vylepšiť presnosť tvárí</string>
     <string name="reembed_tap">Prepočíta všetky tváre presnejším zarovnaním (ťukni)</string>
     <string name="reembed_running">Prepočítavam tváre…</string>
     <string name="reembed_confirm">Prepočítam odtlačky všetkých tvárí presnejším 5-bodovým zarovnaním. Tvoje pomenovania a skupiny ostanú zachované, no vzorové tváre z Picasy sa vymažú — po dokončení ich treba znova naimportovať. Spustiť?</string>
+    <!-- QR / čiarové kódy -->
+    <string name="qr_title">QR a čiarové kódy (beta)</string>
+    <string name="qr_tap_to_start">Ťuknutím prehľadám fotky a nájdem QR/čiarové kódy</string>
+    <string name="qr_running">Hľadám QR kódy…</string>
+    <string name="qr_result">%1$d prehľadaných, %2$d s kódom</string>
+    <string name="filter_qr_code">Len fotky s QR kódom</string>
+    <!-- PC sync (lokálny LAN server) -->
+    <string name="pc_server_title">PC sync server (WiFi)</string>
+    <string name="pc_server_tap_to_start">Vypnutý — ťuknutím spustíš server na zálohu fotiek z PC</string>
+    <string name="pc_server_running_at">Beží: %1$s · PIN %2$s (ťuknutím zastavíš)</string>
+    <string name="pc_server_stop">Zastaviť</string>
+    <string name="pc_server_notif_title">PC sync server beží</string>
+    <string name="pc_server_notif_text">Otvor na PC: %1$s\nPIN: %2$s\nServer beží len kým ho nezastavíš.</string>
     <string name="auto_index_title">Automatické indexovanie</string>
     <string name="auto_index_on">Zapnuté — tváre a poloha sa indexujú samé na pozadí</string>
     <string name="auto_index_off">Vypnuté (indexovať len ručne)</string>

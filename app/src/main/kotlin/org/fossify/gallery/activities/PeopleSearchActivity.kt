@@ -19,6 +19,7 @@ import org.fossify.gallery.faces.FacesDatabase
 import org.fossify.gallery.faces.OcrDatabase
 import org.fossify.gallery.faces.PeopleDatabase
 import org.fossify.gallery.faces.PersonEntity
+import org.fossify.gallery.faces.QrDatabase
 import org.fossify.gallery.helpers.GridZoom
 import org.fossify.gallery.helpers.PATH
 import org.fossify.gallery.helpers.SHOW_ALL
@@ -37,6 +38,7 @@ class PeopleSearchActivity : SimpleActivity() {
     private var timeFrom = 0L
     private var timeTo = Long.MAX_VALUE
     private var lastResults: List<String> = emptyList()
+    private var qrOnly = false
     private val prefs by lazy { getSharedPreferences("galeria_faces", android.content.Context.MODE_PRIVATE) }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -72,12 +74,20 @@ class PeopleSearchActivity : SimpleActivity() {
         setupTopAppBar(binding.searchAppbar, NavigationIcon.Arrow)
         binding.searchToolbar.menu.clear()
         binding.searchToolbar.inflateMenu(R.menu.menu_people_search)
+        binding.searchToolbar.menu.findItem(R.id.toggle_qr_filter)?.isChecked = qrOnly
         binding.searchToolbar.setOnMenuItemClickListener { item ->
-            if (item.itemId == R.id.show_on_map) {
-                openMap()
-                true
-            } else {
-                false
+            when (item.itemId) {
+                R.id.show_on_map -> {
+                    openMap()
+                    true
+                }
+                R.id.toggle_qr_filter -> {
+                    qrOnly = !qrOnly
+                    item.isChecked = qrOnly
+                    runSearch()
+                    true
+                }
+                else -> false
             }
         }
     }
@@ -169,17 +179,34 @@ class PeopleSearchActivity : SimpleActivity() {
     private fun runSearch() {
         val tokens = binding.searchInput.text?.toString().orEmpty().trim()
             .split(Regex("\\s+")).filter { it.isNotBlank() }
-        if (tokens.isEmpty()) {
+        val onlyQr = qrOnly
+        if (tokens.isEmpty() && !onlyQr) {
             showResults(emptyList(), hint = true)
             return
         }
         val textMode = binding.searchScopeSwitch.isChecked
         val and = binding.searchAndSwitch.isChecked
         ensureBackgroundThread {
-            val rawPaths = try {
-                if (textMode) searchTextPaths(tokens, and) else searchPeoplePaths(tokens, and)
+            val qrSet: HashSet<String>? = if (onlyQr) {
+                try {
+                    QrDatabase.getInstance(this).QrDao().getPathsWithQr().toHashSet()
+                } catch (e: Throwable) {
+                    HashSet()
+                }
+            } else {
+                null
+            }
+            var rawPaths = try {
+                when {
+                    tokens.isEmpty() -> qrSet?.toList() ?: emptyList()
+                    textMode -> searchTextPaths(tokens, and)
+                    else -> searchPeoplePaths(tokens, and)
+                }
             } catch (e: Throwable) {
                 emptyList()
+            }
+            if (qrSet != null && tokens.isNotEmpty()) {
+                rawPaths = rawPaths.filter { qrSet.contains(it) }
             }
             val missing = rawPaths.filter { !meta.containsKey(it) }
             val extra = if (missing.isNotEmpty()) FaceMediaMeta.load(this, missing) else emptyMap()

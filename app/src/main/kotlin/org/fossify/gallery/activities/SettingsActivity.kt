@@ -119,6 +119,8 @@ class SettingsActivity : SimpleActivity() {
         setupPicasaImport()
         setupReembed()
         setupOcrIndexing()
+        setupQrIndexing()
+        setupPcServer()
         setupCheckForUpdates()
         setupSettingsSearch()
         setupExportFavorites()
@@ -1034,6 +1036,62 @@ class SettingsActivity : SimpleActivity() {
                     }
                 }
             }
+        }
+    }
+
+    private fun setupQrIndexing() {
+        updateQrSummary()
+        binding.settingsQrHolder.setOnClickListener {
+            if (org.fossify.gallery.faces.QrIndexer.isRunning) {
+                org.fossify.gallery.faces.QrIndexer.stop()
+                updateQrSummary()
+            } else {
+                org.fossify.gallery.services.IndexingService.start(this, org.fossify.gallery.services.IndexingService.TASK_QR)
+                binding.settingsQrSummary.text = getString(R.string.indexing_started_bg)
+            }
+        }
+    }
+
+    private fun updateQrSummary() {
+        ensureBackgroundThread {
+            val dao = org.fossify.gallery.faces.QrDatabase.getInstance(this).QrDao()
+            val indexed = try { dao.count() } catch (e: Exception) { 0 }
+            val withContent = try { dao.countWithContent() } catch (e: Exception) { 0 }
+            runOnUiThread {
+                if (!isDestroyed) {
+                    binding.settingsQrSummary.text = when {
+                        org.fossify.gallery.faces.QrIndexer.isRunning -> getString(R.string.qr_running)
+                        indexed > 0 -> getString(R.string.qr_result, indexed, withContent)
+                        else -> getString(R.string.qr_tap_to_start)
+                    }
+                }
+            }
+        }
+    }
+
+    private fun setupPcServer() {
+        updatePcServerSummary()
+        binding.settingsPcServerHolder.setOnClickListener {
+            if (org.fossify.gallery.services.HttpSyncService.isRunning) {
+                org.fossify.gallery.services.HttpSyncService.stop(this)
+                binding.settingsPcServerSummary.postDelayed({ updatePcServerSummary() }, 400)
+            } else {
+                org.fossify.gallery.services.HttpSyncService.start(this)
+                binding.settingsPcServerSummary.postDelayed({ updatePcServerSummary() }, 700)
+            }
+        }
+    }
+
+    private fun updatePcServerSummary() {
+        if (isDestroyed) return
+        binding.settingsPcServerSummary.text = if (org.fossify.gallery.services.HttpSyncService.isRunning) {
+            getString(
+                R.string.pc_server_running_at,
+                org.fossify.gallery.services.HttpSyncService.currentUrl ?: "?",
+                org.fossify.gallery.services.HttpSyncService.currentPin ?: "?",
+            )
+        } else {
+            getString(R.string.pc_server_tap_to_start)
         }
     }
 

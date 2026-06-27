@@ -10,40 +10,34 @@ import android.provider.MediaStore
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import org.fossify.commons.helpers.ensureBackgroundThread
-import org.fossify.gallery.helpers.TextNormalizer
 import java.io.File
 
-// OCR indexovanie: prejde fotky a uloží rozpoznaný text (ocr.db). Pomalé (Tesseract) -> beží na pozadí,
-// resumovateľné (preskočí už spracované), s priebehovou notifikáciou. Spúšťa Lukáš (najlepšie pri nabíjaní).
-object OcrIndexer {
+// QR/čiarové kódy: prejde fotky a uloží dekódovaný obsah (qr.db). RÝCHLE (ZXing jeden prechod ~0,1 s/fotka),
+// resumovateľné (preskočí už spracované). Beží v automatickom indexovaní na pozadí aj na tlačidlo.
+object QrIndexer {
     @Volatile
     var isRunning = false
         private set
 
-    private const val MAX_DECODE = 2000
-    private const val CHANNEL_ID = "ocr_indexing"
-    private const val NOTIF_ID = 49232
-    private const val MAX_TEXT = 8000
+    private const val MAX_DECODE = 1600
+    private const val CHANNEL_ID = "qr_indexing"
+    private const val NOTIF_ID = 49233
 
     fun index(
         context: Context,
         notify: Boolean = true,
         onProgress: (done: Int, total: Int) -> Unit,
-        onDone: (indexed: Int, withText: Int) -> Unit,
+        onDone: (indexed: Int, withContent: Int) -> Unit,
         onError: (message: String) -> Unit,
     ) {
         if (isRunning) return
         isRunning = true
         val appCtx = context.applicationContext
         ensureBackgroundThread {
-            var engine: OcrEngine? = null
             try {
-                val dao = OcrDatabase.getInstance(appCtx).OcrDao()
-                engine = OcrEngine(appCtx)
-                if (!engine.isReady()) throw IllegalStateException("Tesseract sa nepodarilo inicializovať (slk)")
+                val dao = QrDatabase.getInstance(appCtx).QrDao()
+                val decoder = ZxingDecoder()
                 if (notify) ensureChannel(appCtx)
-                // Pri už dekódovanej bitmape rovno skontroluj aj QR/čiarové kódy (zápis do qr.db).
-                val qrDecoder = ZxingDecoder()
 
                 val processed = dao.getIndexedPaths().toHashSet()
                 val todo = queryImages(appCtx).filter { it !in processed }
@@ -52,35 +46,27 @@ object OcrIndexer {
                 for (path in todo) {
                     if (!isRunning) break
                     var text = ""
-                    var qr = ""
                     try {
                         val bmp = decodeDownscaled(path)
                         if (bmp != null) {
-                            text = engine.recognize(bmp)
-                            qr = QrScanner.scanText(qrDecoder, bmp)
+                            text = QrScanner.scanText(decoder, bmp)
                             bmp.recycle()
                         }
                     } catch (ignored: Throwable) {
                     }
-                    try {
-                        val norm = TextNormalizer.normalize(text, true)
-                        dao.insert(OcrEntity(path, text.take(MAX_TEXT), norm.take(MAX_TEXT), System.currentTimeMillis()))
-                    } catch (ignored: Throwable) {
-                    }
-                    QrScanner.store(appCtx, path, qr)
+                    QrScanner.store(appCtx, path, text)
                     done++
-                    if (done % 3 == 0 || done == total) {
+                    if (done % 10 == 0 || done == total) {
                         onProgress(done, total)
                         if (notify) notifyProgress(appCtx, done, total)
                     }
                 }
                 cancelNotification(appCtx)
-                onDone(safeCount(dao), safeWithText(dao))
+                onDone(safeCount(dao), safeWithContent(dao))
             } catch (e: Throwable) {
                 cancelNotification(appCtx)
                 onError(describe(e))
             } finally {
-                engine?.close()
                 isRunning = false
             }
         }
@@ -102,15 +88,15 @@ object OcrIndexer {
         }
     }
 
-    private fun safeCount(dao: OcrDao) = try { dao.count() } catch (e: Throwable) { 0 }
-    private fun safeWithText(dao: OcrDao) = try { dao.countWithText() } catch (e: Throwable) { 0 }
+    private fun safeCount(dao: QrDao) = try { dao.count() } catch (e: Throwable) { 0 }
+    private fun safeWithContent(dao: QrDao) = try { dao.countWithContent() } catch (e: Throwable) { 0 }
 
     private fun ensureChannel(context: Context) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val nm = context.getSystemService(NotificationManager::class.java) ?: return
             if (nm.getNotificationChannel(CHANNEL_ID) == null) {
                 nm.createNotificationChannel(
-                    NotificationChannel(CHANNEL_ID, "OCR textu", NotificationManager.IMPORTANCE_LOW)
+                    NotificationChannel(CHANNEL_ID, "QR kódy", NotificationManager.IMPORTANCE_LOW)
                 )
             }
         }
@@ -120,7 +106,7 @@ object OcrIndexer {
         try {
             val notification = NotificationCompat.Builder(context, CHANNEL_ID)
                 .setSmallIcon(android.R.drawable.stat_notify_sync)
-                .setContentTitle("Čítam text z fotiek")
+                .setContentTitle("Hľadám QR kódy")
                 .setContentText("$done / $total")
                 .setProgress(total, done, false)
                 .setOngoing(true)

@@ -15,6 +15,7 @@ import org.fossify.gallery.R
 import org.fossify.gallery.faces.FaceIndexer
 import org.fossify.gallery.faces.GeoIndexer
 import org.fossify.gallery.faces.OcrIndexer
+import org.fossify.gallery.faces.QrIndexer
 import org.fossify.gallery.faces.ReindexFaces
 
 // Foreground služba pre indexovanie (tváre / poloha / OCR). Drží proces nažive aj keď zhasne obrazovka
@@ -32,10 +33,11 @@ class IndexingService : Service() {
         working = true
         when (intent?.getStringExtra(EXTRA_TASK)) {
             TASK_OCR -> runOcr { finish() }
+            TASK_QR -> runQr { finish() }
             TASK_FACES -> runFaces { finish() }
             TASK_GEO -> runGeo { finish() }
             TASK_REEMBED -> runReembed { finish() }
-            else -> runFaces { runGeo { finish() } } // TASK_AUTO = tváre + poloha
+            else -> runFaces { runGeo { runQr { finish() } } } // TASK_AUTO = tváre + poloha + QR
         }
         return START_NOT_STICKY
     }
@@ -61,6 +63,19 @@ class IndexingService : Service() {
         GeoIndexer.index(
             applicationContext,
             onProgress = { d, t -> update(getString(R.string.indexing_geo), d, t) },
+            onDone = { _, _ -> next() },
+            onError = { next() },
+        )
+    }
+
+    private fun runQr(next: () -> Unit) {
+        if (QrIndexer.isRunning) {
+            next()
+            return
+        }
+        QrIndexer.index(
+            applicationContext, notify = false,
+            onProgress = { d, t -> update(getString(R.string.indexing_qr), d, t) },
             onDone = { _, _ -> next() },
             onError = { next() },
         )
@@ -160,6 +175,7 @@ class IndexingService : Service() {
         const val TASK_FACES = "faces"
         const val TASK_GEO = "geo"
         const val TASK_OCR = "ocr"
+        const val TASK_QR = "qr"
         const val TASK_REEMBED = "reembed"
         private const val CHANNEL_ID = "indexing_service"
         private const val NOTIF_ID = 49240
