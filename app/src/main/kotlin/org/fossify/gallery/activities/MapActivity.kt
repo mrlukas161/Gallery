@@ -128,7 +128,7 @@ class MapActivity : SimpleActivity() {
         if (isDestroyed) return
         binding.mapView.overlays.clear()
         val zoom = binding.mapView.zoomLevelDouble
-        for (cluster in cluster(points, zoom)) {
+        for (cluster in cluster(points, cellSizeDeg(zoom))) {
             val marker = Marker(binding.mapView)
             marker.position = GeoPoint(cluster.lat, cluster.lon)
             marker.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
@@ -170,11 +170,24 @@ class MapActivity : SimpleActivity() {
         }
         val zoom = binding.mapView.zoomLevelDouble
         if (zoom < MAX_ZOOM) {
-            binding.mapView.controller.animateTo(
-                GeoPoint(cluster.lat, cluster.lon),
-                (zoom + 2.0).coerceAtMost(MAX_ZOOM),
-                500L,
-            )
+            // priblíž na skutočný rozsah clustra (bounding box), aby sa rozpadol na menšie
+            val ps = cluster.paths.toHashSet()
+            val members = points.filter { ps.contains(it.path) }
+            if (members.size >= 2) {
+                val north = members.maxOf { it.lat }
+                val south = members.minOf { it.lat }
+                val east = members.maxOf { it.lon }
+                val west = members.minOf { it.lon }
+                if (north == south && east == west) {
+                    binding.mapView.controller.animateTo(GeoPoint(north, east), (zoom + 3.0).coerceAtMost(MAX_ZOOM), 500L)
+                } else {
+                    binding.mapView.zoomToBoundingBox(BoundingBox(north, east, south, west), true, 100)
+                }
+            } else {
+                binding.mapView.controller.animateTo(GeoPoint(cluster.lat, cluster.lon), (zoom + 2.0).coerceAtMost(MAX_ZOOM), 500L)
+            }
+            // osmdroid po programovom zoome nemusí spoľahlivo vyvolať onZoom -> vynúť prekreslenie
+            binding.mapView.postDelayed({ if (!isDestroyed) redraw() }, 650L)
         } else {
             org.fossify.gallery.helpers.PathTransfer.forGrid = cluster.paths.take(1000)
             startActivity(Intent(this, PhotoGridActivity::class.java))
@@ -192,9 +205,15 @@ class MapActivity : SimpleActivity() {
 
     private data class Cluster(val lat: Double, val lon: Double, val paths: List<String>)
 
-    private fun cluster(pts: List<GeoEntity>, zoom: Double): List<Cluster> {
+    // veľkosť zhlukovacej bunky v stupňoch ~ konštantná v pixeloch (adaptívne podľa zoomu) -> pri
+    // väčšom priblížení menšie bunky = viac menších, lepšie umiestnených clusterov.
+    private fun cellSizeDeg(zoom: Double): Double {
+        val degPerPixel = 360.0 / (256.0 * 2.0.pow(zoom.coerceIn(1.0, 21.0)))
+        return (degPerPixel * 90.0).coerceAtLeast(1e-7)
+    }
+
+    private fun cluster(pts: List<GeoEntity>, cell: Double): List<Cluster> {
         if (pts.isEmpty()) return emptyList()
-        val cell = 180.0 / 2.0.pow(zoom.coerceIn(1.0, 20.0))
         val map = HashMap<String, MutableList<GeoEntity>>()
         for (p in pts) {
             val gx = floor(p.lon / cell).toLong()

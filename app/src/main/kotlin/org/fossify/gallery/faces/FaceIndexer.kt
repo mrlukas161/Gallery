@@ -63,7 +63,7 @@ object FaceIndexer {
                                     val embedding = try {
                                         val crop = FaceAligner.cropRegion(bmp, f.left, f.top, f.right, f.bottom, 0.3f)
                                         if (crop != null) {
-                                            val e = FaceEmbedder.toBytes(FaceAligner.embedCrop(crop, theLandmarker, theEmbedder))
+                                            val e = FaceEmbedder.toBytes(FaceAligner.embedCrop(crop, theLandmarker, theEmbedder, detector).vec)
                                             crop.recycle()
                                             e
                                         } else {

@@ -8,6 +8,7 @@
     android:orientation="vertical">
 
     <LinearLayout
+        android:id="@+id/compare_topbar"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:background="@color/color_primary"
@@ -32,6 +33,26 @@
             android:textColor="#FFFFFFFF"
             tools:text="Podrž = označ na zmazanie" />
 
+        <ImageView
+            android:id="@+id/compare_sync"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="@string/compare_sync"
+            android:padding="12dp"
+            android:src="@android:drawable/ic_menu_always_landscape_portrait"
+            android:tint="#FFFFFFFF" />
+
+        <ImageView
+            android:id="@+id/compare_duel"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="@string/compare_duel"
+            android:padding="12dp"
+            android:src="@android:drawable/ic_menu_sort_by_size"
+            android:tint="#FFFFFFFF" />
+
     </LinearLayout>
 
     <LinearLayout
@@ -50,6 +71,12 @@
                 android:layout_width="match_parent"
                 android:layout_height="match_parent" />
 
+            <View
+                android:id="@+id/compare_left_border"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:background="@drawable/border_pane_left" />
+
             <org.fossify.commons.views.MyTextView
                 android:id="@+id/compare_left_label"
                 android:layout_width="match_parent"
@@ -59,7 +86,41 @@
                 android:padding="4dp"
                 android:textColor="#FFFFFFFF"
                 android:textSize="11sp"
-                tools:text="IMG_001.jpg · ostrosť 100% ★" />
+                tools:text="Ľ · IMG_001.jpg · ostrosť 100% ★" />
+
+            <Button
+                android:id="@+id/compare_left_prev"
+                android:layout_width="44dp"
+                android:layout_height="44dp"
+                android:layout_gravity="start|center_vertical"
+                android:layout_marginStart="2dp"
+                android:background="#66000000"
+                android:minWidth="0dp"
+                android:padding="0dp"
+                android:text="‹"
+                android:textColor="#FFFFFFFF"
+                android:textSize="22sp" />
+
+            <Button
+                android:id="@+id/compare_left_next"
+                android:layout_width="44dp"
+                android:layout_height="44dp"
+                android:layout_gravity="end|center_vertical"
+                android:layout_marginEnd="2dp"
+                android:background="#66000000"
+                android:minWidth="0dp"
+                android:padding="0dp"
+                android:text="›"
+                android:textColor="#FFFFFFFF"
+                android:textSize="22sp" />
+
+            <Button
+                android:id="@+id/compare_left_win"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="center"
+                android:text="@string/compare_pick_left"
+                android:visibility="gone" />
 
         </FrameLayout>
 
@@ -78,6 +139,12 @@
                 android:layout_width="match_parent"
                 android:layout_height="match_parent" />
 
+            <View
+                android:id="@+id/compare_right_border"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:background="@drawable/border_pane_right" />
+
             <org.fossify.commons.views.MyTextView
                 android:id="@+id/compare_right_label"
                 android:layout_width="match_parent"
@@ -87,7 +154,41 @@
                 android:padding="4dp"
                 android:textColor="#FFFFFFFF"
                 android:textSize="11sp"
-                tools:text="IMG_002.jpg · ostrosť 74%" />
+                tools:text="P · IMG_002.jpg · ostrosť 74%" />
+
+            <Button
+                android:id="@+id/compare_right_prev"
+                android:layout_width="44dp"
+                android:layout_height="44dp"
+                android:layout_gravity="start|center_vertical"
+                android:layout_marginStart="2dp"
+                android:background="#66000000"
+                android:minWidth="0dp"
+                android:padding="0dp"
+                android:text="‹"
+                android:textColor="#FFFFFFFF"
+                android:textSize="22sp" />
+
+            <Button
+                android:id="@+id/compare_right_next"
+                android:layout_width="44dp"
+                android:layout_height="44dp"
+                android:layout_gravity="end|center_vertical"
+                android:layout_marginEnd="2dp"
+                android:background="#66000000"
+                android:minWidth="0dp"
+                android:padding="0dp"
+                android:text="›"
+                android:textColor="#FFFFFFFF"
+                android:textSize="22sp" />
+
+            <Button
+                android:id="@+id/compare_right_win"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="center"
+                android:text="@string/compare_pick_right"
+                android:visibility="gone" />
 
         </FrameLayout>
 
@@ -101,6 +202,7 @@
         android:orientation="horizontal" />
 
     <LinearLayout
+        android:id="@+id/compare_bottombar"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:background="@color/color_primary"

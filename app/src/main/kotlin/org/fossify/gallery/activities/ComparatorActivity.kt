@@ -6,6 +6,10 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.provider.MediaStore
+import android.view.View
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.updatePadding
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.alexvasilkov.gestures.GestureController
 import com.alexvasilkov.gestures.GestureImageView
@@ -29,14 +33,17 @@ class ComparatorActivity : SimpleActivity() {
     private var bestIndex = -1
     private var leftIndex = 0
     private var rightIndex = 0
-    private var nextLeft = true
     private var syncing = false
+    private var syncEnabled = true
+    private var duelMode = false
+    private var duelNext = 1
     private var adapter: CompareStripAdapter? = null
     private var pendingDelete: List<String> = emptyList()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(binding.root)
+        applyInsets()
         paths = ArrayList(PathTransfer.forCompare ?: emptyList())
         PathTransfer.forCompare = null
         if (paths.size < 2) {
@@ -49,13 +56,104 @@ class ComparatorActivity : SimpleActivity() {
         binding.compareDelete.setOnClickListener { deleteMarked() }
         binding.compareTitle.text = getString(R.string.compare_hint)
         setupSync()
+        binding.compareSync.setOnClickListener { toggleSync() }
+        binding.compareDuel.setOnClickListener { toggleDuel() }
+        binding.compareLeftPrev.setOnClickListener { stepPane(true, -1) }
+        binding.compareLeftNext.setOnClickListener { stepPane(true, 1) }
+        binding.compareRightPrev.setOnClickListener { stepPane(false, -1) }
+        binding.compareRightNext.setOnClickListener { stepPane(false, 1) }
+        binding.compareLeftWin.setOnClickListener { duelPick(true) }
+        binding.compareRightWin.setOnClickListener { duelPick(false) }
+        updateSyncIcon()
         leftIndex = 0
         rightIndex = 1
         rebuildAdapter()
         loadPane(true)
         loadPane(false)
+        updateActive()
         updateInfo()
         computeSharpness()
+    }
+
+    private fun applyInsets() {
+        ViewCompat.setOnApplyWindowInsetsListener(binding.comparatorRoot) { _, insets ->
+            val sb = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+            binding.compareTopbar.updatePadding(top = sb.top)
+            binding.compareBottombar.updatePadding(bottom = sb.bottom)
+            insets
+        }
+    }
+
+    private fun toggleSync() {
+        syncEnabled = !syncEnabled
+        updateSyncIcon()
+        toast(if (syncEnabled) R.string.compare_sync_on else R.string.compare_sync_off)
+    }
+
+    private fun updateSyncIcon() {
+        binding.compareSync.alpha = if (syncEnabled) 1f else 0.35f
+    }
+
+    private fun updateActive() {
+        adapter?.setActive(leftIndex, rightIndex)
+    }
+
+    // šípky pod panelom: posun konkrétny panel na predošlú/ďalšiu fotku (deterministicky, aj pri priblížení)
+    private fun stepPane(left: Boolean, dir: Int) {
+        if (duelMode) return
+        val cur = if (left) leftIndex else rightIndex
+        val next = (cur + dir).coerceIn(0, paths.lastIndex)
+        if (next == cur) return
+        if (left) leftIndex = next else rightIndex = next
+        loadPane(left)
+        updateActive()
+    }
+
+    private fun toggleDuel() {
+        if (duelMode) exitDuel(false) else enterDuel()
+    }
+
+    private fun enterDuel() {
+        if (paths.size < 2) return
+        duelMode = true
+        leftIndex = 0
+        duelNext = 1
+        rightIndex = 1
+        binding.compareLeftWin.visibility = View.VISIBLE
+        binding.compareRightWin.visibility = View.VISIBLE
+        binding.compareTitle.text = getString(R.string.compare_duel_hint)
+        loadPane(true)
+        loadPane(false)
+        updateActive()
+    }
+
+    // víťaz ostáva vľavo, porazený sa označí na zmazanie a nastúpi ďalší (štýl "tinder")
+    private fun duelPick(leftWins: Boolean) {
+        if (!duelMode) return
+        val loser = if (leftWins) rightIndex else leftIndex
+        val winner = if (leftWins) leftIndex else rightIndex
+        adapter?.let { if (!it.marked.contains(loser)) it.toggleMark(loser) }
+        leftIndex = winner
+        duelNext++
+        while (duelNext <= paths.lastIndex && adapter?.marked?.contains(duelNext) == true) duelNext++
+        if (duelNext > paths.lastIndex) {
+            exitDuel(true)
+            return
+        }
+        rightIndex = duelNext
+        loadPane(true)
+        loadPane(false)
+        updateActive()
+        updateInfo()
+    }
+
+    private fun exitDuel(finished: Boolean) {
+        duelMode = false
+        binding.compareLeftWin.visibility = View.GONE
+        binding.compareRightWin.visibility = View.GONE
+        binding.compareTitle.text = getString(R.string.compare_hint)
+        updateInfo()
+        if (finished) toast(getString(R.string.compare_duel_done, adapter?.marked?.size ?: 0))
     }
 
     private fun rebuildAdapter() {
@@ -85,15 +183,15 @@ class ComparatorActivity : SimpleActivity() {
         }
     }
 
+    // ťuk na fotku vo filmstripe -> zobrazí sa VĽAVO (Ľ), doterajšia ľavá sa presunie VPRAVO (P)
     private fun onStripTap(pos: Int) {
-        if (nextLeft) {
-            leftIndex = pos
-            loadPane(true)
-        } else {
-            rightIndex = pos
-            loadPane(false)
-        }
-        nextLeft = !nextLeft
+        if (duelMode) return
+        if (pos == leftIndex) return
+        rightIndex = leftIndex
+        leftIndex = pos
+        loadPane(true)
+        loadPane(false)
+        updateActive()
     }
 
     private fun onStripLong(pos: Int) {
@@ -108,14 +206,15 @@ class ComparatorActivity : SimpleActivity() {
         val label = if (left) binding.compareLeftLabel else binding.compareRightLabel
         Glide.with(this).load(File(paths[index])).into(view)
         val name = paths[index].substringAfterLast('/')
+        val side = if (left) "Ľ · " else "P · "
         if (sharp.isEmpty()) {
-            label.text = name
+            label.text = side + name
             return
         }
         val maxS = sharp.values.maxOrNull() ?: 0.0
         val pct = if (maxS > 0) ((sharp[paths[index]] ?: 0.0) / maxS * 100).toInt() else 0
         val star = if (index == bestIndex) " ★" else ""
-        label.text = getString(R.string.compare_pane_label, name, pct) + star
+        label.text = side + getString(R.string.compare_pane_label, name, pct) + star
     }
 
     private fun updateInfo() {
@@ -132,7 +231,7 @@ class ComparatorActivity : SimpleActivity() {
     }
 
     private fun mirror(to: GestureImageView, state: State) {
-        if (syncing) return
+        if (syncing || !syncEnabled) return
         syncing = true
         try {
             to.controller.state.set(state)
@@ -203,6 +302,7 @@ class ComparatorActivity : SimpleActivity() {
         rebuildAdapter()
         loadPane(true)
         loadPane(false)
+        updateActive()
         updateInfo()
     }
 

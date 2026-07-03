@@ -105,6 +105,7 @@
     <string name="indexing_ocr">Text (OCR)</string>
     <string name="indexing_reembed">Presnosť tvárí</string>
     <string name="indexing_qr">QR kódy</string>
+    <string name="galeria_plus_section">Galéria+ (inteligentné funkcie)</string>
     <string name="indexing_started_bg">Spustené na pozadí (sleduj notifikáciu)</string>
     <!-- Vylepšenie presnosti tvárí (5-bodové prepočítanie) -->
     <string name="reembed_title">Vylepšiť presnosť tvárí</string>
@@ -138,7 +139,15 @@
     <!-- Komparátor podobných/burst -->
     <string name="compare_title">Podobné / burst</string>
     <string name="compare_none">Žiadne podobné/burst skupiny (fotky z toho istého priečinka do ~3 s)</string>
-    <string name="compare_hint">Ťuk = porovnaj · podrž = označ na zmazanie</string>
+    <string name="compare_hint">Ťuk = vľavo (Ľ) · šípky = meniť panel · podrž = označ na zmazanie</string>
+    <string name="compare_sync">Synchronizácia priblíženia</string>
+    <string name="compare_sync_on">Synchronizácia priblíženia zapnutá</string>
+    <string name="compare_sync_off">Synchronizácia priblíženia vypnutá</string>
+    <string name="compare_duel">Turnaj (vyber lepšiu)</string>
+    <string name="compare_duel_hint">Turnaj: ťukni „Táto\" pri lepšej — porazená sa označí</string>
+    <string name="compare_duel_done">Turnaj hotový · označených na zmazanie: %1$d</string>
+    <string name="compare_pick_left">◄ Táto</string>
+    <string name="compare_pick_right">Táto ►</string>
     <string name="compare_delete">Vymazať označené</string>
     <string name="compare_marked">Označené: %1$d</string>
     <string name="compare_marked_none">Nič nie je označené</string>

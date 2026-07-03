@@ -97,7 +97,11 @@ class SearchActivity : SimpleActivity(), MediaOperationsListener {
     private fun textChanged(text: String) {
         ensureBackgroundThread {
             try {
-                val filtered = mAllMedia.filter { it is Medium && it.name.contains(text, true) } as ArrayList
+                // okrem názvu súboru zaraď aj zhody podľa OCR textu, QR a mien osôb
+                val extra = org.fossify.gallery.helpers.SmartSearch.extraPaths(applicationContext, text)
+                val filtered = mAllMedia.filter {
+                    it is Medium && (it.name.contains(text, true) || extra.contains(it.path))
+                } as ArrayList
                 filtered.sortBy { it is Medium && !it.name.startsWith(text, true) }
                 val grouped = MediaFetcher(applicationContext).groupMedia(filtered as ArrayList<Medium>, "")
                 runOnUiThread {

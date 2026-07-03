@@ -14,9 +14,10 @@ class App : FossifyApp() {
     override val isAppLockFeatureAvailable = true
 
     override fun onCreate() {
-        super.onCreate()
         // Legitímny fork (vlastný podpis aj balík), nie pirátska kópia — vypni Fossify anti-fork kontrolu.
+        // Nastav EŠTE PRED super, aby prípadný starý zapamätaný stav TRUE nič nevyvolal.
         baseConfig.appSideloadingStatus = SIDELOADING_FALSE
+        super.onCreate()
         Reprint.initialize(this)
         Picasso.setSingletonInstance(Picasso.Builder(this).downloader(object : Downloader {
             override fun load(request: Request) = Response.Builder().build()

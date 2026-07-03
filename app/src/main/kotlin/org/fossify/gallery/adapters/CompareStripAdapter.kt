@@ -19,10 +19,20 @@ class CompareStripAdapter(
 
     val marked = HashSet<Int>()
     var bestIndex = -1
+    private var activeLeft = -1
+    private var activeRight = -1
 
     fun toggleMark(pos: Int) {
         if (marked.contains(pos)) marked.remove(pos) else marked.add(pos)
         notifyItemChanged(pos)
+    }
+
+    // ktorá fotka je práve v ľavom (Ľ, modrá) a pravom (P, oranžová) paneli
+    fun setActive(left: Int, right: Int) {
+        val changed = setOf(activeLeft, activeRight, left, right).filter { it in paths.indices }
+        activeLeft = left
+        activeRight = right
+        changed.forEach { notifyItemChanged(it) }
     }
 
     fun clearMarks() {
@@ -48,6 +58,26 @@ class CompareStripAdapter(
             Glide.with(activity).load(File(paths[pos])).centerCrop().into(binding.stripImage)
             binding.stripBest.visibility = if (pos == bestIndex) View.VISIBLE else View.GONE
             binding.stripOverlay.visibility = if (marked.contains(pos)) View.VISIBLE else View.GONE
+            when (pos) {
+                activeLeft -> {
+                    binding.stripBorder.setBackgroundResource(org.fossify.gallery.R.drawable.border_pane_left)
+                    binding.stripBorder.visibility = View.VISIBLE
+                    binding.stripBadge.text = "Ľ"
+                    binding.stripBadge.setBackgroundColor(0xFF1976D2.toInt())
+                    binding.stripBadge.visibility = View.VISIBLE
+                }
+                activeRight -> {
+                    binding.stripBorder.setBackgroundResource(org.fossify.gallery.R.drawable.border_pane_right)
+                    binding.stripBorder.visibility = View.VISIBLE
+                    binding.stripBadge.text = "P"
+                    binding.stripBadge.setBackgroundColor(0xFFFB8C00.toInt())
+                    binding.stripBadge.visibility = View.VISIBLE
+                }
+                else -> {
+                    binding.stripBorder.visibility = View.GONE
+                    binding.stripBadge.visibility = View.GONE
+                }
+            }
             binding.root.setOnClickListener { onTap(pos) }
             binding.root.setOnLongClickListener {
                 onLong(pos)

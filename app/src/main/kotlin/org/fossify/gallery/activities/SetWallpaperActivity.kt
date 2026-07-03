@@ -8,7 +8,6 @@ import android.os.Bundle
 import androidx.core.graphics.scale
 import com.canhub.cropper.CropImageView
 import org.fossify.commons.dialogs.RadioGroupDialog
-import org.fossify.commons.extensions.checkAppSideloading
 import org.fossify.commons.extensions.toast
 import org.fossify.commons.extensions.viewBinding
 import org.fossify.commons.helpers.NavigationIcon

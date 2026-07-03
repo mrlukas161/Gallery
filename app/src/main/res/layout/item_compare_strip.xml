@@ -18,6 +18,12 @@
         android:background="#99D32F2F"
         android:visibility="gone" />
 
+    <View
+        android:id="@+id/strip_border"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:visibility="gone" />
+
     <ImageView
         android:id="@+id/strip_best"
         android:layout_width="24dp"
@@ -26,6 +32,18 @@
         android:layout_margin="3dp"
         android:contentDescription="@null"
         android:src="@android:drawable/btn_star_big_on"
+        android:visibility="gone" />
+
+    <TextView
+        android:id="@+id/strip_badge"
+        android:layout_width="22dp"
+        android:layout_height="22dp"
+        android:layout_gravity="top|end"
+        android:layout_margin="3dp"
+        android:gravity="center"
+        android:textColor="#FFFFFFFF"
+        android:textSize="12sp"
+        android:textStyle="bold"
         android:visibility="gone" />
 
 </FrameLayout>

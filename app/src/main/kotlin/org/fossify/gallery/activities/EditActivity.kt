@@ -31,7 +31,6 @@ import org.fossify.commons.extensions.beGone
 import org.fossify.commons.extensions.beGoneIf
 import org.fossify.commons.extensions.beVisible
 import org.fossify.commons.extensions.beVisibleIf
-import org.fossify.commons.extensions.checkAppSideloading
 import org.fossify.commons.extensions.getCompressionFormat
 import org.fossify.commons.extensions.getFileOutputStream
 import org.fossify.commons.extensions.getFilenameFromPath

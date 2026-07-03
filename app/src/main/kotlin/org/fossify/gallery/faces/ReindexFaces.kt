@@ -14,6 +14,10 @@ object ReindexFaces {
     var isRunning = false
         private set
 
+    @Volatile
+    var lastResult: String = ""
+        private set
+
     private const val MAX_DECODE = 1024
 
     fun run(context: Context, onProgress: (Int, Int) -> Unit, onDone: (Int) -> Unit, onError: (String) -> Unit) {
@@ -23,10 +27,15 @@ object ReindexFaces {
         ensureBackgroundThread {
             var landmarker: FaceLandmarkHelper? = null
             var embedder: FaceEmbedder? = null
+            var detector: FaceDetectionHelper? = null
+            var m5 = 0
+            var m2 = 0
+            var mr = 0
             try {
                 val dao = FacesDatabase.getInstance(appCtx).FaceDao()
                 landmarker = FaceLandmarkHelper(appCtx)
                 embedder = FaceEmbedder(appCtx)
+                detector = FaceDetectionHelper(appCtx)
                 val faces = dao.getAllFaces()
                 val total = faces.size
                 var done = 0
@@ -40,8 +49,13 @@ object ReindexFaces {
                                 try {
                                     val crop = FaceAligner.cropRegion(bmp, f.bboxLeft, f.bboxTop, f.bboxRight, f.bboxBottom, 0.3f)
                                     if (crop != null) {
-                                        val emb = FaceAligner.embedCrop(crop, landmarker!!, embedder!!)
-                                        dao.updateEmbedding(id, FaceEmbedder.toBytes(emb))
+                                        val emb = FaceAligner.embedCrop(crop, landmarker!!, embedder!!, detector)
+                                        dao.updateEmbedding(id, FaceEmbedder.toBytes(emb.vec))
+                                        when (emb.method) {
+                                            FaceAligner.M5 -> m5++
+                                            FaceAligner.M2 -> m2++
+                                            else -> mr++
+                                        }
                                         crop.recycle()
                                     }
                                 } catch (ignored: Throwable) {
@@ -60,12 +74,20 @@ object ReindexFaces {
                     PeopleDatabase.getInstance(appCtx).PeopleDao().deleteAllAnchors()
                 } catch (ignored: Throwable) {
                 }
+                try {
+                    // rozdelenie podobnosti sa po oprave posunie -> vynuluj zapamätaný prah návrhov
+                    appCtx.getSharedPreferences("galeria_faces", Context.MODE_PRIVATE)
+                        .edit().remove("suggest_threshold_pct").apply()
+                } catch (ignored: Throwable) {
+                }
+                lastResult = "5b=$m5 2b=$m2 resize=$mr"
                 onDone(done)
             } catch (e: Throwable) {
                 onError(e.javaClass.simpleName + (e.message?.let { ": " + it.take(160) } ?: ""))
             } finally {
                 landmarker?.close()
                 embedder?.close()
+                detector?.close()
                 isRunning = false
             }
         }

@@ -74,10 +74,14 @@ class FaceEmbedder(context: Context) {
             sumXX += sx * dx; sumXY += sx * dy; sumYX += sy * dx; sumYY += sy * dy
             srcSumSq += sx * sx + sy * sy
         }
-        val rot = atan2(sumYX - sumXY, sumXX + sumYY)
+        // Umeyama (bez SVD) uzavretý tvar: a=Σ(sx·dx+sy·dy), b=Σ(sx·dy-sy·dx) -> rot=atan2(b,a), scale=√(a²+b²)/Σ|s|².
+        // (predtým bola tu chyba: invertované znamienko rot + nekompletná mierka -> tvár sa vykreslila ~37% do čierna.)
+        val a = sumXX + sumYY
+        val b = sumXY - sumYX
+        val rot = atan2(b, a)
         val cosR = cos(rot)
         val sinR = sin(rot)
-        val scale = (sumXX * cosR + sumXY * sinR) / (srcSumSq + 1e-8f)
+        val scale = sqrt(a * a + b * b) / (srcSumSq + 1e-8f)
         val tx = dMeanX - (scale * cosR * sMeanX - scale * sinR * sMeanY)
         val ty = dMeanY - (scale * sinR * sMeanX + scale * cosR * sMeanY)
         return Matrix().apply {

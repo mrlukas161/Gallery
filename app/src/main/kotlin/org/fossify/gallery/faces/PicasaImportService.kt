@@ -91,7 +91,7 @@ object PicasaImportService {
                                         dao.insertAnchor(
                                             AnchorEmbeddingEntity(
                                                 personId = personId,
-                                                embedding = FaceEmbedder.toBytes(emb),
+                                                embedding = FaceEmbedder.toBytes(emb.vec),
                                                 source = "picasa",
                                                 createdAt = now,
                                             )

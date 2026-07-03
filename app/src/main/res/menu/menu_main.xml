@@ -24,11 +24,6 @@
         android:title="@string/filter_media"
         app:showAsAction="ifRoom" />
     <item
-        android:id="@+id/smart_search"
-        android:icon="@android:drawable/ic_menu_search"
-        android:title="@string/smart_search_title"
-        app:showAsAction="ifRoom" />
-    <item
         android:id="@+id/compare_similar"
         android:icon="@android:drawable/ic_menu_gallery"
         android:title="@string/compare_title"
