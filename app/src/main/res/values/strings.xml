@@ -105,6 +105,12 @@
     <string name="indexing_ocr">Text (OCR)</string>
     <string name="indexing_reembed">Presnosť tvárí</string>
     <string name="indexing_qr">QR kódy</string>
+    <string name="indexing_phash">Podobné fotky</string>
+    <string name="phash_title">Duplikáty / podobné fotky (index)</string>
+    <string name="phash_tap_to_start">Ťuknutím prehľadám knižnicu a nájdem podobné/duplicitné fotky</string>
+    <string name="phash_running">Hľadám podobné fotky…</string>
+    <string name="phash_result">%1$d fotiek prehľadaných — otvor „Podobné/burst\" → Duplikáty</string>
+    <string name="compare_mode_duplicates">Duplikáty (podobné v knižnici)</string>
     <string name="galeria_plus_section">Galéria+ (inteligentné funkcie)</string>
     <string name="auto_ocr_title">OCR aj automaticky (na pozadí)</string>
     <string name="auto_ocr_on">Zapnuté — text sa číta sám (pomalé, najlepšie pri nabíjaní)</string>
@@ -121,6 +127,7 @@
     <string name="qr_running">Hľadám QR kódy…</string>
     <string name="qr_result">%1$d prehľadaných, %2$d s kódom</string>
     <string name="filter_qr_code">Len fotky s QR kódom</string>
+    <string name="clear_filter">Zrušiť filter</string>
     <!-- PC sync (lokálny LAN server) -->
     <string name="pc_server_title">PC sync server (WiFi)</string>
     <string name="pc_server_tap_to_start">Vypnutý — ťuknutím spustíš server na zálohu fotiek z PC</string>

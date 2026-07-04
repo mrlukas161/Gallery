@@ -15,6 +15,7 @@ import org.fossify.gallery.R
 import org.fossify.gallery.faces.FaceIndexer
 import org.fossify.gallery.faces.GeoIndexer
 import org.fossify.gallery.faces.OcrIndexer
+import org.fossify.gallery.faces.PhashIndexer
 import org.fossify.gallery.faces.QrIndexer
 import org.fossify.gallery.faces.ReindexFaces
 
@@ -34,6 +35,7 @@ class IndexingService : Service() {
         when (intent?.getStringExtra(EXTRA_TASK)) {
             TASK_OCR -> runOcr { finish() }
             TASK_QR -> runQr { finish() }
+            TASK_PHASH -> runPhash { finish() }
             TASK_FACES -> runFaces { finish() }
             TASK_GEO -> runGeo { finish() }
             TASK_REEMBED -> runReembed { finish() }
@@ -80,6 +82,19 @@ class IndexingService : Service() {
             applicationContext, notify = false,
             onProgress = { d, t -> update(getString(R.string.indexing_qr), d, t) },
             onDone = { _, _ -> next() },
+            onError = { next() },
+        )
+    }
+
+    private fun runPhash(next: () -> Unit) {
+        if (PhashIndexer.isRunning) {
+            next()
+            return
+        }
+        PhashIndexer.index(
+            applicationContext, notify = false,
+            onProgress = { d, t -> update(getString(R.string.indexing_phash), d, t) },
+            onDone = { _ -> next() },
             onError = { next() },
         )
     }
@@ -179,6 +194,7 @@ class IndexingService : Service() {
         const val TASK_GEO = "geo"
         const val TASK_OCR = "ocr"
         const val TASK_QR = "qr"
+        const val TASK_PHASH = "phash"
         const val TASK_REEMBED = "reembed"
         private const val CHANNEL_ID = "indexing_service"
         private const val NOTIF_ID = 49240

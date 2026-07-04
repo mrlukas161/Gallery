@@ -121,6 +121,7 @@ class SettingsActivity : SimpleActivity() {
         setupOcrIndexing()
         setupAutoOcr()
         setupQrIndexing()
+        setupPhashIndexing()
         setupPcServer()
         setupCheckForUpdates()
         setupSettingsSearch()
@@ -1082,6 +1083,35 @@ class SettingsActivity : SimpleActivity() {
                         org.fossify.gallery.faces.QrIndexer.isRunning -> getString(R.string.qr_running)
                         indexed > 0 -> getString(R.string.qr_result, indexed, withContent)
                         else -> getString(R.string.qr_tap_to_start)
+                    }
+                }
+            }
+        }
+    }
+
+    private fun setupPhashIndexing() {
+        updatePhashSummary()
+        binding.settingsPhashHolder.setOnClickListener {
+            if (org.fossify.gallery.faces.PhashIndexer.isRunning) {
+                org.fossify.gallery.faces.PhashIndexer.stop()
+                updatePhashSummary()
+            } else {
+                org.fossify.gallery.services.IndexingService.start(this, org.fossify.gallery.services.IndexingService.TASK_PHASH)
+                binding.settingsPhashSummary.text = getString(R.string.indexing_started_bg)
+            }
+        }
+    }
+
+    private fun updatePhashSummary() {
+        ensureBackgroundThread {
+            val dao = org.fossify.gallery.faces.PhashDatabase.getInstance(this).PhashDao()
+            val indexed = try { dao.count() } catch (e: Exception) { 0 }
+            runOnUiThread {
+                if (!isDestroyed) {
+                    binding.settingsPhashSummary.text = when {
+                        org.fossify.gallery.faces.PhashIndexer.isRunning -> getString(R.string.phash_running)
+                        indexed > 0 -> getString(R.string.phash_result, indexed)
+                        else -> getString(R.string.phash_tap_to_start)
                     }
                 }
             }

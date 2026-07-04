@@ -8,6 +8,7 @@ import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.drawable.BitmapDrawable
 import android.os.Bundle
+import androidx.appcompat.app.AlertDialog
 import org.fossify.commons.extensions.beGone
 import org.fossify.commons.extensions.beVisible
 import org.fossify.commons.extensions.viewBinding
@@ -15,9 +16,12 @@ import org.fossify.commons.helpers.NavigationIcon
 import org.fossify.commons.helpers.ensureBackgroundThread
 import org.fossify.gallery.R
 import org.fossify.gallery.databinding.ActivityMapBinding
+import org.fossify.gallery.faces.FacesDatabase
 import org.fossify.gallery.faces.GeoDatabase
 import org.fossify.gallery.faces.GeoEntity
 import org.fossify.gallery.faces.GeoIndexer
+import org.fossify.gallery.faces.PeopleDatabase
+import org.fossify.gallery.faces.QrDatabase
 import org.osmdroid.config.Configuration
 import org.osmdroid.events.DelayedMapListener
 import org.osmdroid.events.MapListener
@@ -35,6 +39,8 @@ class MapActivity : SimpleActivity() {
     private val binding by viewBinding(ActivityMapBinding::inflate)
     private var points: List<GeoEntity> = emptyList()
     private var filterPaths: HashSet<String>? = null
+    private var filterPerson: Set<Long>? = null
+    private var filterQrOnly = false
     private val iconCache = HashMap<Int, BitmapDrawable>()
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -62,6 +68,16 @@ class MapActivity : SimpleActivity() {
         super.onResume()
         setupTopAppBar(binding.mapAppbar, NavigationIcon.Arrow)
         if (filterPaths != null) binding.mapToolbar.title = getString(R.string.map_selection)
+        binding.mapToolbar.menu.clear()
+        binding.mapToolbar.inflateMenu(R.menu.menu_map)
+        binding.mapToolbar.setOnMenuItemClickListener { item ->
+            if (item.itemId == R.id.map_filter) {
+                showFilterDialog()
+                true
+            } else {
+                false
+            }
+        }
         binding.mapView.onResume()
     }
 
@@ -107,8 +123,90 @@ class MapActivity : SimpleActivity() {
         } catch (e: Throwable) {
             emptyList()
         }
-        val f = filterPaths ?: return all
-        return all.filter { f.contains(it.path) }
+        var result = filterPaths?.let { fp -> all.filter { fp.contains(it.path) } } ?: all
+        result = applyMapFilters(result)
+        return result
+    }
+
+    // filter priamo na mape: osoby (mená) + len s QR kódom
+    private fun applyMapFilters(geos: List<GeoEntity>): List<GeoEntity> {
+        var result = geos
+        val fp = filterPerson
+        if (fp != null && fp.isNotEmpty()) {
+            val photoPersons = try {
+                val facesDao = FacesDatabase.getInstance(this).FaceDao()
+                val peopleDao = PeopleDatabase.getInstance(this).PeopleDao()
+                val pidByFace = peopleDao.getAssignments().associate { it.faceId to it.personId }
+                val pp = HashMap<String, MutableSet<Long>>()
+                for (f in facesDao.getAllFaces()) {
+                    val id = f.id ?: continue
+                    val pid = pidByFace[id] ?: continue
+                    pp.getOrPut(f.mediaFullPath) { HashSet() }.add(pid)
+                }
+                pp
+            } catch (e: Throwable) {
+                emptyMap<String, MutableSet<Long>>()
+            }
+            result = result.filter { geo -> photoPersons[geo.path]?.any { fp.contains(it) } == true }
+        }
+        if (filterQrOnly) {
+            val qrSet = try {
+                QrDatabase.getInstance(this).QrDao().getPathsWithQr().toHashSet()
+            } catch (e: Throwable) {
+                HashSet()
+            }
+            result = result.filter { qrSet.contains(it.path) }
+        }
+        return result
+    }
+
+    private fun showFilterDialog() {
+        ensureBackgroundThread {
+            val persons = try {
+                PeopleDatabase.getInstance(this).PeopleDao().getPersons()
+                    .filter { !it.name.isNullOrBlank() }
+                    .sortedBy { it.name ?: "" }
+            } catch (e: Throwable) {
+                emptyList()
+            }
+            runOnUiThread {
+                if (isDestroyed || isFinishing) return@runOnUiThread
+                val labels = ArrayList<String>()
+                persons.forEach { labels.add(it.name ?: "#${it.id}") }
+                labels.add(getString(R.string.filter_qr_code))
+                val qrIndex = labels.size - 1
+                val checked = BooleanArray(labels.size) { i ->
+                    if (i == qrIndex) {
+                        filterQrOnly
+                    } else {
+                        val pid = persons[i].id
+                        pid != null && filterPerson?.contains(pid) == true
+                    }
+                }
+                AlertDialog.Builder(this)
+                    .setTitle(R.string.filter_media)
+                    .setMultiChoiceItems(labels.toTypedArray(), checked) { _, which, isChecked ->
+                        checked[which] = isChecked
+                    }
+                    .setPositiveButton(android.R.string.ok) { _, _ ->
+                        val sel = HashSet<Long>()
+                        persons.forEachIndexed { i, p -> if (checked[i]) p.id?.let { sel.add(it) } }
+                        filterPerson = if (sel.isEmpty()) null else sel
+                        filterQrOnly = checked[qrIndex]
+                        binding.mapToolbar.title =
+                            if (filterPerson != null || filterQrOnly) getString(R.string.map_selection)
+                            else getString(R.string.app_name_brand)
+                        reloadPoints()
+                    }
+                    .setNeutralButton(R.string.clear_filter) { _, _ ->
+                        filterPerson = null
+                        filterQrOnly = false
+                        reloadPoints()
+                    }
+                    .setNegativeButton(android.R.string.cancel, null)
+                    .show()
+            }
+        }
     }
 
     private fun reloadPoints() {

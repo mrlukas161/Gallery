@@ -9,13 +9,17 @@ import org.fossify.commons.extensions.beVisible
 import org.fossify.commons.extensions.viewBinding
 import org.fossify.commons.helpers.NavigationIcon
 import org.fossify.commons.helpers.ensureBackgroundThread
+import org.fossify.gallery.R
 import org.fossify.gallery.adapters.CompareGroupsAdapter
 import org.fossify.gallery.databinding.ActivityCompareListBinding
+import org.fossify.gallery.faces.PhashDatabase
+import org.fossify.gallery.faces.PhashGrouper
 import org.fossify.gallery.helpers.PathTransfer
 
 // Zoznam skupín podobných/burst fotiek = fotky z toho istého priečinka nasnímané v rozpätí ~3 s.
 class CompareListActivity : SimpleActivity() {
     private val binding by viewBinding(ActivityCompareListBinding::inflate)
+    private var duplicatesMode = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -26,7 +30,27 @@ class CompareListActivity : SimpleActivity() {
     override fun onResume() {
         super.onResume()
         setupTopAppBar(binding.compareListAppbar, NavigationIcon.Arrow)
+        binding.compareListToolbar.menu.clear()
+        binding.compareListToolbar.inflateMenu(R.menu.menu_compare_list)
+        binding.compareListToolbar.menu.findItem(R.id.toggle_duplicates)?.isChecked = duplicatesMode
+        binding.compareListToolbar.setOnMenuItemClickListener { item ->
+            if (item.itemId == R.id.toggle_duplicates) {
+                duplicatesMode = !duplicatesMode
+                item.isChecked = duplicatesMode
+                updateTitle()
+                loadGroups()
+                true
+            } else {
+                false
+            }
+        }
+        updateTitle()
         loadGroups()
+    }
+
+    private fun updateTitle() {
+        binding.compareListToolbar.title =
+            getString(if (duplicatesMode) R.string.compare_mode_duplicates else R.string.compare_title)
     }
 
     private fun loadGroups() {
@@ -50,6 +74,15 @@ class CompareListActivity : SimpleActivity() {
     }
 
     private fun buildGroups(): List<List<String>> {
+        return if (duplicatesMode) {
+            val hashes = PhashDatabase.getInstance(this).PhashDao().getAllHashes()
+            PhashGrouper.groupBySimilarity(hashes)
+        } else {
+            buildBurstGroups()
+        }
+    }
+
+    private fun buildBurstGroups(): List<List<String>> {
         val paths = ArrayList<String>()
         val takens = ArrayList<Long>()
         val folders = ArrayList<String>()
