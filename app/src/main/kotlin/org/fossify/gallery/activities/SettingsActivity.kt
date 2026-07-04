@@ -119,6 +119,7 @@ class SettingsActivity : SimpleActivity() {
         setupPicasaImport()
         setupReembed()
         setupOcrIndexing()
+        setupAutoOcr()
         setupQrIndexing()
         setupPcServer()
         setupCheckForUpdates()
@@ -1037,6 +1038,24 @@ class SettingsActivity : SimpleActivity() {
                 }
             }
         }
+    }
+
+    private fun setupAutoOcr() {
+        updateAutoOcrSummary()
+        binding.settingsAutoOcrHolder.setOnClickListener {
+            val prefs = getSharedPreferences("galeria_faces", android.content.Context.MODE_PRIVATE)
+            val now = !prefs.getBoolean("auto_ocr", false)
+            prefs.edit().putBoolean("auto_ocr", now).apply()
+            updateAutoOcrSummary()
+            if (now) {
+                org.fossify.gallery.services.IndexingService.start(this, org.fossify.gallery.services.IndexingService.TASK_OCR)
+            }
+        }
+    }
+
+    private fun updateAutoOcrSummary() {
+        val on = getSharedPreferences("galeria_faces", android.content.Context.MODE_PRIVATE).getBoolean("auto_ocr", false)
+        binding.settingsAutoOcrSummary.text = getString(if (on) R.string.auto_ocr_on else R.string.auto_ocr_off)
     }
 
     private fun setupQrIndexing() {

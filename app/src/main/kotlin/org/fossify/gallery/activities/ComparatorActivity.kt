@@ -13,8 +13,13 @@ import androidx.core.view.updatePadding
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.alexvasilkov.gestures.GestureController
 import com.alexvasilkov.gestures.GestureImageView
+import android.graphics.drawable.Drawable
 import com.alexvasilkov.gestures.State
 import com.bumptech.glide.Glide
+import com.bumptech.glide.load.DataSource
+import com.bumptech.glide.load.engine.GlideException
+import com.bumptech.glide.request.RequestListener
+import com.bumptech.glide.request.target.Target
 import org.fossify.commons.extensions.toast
 import org.fossify.commons.extensions.viewBinding
 import org.fossify.gallery.R
@@ -105,7 +110,7 @@ class ComparatorActivity : SimpleActivity() {
         val next = (cur + dir).coerceIn(0, paths.lastIndex)
         if (next == cur) return
         if (left) leftIndex = next else rightIndex = next
-        loadPane(left)
+        loadPane(left, keepZoom = true)
         updateActive()
     }
 
@@ -189,8 +194,8 @@ class ComparatorActivity : SimpleActivity() {
         if (pos == leftIndex) return
         rightIndex = leftIndex
         leftIndex = pos
-        loadPane(true)
-        loadPane(false)
+        loadPane(true, keepZoom = true)
+        loadPane(false, keepZoom = true)
         updateActive()
     }
 
@@ -199,12 +204,30 @@ class ComparatorActivity : SimpleActivity() {
         updateInfo()
     }
 
-    private fun loadPane(left: Boolean) {
+    private fun loadPane(left: Boolean, keepZoom: Boolean = false) {
         val index = if (left) leftIndex else rightIndex
         if (index !in paths.indices) return
         val view = if (left) binding.compareLeft else binding.compareRight
         val label = if (left) binding.compareLeftLabel else binding.compareRightLabel
-        Glide.with(this).load(File(paths[index])).into(view)
+        // pri prepínaní fotiek zachovaj priblíženie/posun panela -> porovnanie toho istého výrezu
+        val saved = if (keepZoom) State().apply { set(view.controller.state) } else null
+        Glide.with(this).load(File(paths[index]))
+            .listener(object : RequestListener<Drawable> {
+                override fun onLoadFailed(e: GlideException?, model: Any?, target: Target<Drawable>, isFirstResource: Boolean) = false
+                override fun onResourceReady(resource: Drawable, model: Any, target: Target<Drawable>, dataSource: DataSource, isFirstResource: Boolean): Boolean {
+                    if (saved != null) {
+                        view.post {
+                            try {
+                                view.controller.state.set(saved)
+                                view.controller.updateState()
+                            } catch (e: Throwable) {
+                            }
+                        }
+                    }
+                    return false
+                }
+            })
+            .into(view)
         val name = paths[index].substringAfterLast('/')
         val side = if (left) "Ľ · " else "P · "
         if (sharp.isEmpty()) {

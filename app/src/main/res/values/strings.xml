@@ -106,6 +106,9 @@
     <string name="indexing_reembed">Presnosť tvárí</string>
     <string name="indexing_qr">QR kódy</string>
     <string name="galeria_plus_section">Galéria+ (inteligentné funkcie)</string>
+    <string name="auto_ocr_title">OCR aj automaticky (na pozadí)</string>
+    <string name="auto_ocr_on">Zapnuté — text sa číta sám (pomalé, najlepšie pri nabíjaní)</string>
+    <string name="auto_ocr_off">Vypnuté — OCR len ručne tlačidlom vyššie</string>
     <string name="indexing_started_bg">Spustené na pozadí (sleduj notifikáciu)</string>
     <!-- Vylepšenie presnosti tvárí (5-bodové prepočítanie) -->
     <string name="reembed_title">Vylepšiť presnosť tvárí</string>

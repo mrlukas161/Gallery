@@ -37,7 +37,7 @@ class IndexingService : Service() {
             TASK_FACES -> runFaces { finish() }
             TASK_GEO -> runGeo { finish() }
             TASK_REEMBED -> runReembed { finish() }
-            else -> runFaces { runGeo { runQr { finish() } } } // TASK_AUTO = tváre + poloha + QR
+            else -> runFaces { runGeo { runQr { if (autoOcrEnabled()) runOcr { finish() } else finish() } } } // AUTO = tváre+poloha+QR(+OCR)
         }
         return START_NOT_STICKY
     }
@@ -67,6 +67,9 @@ class IndexingService : Service() {
             onError = { next() },
         )
     }
+
+    private fun autoOcrEnabled(): Boolean =
+        getSharedPreferences("galeria_faces", Context.MODE_PRIVATE).getBoolean("auto_ocr", false)
 
     private fun runQr(next: () -> Unit) {
         if (QrIndexer.isRunning) {
