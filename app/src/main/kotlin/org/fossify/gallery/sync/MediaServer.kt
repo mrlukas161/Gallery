@@ -2,6 +2,9 @@ package org.fossify.gallery.sync
 
 import android.content.ContentResolver
 import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.provider.MediaStore
 import org.json.JSONArray
@@ -11,6 +14,8 @@ import fi.iki.elonen.NanoHTTPD.IHTTPSession
 import fi.iki.elonen.NanoHTTPD.Method
 import fi.iki.elonen.NanoHTTPD.Response
 import fi.iki.elonen.NanoHTTPD.Response.Status
+import java.io.ByteArrayInputStream
+import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.InputStream
 import java.net.URLDecoder
@@ -62,6 +67,7 @@ class MediaServer(
                 "/api/ping" -> handlePing()
                 "/api/list" -> handleList()
                 "/api/file" -> handleFile(session)
+                "/api/thumb" -> handleThumb(session)
                 "/api/upload" -> handleUpload(session)
                 "/" -> handleRoot(session)
                 else -> json(Status.NOT_FOUND, """{"error":"not_found"}""")
@@ -111,6 +117,13 @@ class MediaServer(
         // KĽÚČOVÉ: servovať možno len id prítomné v MediaStore indexe.
         val item = index[id]
             ?: return json(Status.NOT_FOUND, """{"error":"unknown id"}""")
+        // voliteľne zmenšená/komprimovaná verzia (q=kvalita %, max=dlhá hrana px) — len obrázky
+        val q = session.parameters["q"]?.firstOrNull()?.toIntOrNull()
+        val max = session.parameters["max"]?.firstOrNull()?.toIntOrNull()
+        if (q != null && item.mime.startsWith("image/")) {
+            val bmp = decodeSampled(item.uri, (max ?: 2048).coerceIn(256, 8192))
+            if (bmp != null) return jpegResponse(bmp, q)
+        }
         val stream: InputStream = resolver.openInputStream(item.uri)
             ?: return json(Status.NOT_FOUND, """{"error":"open failed"}""")
         val resp = NanoHTTPD.newFixedLengthResponse(Status.OK, item.mime, stream, item.size)
@@ -169,17 +182,78 @@ class MediaServer(
     }
 
     private fun handleRoot(session: IHTTPSession): Response {
-        val token = session.parameters["token"]?.firstOrNull().orEmpty()
-        val sb = StringBuilder()
-        sb.append("<!doctype html><meta charset=utf-8>")
-        sb.append("<meta name=viewport content='width=device-width,initial-scale=1'>")
-        sb.append("<title>$SERVER_NAME</title>")
-        sb.append("<style>body{font-family:sans-serif;margin:1rem}a{display:block;padding:.3rem 0}</style>")
-        sb.append("<h2>$SERVER_NAME — ${index.size} položiek</h2>")
-        for (it in index.values.take(2000)) {
-            sb.append("<a href='/api/file?id=${it.id}&token=${escape(token)}'>${escape(it.relpath)} (${it.size} B)</a>")
+        return try {
+            val html = appContext.assets.open("gallery.html").use { it.readBytes() }
+            NanoHTTPD.newFixedLengthResponse(Status.OK, "text/html; charset=utf-8", ByteArrayInputStream(html), html.size.toLong())
+        } catch (e: Throwable) {
+            json(Status.INTERNAL_ERROR, """{"error":"gallery.html chýba"}""")
         }
-        return NanoHTTPD.newFixedLengthResponse(Status.OK, "text/html; charset=utf-8", sb.toString())
+    }
+
+    private fun handleThumb(session: IHTTPSession): Response {
+        val id = session.parameters["id"]?.firstOrNull()?.toLongOrNull()
+            ?: return json(Status.BAD_REQUEST, """{"error":"bad id"}""")
+        val item = index[id] ?: return json(Status.NOT_FOUND, """{"error":"unknown id"}""")
+        val s = session.parameters["s"]?.firstOrNull()?.toIntOrNull()?.coerceIn(64, 1024) ?: 300
+        val bmp = (if (item.mime.startsWith("video/")) videoFrame(item.uri, s) else decodeSampled(item.uri, s))
+            ?: return json(Status.NOT_FOUND, """{"error":"decode failed"}""")
+        return jpegResponse(bmp, 80)
+    }
+
+    // dekóduj obrázok z uri zmenšený (~maxPx dlhá hrana), pamäťovo šetrne cez inSampleSize
+    private fun decodeSampled(uri: Uri, maxPx: Int): Bitmap? {
+        return try {
+            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            resolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, bounds) }
+            val w = bounds.outWidth
+            val h = bounds.outHeight
+            if (w <= 0 || h <= 0) return null
+            var sample = 1
+            while (w / sample > maxPx * 2 || h / sample > maxPx * 2) sample *= 2
+            val opts = BitmapFactory.Options().apply {
+                inSampleSize = sample
+                inPreferredConfig = Bitmap.Config.ARGB_8888
+            }
+            val bmp = resolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, opts) } ?: return null
+            scaleToMax(bmp, maxPx)
+        } catch (e: Throwable) {
+            null
+        }
+    }
+
+    private fun videoFrame(uri: Uri, maxPx: Int): Bitmap? {
+        val mmr = MediaMetadataRetriever()
+        return try {
+            mmr.setDataSource(appContext, uri)
+            val frame = mmr.frameAtTime ?: return null
+            scaleToMax(frame, maxPx)
+        } catch (e: Throwable) {
+            null
+        } finally {
+            try {
+                mmr.release()
+            } catch (ignored: Throwable) {
+            }
+        }
+    }
+
+    private fun scaleToMax(bmp: Bitmap, maxPx: Int): Bitmap {
+        val longEdge = maxOf(bmp.width, bmp.height)
+        if (longEdge <= maxPx || longEdge <= 0) return bmp
+        val sc = maxPx.toFloat() / longEdge
+        val out = Bitmap.createScaledBitmap(bmp, (bmp.width * sc).toInt().coerceAtLeast(1), (bmp.height * sc).toInt().coerceAtLeast(1), true)
+        if (out !== bmp) bmp.recycle()
+        return out
+    }
+
+    private fun jpegResponse(bmp: Bitmap, quality: Int): Response {
+        val bos = ByteArrayOutputStream()
+        bmp.compress(Bitmap.CompressFormat.JPEG, quality.coerceIn(30, 100), bos)
+        bmp.recycle()
+        val bytes = bos.toByteArray()
+        val r = NanoHTTPD.newFixedLengthResponse(Status.OK, "image/jpeg", ByteArrayInputStream(bytes), bytes.size.toLong())
+        r.addHeader("Cache-Control", "max-age=86400")
+        return r
     }
 
     private fun rebuildIndex() {
