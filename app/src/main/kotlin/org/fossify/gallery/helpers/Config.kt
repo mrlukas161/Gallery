@@ -604,7 +604,9 @@ class Config(context: Context) : BaseConfig(context) {
         set(avoidShowingAllFilesPrompt) = prefs.edit().putBoolean(AVOID_SHOWING_ALL_FILES_PROMPT, avoidShowingAllFilesPrompt).apply()
 
     var searchAllFilesByDefault: Boolean
-        get() = prefs.getBoolean(SEARCH_ALL_FILES_BY_DEFAULT, false)
+        // Galéria+: default TRUE — lupa na hlavnej obrazovke hľadá OBSAH fotiek (OCR/osoby/QR/CLIP),
+        // nie len názvy priečinkov. (Prepínateľné v nastaveniach hľadania.)
+        get() = prefs.getBoolean(SEARCH_ALL_FILES_BY_DEFAULT, true)
         set(searchAllFilesByDefault) = prefs.edit().putBoolean(SEARCH_ALL_FILES_BY_DEFAULT, searchAllFilesByDefault).apply()
 
     var lastExportedFavoritesFolder: String

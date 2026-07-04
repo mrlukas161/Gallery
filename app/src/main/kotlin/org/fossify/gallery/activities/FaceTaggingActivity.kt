@@ -262,12 +262,13 @@ class FaceTaggingActivity : SimpleActivity() {
     private fun computeCandidates(): List<Pair<FaceEntity, Float>> {
         val facesDao = FacesDatabase.getInstance(this).FaceDao()
         val peopleDao = PeopleDatabase.getInstance(this).PeopleDao()
-        val all = facesDao.getAllFaces()
-            .filter { FaceFilter.isGood(it) }
+        val allFaces = facesDao.getAllFaces()
+        val pool = allFaces.filter { FaceFilter.isGood(it) }
         val assignments = peopleDao.getAssignments()
         val assigned = assignments.map { it.faceId }.toHashSet()
         val mineIds = assignments.filter { it.personId == personId }.map { it.faceId }.toHashSet()
-        val confirmedEmb = all.filter { it.id != null && mineIds.contains(it.id) }
+        // ťažisko z RUČNE potvrdených tvárí — BEZ filtra skóre (používateľ ich potvrdil, musia rátať do učenia)
+        val confirmedEmb = allFaces.filter { it.id != null && mineIds.contains(it.id) }
             .mapNotNull { it.embedding?.let { b -> FaceEmbedder.toFloats(b) } }
         val anchorEmb = peopleDao.getAnchorEmbeddings(personId).map { FaceEmbedder.toFloats(it) }
         // viac ťažísk (okuliare/starnutie/deti) → porovnaj s najbližším
@@ -275,7 +276,7 @@ class FaceTaggingActivity : SimpleActivity() {
         if (centroids.isEmpty()) return emptyList()
         val cannot = peopleDao.getCannotLinks().filter { it.personId == personId }.map { it.faceId }.toHashSet()
         val ignored = ExtrasDatabase.getInstance(this).ExtrasDao().getIgnoredIds().toHashSet()
-        return all
+        return pool
             .filter { val id = it.id; id != null && !assigned.contains(id) && !cannot.contains(id) && !ignored.contains(id) }
             .mapNotNull { f -> f.embedding?.let { b -> f to PersonGrouper.maxCosine(FaceEmbedder.toFloats(b), centroids) } }
             .sortedByDescending { it.second }
