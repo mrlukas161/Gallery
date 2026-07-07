@@ -54,6 +54,13 @@ object SmartSearch {
         } catch (ignored: Throwable) {
         }
 
+        // CLIP sémantické hľadanie (predmety/scény) — len ak sú modely stiahnuté a index má dáta.
+        // SK->EN preklad prebieha vnútri. Aditívne (nikdy neuberá presné zhody).
+        try {
+            result.addAll(org.fossify.gallery.clip.ClipSearch.search(context, query))
+        } catch (ignored: Throwable) {
+        }
+
         return result
     }
 }

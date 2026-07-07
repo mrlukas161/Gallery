@@ -122,6 +122,7 @@ class SettingsActivity : SimpleActivity() {
         setupAutoOcr()
         setupQrIndexing()
         setupPhashIndexing()
+        setupClip()
         setupPcServer()
         setupCheckForUpdates()
         setupSettingsSearch()
@@ -1112,6 +1113,40 @@ class SettingsActivity : SimpleActivity() {
                         org.fossify.gallery.faces.PhashIndexer.isRunning -> getString(R.string.phash_running)
                         indexed > 0 -> getString(R.string.phash_result, indexed)
                         else -> getString(R.string.phash_tap_to_start)
+                    }
+                }
+            }
+        }
+    }
+
+    private fun setupClip() {
+        updateClipSummary()
+        binding.settingsClipHolder.setOnClickListener {
+            if (org.fossify.gallery.clip.ClipIndexer.isRunning) {
+                org.fossify.gallery.clip.ClipIndexer.stop()
+                updateClipSummary()
+            } else {
+                org.fossify.gallery.services.IndexingService.start(this, org.fossify.gallery.services.IndexingService.TASK_CLIP)
+                binding.settingsClipSummary.text = getString(R.string.indexing_started_bg)
+            }
+        }
+    }
+
+    private fun updateClipSummary() {
+        ensureBackgroundThread {
+            val indexed = try {
+                org.fossify.gallery.clip.ClipDatabase.getInstance(this).ClipDao().count()
+            } catch (e: Exception) {
+                0
+            }
+            val present = org.fossify.gallery.clip.ClipModels.bothPresent(this)
+            runOnUiThread {
+                if (!isDestroyed) {
+                    binding.settingsClipSummary.text = when {
+                        org.fossify.gallery.clip.ClipIndexer.isRunning -> getString(R.string.clip_running)
+                        indexed > 0 -> getString(R.string.clip_result, indexed)
+                        present -> getString(R.string.clip_tap_index)
+                        else -> getString(R.string.clip_tap_download)
                     }
                 }
             }

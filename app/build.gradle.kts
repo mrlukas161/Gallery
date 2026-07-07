@@ -194,6 +194,7 @@ dependencies {
     implementation("org.osmdroid:osmdroid-android:6.1.18")
     implementation("com.google.zxing:core:3.5.4")
     implementation("org.nanohttpd:nanohttpd:2.3.1")
+    implementation("com.microsoft.onnxruntime:onnxruntime-android:1.20.0")
     ksp(libs.androidx.room.compiler)
     detektPlugins(libs.compose.detekt)
 }

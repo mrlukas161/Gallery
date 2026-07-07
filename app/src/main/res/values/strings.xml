@@ -111,6 +111,12 @@
     <string name="phash_running">Hľadám podobné fotky…</string>
     <string name="phash_result">%1$d fotiek prehľadaných — otvor „Podobné/burst\" → Duplikáty</string>
     <string name="compare_mode_duplicates">Duplikáty (podobné v knižnici)</string>
+    <!-- CLIP sémantické hľadanie -->
+    <string name="clip_title">CLIP sémantické hľadanie (beta)</string>
+    <string name="clip_tap_download">Ťuknutím stiahne model (~580 MB, WiFi) a naindexuje — potom hľadaj predmety</string>
+    <string name="clip_tap_index">Model stiahnutý — ťuknutím naindexuje fotky</string>
+    <string name="clip_running">Sťahujem/indexujem CLIP…</string>
+    <string name="clip_result">%1$d fotiek naindexovaných — hľadaj predmety cez lupu</string>
     <string name="galeria_plus_section">Galéria+ (inteligentné funkcie)</string>
     <string name="auto_ocr_title">OCR aj automaticky (na pozadí)</string>
     <string name="auto_ocr_on">Zapnuté — text sa číta sám (pomalé, najlepšie pri nabíjaní)</string>

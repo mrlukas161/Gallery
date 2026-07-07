@@ -14,6 +14,8 @@ import androidx.core.content.ContextCompat
 import org.fossify.gallery.R
 import org.fossify.gallery.faces.FaceIndexer
 import org.fossify.gallery.faces.GeoIndexer
+import org.fossify.gallery.clip.ClipIndexer
+import org.fossify.gallery.clip.ClipSearch
 import org.fossify.gallery.faces.OcrIndexer
 import org.fossify.gallery.faces.PhashIndexer
 import org.fossify.gallery.faces.QrIndexer
@@ -36,6 +38,7 @@ class IndexingService : Service() {
             TASK_OCR -> runOcr { finish() }
             TASK_QR -> runQr { finish() }
             TASK_PHASH -> runPhash { finish() }
+            TASK_CLIP -> runClip { finish() }
             TASK_FACES -> runFaces { finish() }
             TASK_GEO -> runGeo { finish() }
             TASK_REEMBED -> runReembed { finish() }
@@ -82,6 +85,22 @@ class IndexingService : Service() {
             applicationContext, notify = false,
             onProgress = { d, t -> update(getString(R.string.indexing_qr), d, t) },
             onDone = { _, _ -> next() },
+            onError = { next() },
+        )
+    }
+
+    private fun runClip(next: () -> Unit) {
+        if (ClipIndexer.isRunning) {
+            next()
+            return
+        }
+        ClipIndexer.index(
+            applicationContext, notify = false,
+            onProgress = { phase, d, t -> update(phase, d, t) },
+            onDone = { _ ->
+                ClipSearch.invalidate()
+                next()
+            },
             onError = { next() },
         )
     }
@@ -195,6 +214,7 @@ class IndexingService : Service() {
         const val TASK_OCR = "ocr"
         const val TASK_QR = "qr"
         const val TASK_PHASH = "phash"
+        const val TASK_CLIP = "clip"
         const val TASK_REEMBED = "reembed"
         private const val CHANNEL_ID = "indexing_service"
         private const val NOTIF_ID = 49240
