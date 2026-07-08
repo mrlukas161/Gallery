@@ -22,4 +22,8 @@ interface OcrDao {
     // uvoľnené hľadanie nad normalizovaným textom
     @Query("SELECT path FROM ocr_text WHERE norm_text LIKE '%' || :q || '%'")
     fun search(q: String): List<String>
+
+    // rozpoznaný text konkrétnej fotky (na zobrazenie/výber v prehliadači)
+    @Query("SELECT text FROM ocr_text WHERE path = :path LIMIT 1")
+    fun getText(path: String): String?
 }

@@ -60,6 +60,7 @@ class ComparatorActivity : SimpleActivity() {
         binding.compareDelete.text = getString(R.string.compare_delete)
         binding.compareDelete.setOnClickListener { deleteMarked() }
         binding.compareTitle.text = getString(R.string.compare_hint)
+        configurePanes()
         setupSync()
         binding.compareSync.setOnClickListener { toggleSync() }
         binding.compareDuel.setOnClickListener { toggleDuel() }
@@ -242,6 +243,19 @@ class ComparatorActivity : SimpleActivity() {
 
     private fun updateInfo() {
         binding.compareInfo.text = getString(R.string.compare_marked, adapter?.marked?.size ?: 0)
+    }
+
+    // uvoľni obmedzenie hraníc -> obraz sa po uvoľnení prsta NEPRESKOČÍ späť, ostane kde ho nastavíš
+    private fun configurePanes() {
+        listOf(binding.compareLeft, binding.compareRight).forEach { v ->
+            try {
+                v.controller.settings
+                    .setMaxZoom(12f)
+                    .setDoubleTapZoom(3f)
+                    .setBoundsType(com.alexvasilkov.gestures.Settings.Bounds.NONE)
+            } catch (e: Throwable) {
+            }
+        }
     }
 
     private fun setupSync() {

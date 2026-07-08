@@ -362,6 +362,7 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
                 R.id.menu_edit -> openEditor(getCurrentPath())
                 R.id.menu_properties -> showProperties()
                 R.id.menu_show_on_map -> showFileOnMap(getCurrentPath())
+                R.id.menu_ocr_text -> showOcrText(getCurrentPath())
                 R.id.menu_rotate_right -> rotateImage(90)
                 R.id.menu_rotate_left -> rotateImage(-90)
                 R.id.menu_rotate_one_eighty -> rotateImage(180)
@@ -1536,6 +1537,45 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
     private fun getCurrentMedia() = if (mAreSlideShowMediaVisible || mRandomSlideshowStopped) mSlideshowMedia else mMediaFiles
 
     private fun getCurrentPath() = getCurrentMedium()?.path ?: ""
+
+    // Galéria+: zobraz rozpoznaný OCR text tejto fotky (výberateľný, s možnosťou kopírovania)
+    private fun showOcrText(path: String) {
+        if (path.isEmpty()) return
+        ensureBackgroundThread {
+            val text = try {
+                org.fossify.gallery.faces.OcrDatabase.getInstance(this).OcrDao().getText(path)
+            } catch (e: Throwable) {
+                null
+            }
+            runOnUiThread {
+                if (isDestroyed || isFinishing) return@runOnUiThread
+                if (text.isNullOrBlank()) {
+                    android.widget.Toast.makeText(this, R.string.ocr_no_text, android.widget.Toast.LENGTH_SHORT).show()
+                    return@runOnUiThread
+                }
+                val pad = (16 * resources.displayMetrics.density).toInt()
+                val tv = android.widget.TextView(this).apply {
+                    setText(text)
+                    setTextIsSelectable(true)
+                    setPadding(pad, pad, pad, pad)
+                }
+                val scroll = android.widget.ScrollView(this).apply { addView(tv) }
+                androidx.appcompat.app.AlertDialog.Builder(this)
+                    .setTitle(R.string.show_ocr_text)
+                    .setView(scroll)
+                    .setPositiveButton(R.string.copy_text) { _, _ ->
+                        try {
+                            getSystemService(android.content.ClipboardManager::class.java)
+                                ?.setPrimaryClip(android.content.ClipData.newPlainText("OCR", text))
+                            android.widget.Toast.makeText(this, R.string.ocr_copied, android.widget.Toast.LENGTH_SHORT).show()
+                        } catch (e: Throwable) {
+                        }
+                    }
+                    .setNegativeButton(android.R.string.cancel, null)
+                    .show()
+            }
+        }
+    }
 
     override fun onPageScrolled(position: Int, positionOffset: Float, positionOffsetPixels: Int) {}
 

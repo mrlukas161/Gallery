@@ -123,6 +123,10 @@
     <string name="perf_charger">Naplno len pri nabíjaní</string>
     <string name="perf_limited">Obmedzený — po jednej funkcii (šetrne)</string>
     <string name="not_this_person_confirm">Odstrániť túto fotku od osoby %1$s? (už sa nebude navrhovať)</string>
+    <string name="show_ocr_text">Zobraziť text (OCR)</string>
+    <string name="ocr_no_text">Na tejto fotke sa nenašiel text (alebo OCR ešte nebežalo)</string>
+    <string name="copy_text">Kopírovať</string>
+    <string name="ocr_copied">Text skopírovaný</string>
     <string name="auto_ocr_title">OCR aj automaticky (na pozadí)</string>
     <string name="auto_ocr_on">Zapnuté — text sa číta sám (pomalé, najlepšie pri nabíjaní)</string>
     <string name="auto_ocr_off">Vypnuté — OCR len ručne tlačidlom vyššie</string>
