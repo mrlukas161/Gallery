@@ -363,6 +363,7 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
                 R.id.menu_properties -> showProperties()
                 R.id.menu_show_on_map -> showFileOnMap(getCurrentPath())
                 R.id.menu_ocr_text -> showOcrText(getCurrentPath())
+                R.id.menu_photo_info -> showPhotoInfo(getCurrentPath())
                 R.id.menu_rotate_right -> rotateImage(90)
                 R.id.menu_rotate_left -> rotateImage(-90)
                 R.id.menu_rotate_one_eighty -> rotateImage(180)
@@ -1537,6 +1538,83 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
     private fun getCurrentMedia() = if (mAreSlideShowMediaVisible || mRandomSlideshowStopped) mSlideshowMedia else mMediaFiles
 
     private fun getCurrentPath() = getCurrentMedium()?.path ?: ""
+
+    // Galéria+: info panel — poloha na mape + osoby na fotke (+ označiť tváre), ako Google Photos
+    private fun showPhotoInfo(path: String) {
+        if (path.isEmpty()) return
+        ensureBackgroundThread {
+            val geo = try {
+                org.fossify.gallery.faces.GeoDatabase.getInstance(this).GeoDao().getByPath(path)
+            } catch (e: Throwable) {
+                null
+            }
+            var faceCount = 0
+            val names = try {
+                val faces = org.fossify.gallery.faces.FacesDatabase.getInstance(this).FaceDao()
+                    .getAllFaces().filter { it.mediaFullPath == path }
+                faceCount = faces.size
+                val faceIds = faces.mapNotNull { it.id }.toHashSet()
+                val peopleDao = org.fossify.gallery.faces.PeopleDatabase.getInstance(this).PeopleDao()
+                val personById = peopleDao.getPersons().associate { it.id to (it.name ?: "") }
+                peopleDao.getAssignments().filter { faceIds.contains(it.faceId) }
+                    .mapNotNull { personById[it.personId] }.filter { it.isNotBlank() }.distinct()
+            } catch (e: Throwable) {
+                emptyList<String>()
+            }
+            runOnUiThread {
+                if (isDestroyed || isFinishing) return@runOnUiThread
+                showInfoSheet(path, geo, names, faceCount)
+            }
+        }
+    }
+
+    private fun showInfoSheet(path: String, geo: org.fossify.gallery.faces.GeoEntity?, names: List<String>, faceCount: Int) {
+        val dp = resources.displayMetrics.density
+        fun px(v: Int) = (v * dp).toInt()
+        val root = android.widget.LinearLayout(this).apply {
+            orientation = android.widget.LinearLayout.VERTICAL
+            setPadding(px(20), px(16), px(20), px(20))
+        }
+        fun addText(text: CharSequence, bold: Boolean = false, size: Float = 15f) {
+            root.addView(android.widget.TextView(this).apply {
+                this.text = text
+                textSize = size
+                if (bold) setTypeface(typeface, android.graphics.Typeface.BOLD)
+                setPadding(0, px(4), 0, px(4))
+            })
+        }
+        addText(path.substringAfterLast('/'), bold = true, size = 16f)
+        if (geo != null) {
+            addText("📍 %.5f, %.5f".format(geo.lat, geo.lon))
+            root.addView(android.widget.Button(this).apply {
+                text = getString(R.string.info_show_on_map)
+                setOnClickListener { showFileOnMap(path) }
+            })
+        } else {
+            addText(getString(R.string.info_no_location))
+        }
+        if (names.isNotEmpty()) {
+            addText("👤 " + names.joinToString(", "))
+        } else {
+            addText(getString(R.string.info_no_people, faceCount))
+        }
+        root.addView(android.widget.Button(this).apply {
+            text = getString(R.string.info_tag_people)
+            setOnClickListener { openTagFaces() }
+        })
+        val scroll = android.widget.ScrollView(this).apply { addView(root) }
+        com.google.android.material.bottomsheet.BottomSheetDialog(this).apply {
+            setContentView(scroll)
+            show()
+        }
+    }
+
+    private fun openTagFaces() {
+        startActivity(
+            Intent(this, FaceTaggingActivity::class.java)
+                .putExtra(FaceTaggingActivity.MODE, FaceTaggingActivity.MODE_UNLABELED)
+        )
+    }
 
     // Galéria+: zobraz rozpoznaný OCR text tejto fotky (výberateľný, s možnosťou kopírovania)
     private fun showOcrText(path: String) {

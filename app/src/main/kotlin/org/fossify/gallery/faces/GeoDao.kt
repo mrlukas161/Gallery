@@ -16,6 +16,9 @@ interface GeoDao {
     @Query("SELECT * FROM geo WHERE has_geo = 1")
     fun getGeotagged(): List<GeoEntity>
 
+    @Query("SELECT * FROM geo WHERE path = :path AND has_geo = 1 LIMIT 1")
+    fun getByPath(path: String): GeoEntity?
+
     @Query("SELECT COUNT(*) FROM geo")
     fun count(): Int
 

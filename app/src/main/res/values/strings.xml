@@ -125,6 +125,11 @@
     <string name="perf_charger">Naplno len pri nabíjaní</string>
     <string name="perf_limited">Obmedzený — po jednej funkcii (šetrne)</string>
     <string name="not_this_person_confirm">Odstrániť túto fotku od osoby %1$s? (už sa nebude navrhovať)</string>
+    <string name="info_title">Info (poloha a osoby)</string>
+    <string name="info_show_on_map">Zobraziť na mape</string>
+    <string name="info_no_location">📍 Bez GPS polohy (alebo poloha ešte nebola indexovaná)</string>
+    <string name="info_no_people">👤 Žiadne priradené osoby (tvárí na fotke: %1$d)</string>
+    <string name="info_tag_people">Označiť tváre</string>
     <string name="show_ocr_text">Zobraziť text (OCR)</string>
     <string name="ocr_no_text">Na tejto fotke sa nenašiel text (alebo OCR ešte nebežalo)</string>
     <string name="copy_text">Kopírovať</string>

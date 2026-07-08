@@ -14,6 +14,10 @@
         android:title="@string/show_ocr_text"
         app:showAsAction="never" />
     <item
+        android:id="@+id/menu_photo_info"
+        android:title="@string/info_title"
+        app:showAsAction="never" />
+    <item
         android:id="@+id/menu_delete"
         android:icon="@drawable/ic_delete_vector"
         android:title="@string/delete"
