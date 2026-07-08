@@ -123,6 +123,14 @@
     <string name="clip_ml_downloading">Sťahujem slovenský model (~500 MB)…</string>
     <string name="clip_ml_on">Zapnuté — hľadanie rozumie priamo po slovensky (ťuknutím vypnúť)</string>
     <string name="clip_ml_off">Stiahnuté, vypnuté — používa sa slovníkový preklad (ťuknutím zapnúť)</string>
+    <!-- Hub Preskúmať -->
+    <string name="explore_title">Preskúmať</string>
+    <string name="explore_people_sub">Fotky roztriedené podľa osôb</string>
+    <string name="explore_places">Miesta</string>
+    <string name="explore_places_sub">Fotky na mape podľa polohy</string>
+    <string name="explore_similar_sub">Nájdi takmer rovnaké fotky a série (burst)</string>
+    <string name="explore_search">Hľadať čokoľvek</string>
+    <string name="explore_search_sub">Predmety, scény, text z dokumentov, mená osôb</string>
     <string name="galeria_plus_section">Galéria+ (inteligentné funkcie)</string>
     <string name="changelog_title">Čo je nové (história zmien)</string>
     <string name="changelog_summary">Prehľad všetkých zmien medzi verziami — na odkontrolovanie funkcií</string>

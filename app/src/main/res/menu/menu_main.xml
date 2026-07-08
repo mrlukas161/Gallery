@@ -24,9 +24,9 @@
         android:title="@string/filter_media"
         app:showAsAction="ifRoom" />
     <item
-        android:id="@+id/compare_similar"
+        android:id="@+id/explore"
         android:icon="@android:drawable/ic_menu_gallery"
-        android:title="@string/compare_title"
+        android:title="@string/explore_title"
         app:showAsAction="never" />
     <item
         android:id="@+id/change_view_type"
@@ -67,11 +67,6 @@
         android:id="@+id/open_recycle_bin"
         android:showAsAction="never"
         android:title="@string/open_the_recycle_bin"
-        app:showAsAction="never" />
-    <item
-        android:id="@+id/people"
-        android:showAsAction="never"
-        android:title="@string/people"
         app:showAsAction="never" />
     <item
         android:id="@+id/column_count"

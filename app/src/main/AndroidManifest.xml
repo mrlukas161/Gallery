@@ -182,6 +182,13 @@
             android:parentActivityName=".activities.SettingsActivity" />
 
         <activity
+            android:name=".activities.ExploreActivity"
+            android:configChanges="orientation"
+            android:exported="false"
+            android:label="@string/explore_title"
+            android:parentActivityName=".activities.MainActivity" />
+
+        <activity
             android:name=".activities.IncludedFoldersActivity"
             android:configChanges="orientation"
             android:exported="false"
