@@ -5,6 +5,7 @@ import android.os.Bundle
 import android.widget.EditText
 import androidx.appcompat.app.AlertDialog
 import androidx.recyclerview.widget.GridLayoutManager
+import org.fossify.commons.extensions.getProperPrimaryColor
 import org.fossify.commons.extensions.toast
 import org.fossify.commons.extensions.viewBinding
 import org.fossify.commons.helpers.NavigationIcon
@@ -52,6 +53,7 @@ class PersonActivity : SimpleActivity() {
         val lm = GridLayoutManager(this, prefs.getInt("person_columns", COLUMNS))
         binding.personGrid.layoutManager = lm
         GridZoom.setup(binding.personGrid, lm, prefs, "person_columns")
+        binding.personFastscroller.updateColors(getProperPrimaryColor())
         loadFaces(faceIds)
     }
 

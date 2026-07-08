@@ -20,12 +20,20 @@
 
     </org.fossify.commons.views.MyAppBarLayout>
 
-    <org.fossify.commons.views.MyRecyclerView
-        android:id="@+id/person_grid"
+    <com.qtalk.recyclerviewfastscroller.RecyclerViewFastScroller
+        android:id="@+id/person_fastscroller"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:clipToPadding="false"
-        android:padding="1dp"
-        app:layout_behavior="@string/appbar_scrolling_view_behavior" />
+        app:layout_behavior="@string/appbar_scrolling_view_behavior">
+
+        <org.fossify.commons.views.MyRecyclerView
+            android:id="@+id/person_grid"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:clipToPadding="false"
+            android:padding="1dp"
+            android:scrollbars="none" />
+
+    </com.qtalk.recyclerviewfastscroller.RecyclerViewFastScroller>
 
 </androidx.coordinatorlayout.widget.CoordinatorLayout>
