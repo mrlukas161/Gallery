@@ -245,14 +245,12 @@ class ComparatorActivity : SimpleActivity() {
         binding.compareInfo.text = getString(R.string.compare_marked, adapter?.marked?.size ?: 0)
     }
 
-    // uvoľni obmedzenie hraníc -> obraz sa po uvoľnení prsta NEPRESKOČÍ späť, ostane kde ho nastavíš
+    // väčší rozsah priblíženia pre porovnanie detailu
     private fun configurePanes() {
         listOf(binding.compareLeft, binding.compareRight).forEach { v ->
             try {
-                v.controller.settings
-                    .setMaxZoom(12f)
-                    .setDoubleTapZoom(3f)
-                    .setBoundsType(com.alexvasilkov.gestures.Settings.Bounds.NONE)
+                v.controller.settings.maxZoom = 12f
+                v.controller.settings.doubleTapZoom = 4f
             } catch (e: Throwable) {
             }
         }
