@@ -1,5 +1,6 @@
 package org.fossify.gallery
 
+import android.content.Context
 import com.github.ajalt.reprint.core.Reprint
 import com.squareup.picasso.Downloader
 import com.squareup.picasso.Picasso
@@ -12,6 +13,20 @@ import org.fossify.commons.helpers.SIDELOADING_FALSE
 class App : FossifyApp() {
 
     override val isAppLockFeatureAvailable = true
+
+    override fun attachBaseContext(base: Context) {
+        super.attachBaseContext(base)
+        // NAJSKORŠÍ možný bod (pred onCreate aj pred akoukoľvek Activity). Synchronne (.commit) prepíš
+        // prípadný STARÝ zapamätaný stav „sideloaded=TRUE" (prežije aj update appky) na FALSE, aby sa
+        // Fossify anti-fork „fake app" dialóg nemohol ukázať. Kľúče overené z commons 6.1.6.
+        try {
+            base.getSharedPreferences("Prefs", Context.MODE_PRIVATE)
+                .edit()
+                .putInt("app_sideloading_status", SIDELOADING_FALSE)
+                .commit()
+        } catch (ignored: Throwable) {
+        }
+    }
 
     override fun onCreate() {
         // Legitímny fork (vlastný podpis aj balík), nie pirátska kópia — vypni Fossify anti-fork kontrolu.
