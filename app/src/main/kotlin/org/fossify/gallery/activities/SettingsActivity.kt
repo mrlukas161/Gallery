@@ -126,6 +126,7 @@ class SettingsActivity : SimpleActivity() {
         setupQrIndexing()
         setupPhashIndexing()
         setupClip()
+        setupClipMl()
         setupPcServer()
         setupCheckForUpdates()
         setupSettingsSearch()
@@ -1183,6 +1184,48 @@ class SettingsActivity : SimpleActivity() {
                         indexed > 0 -> getString(R.string.clip_result, indexed)
                         present -> getString(R.string.clip_tap_index)
                         else -> getString(R.string.clip_tap_download)
+                    }
+                }
+            }
+        }
+    }
+
+    private fun setupClipMl() {
+        updateClipMlSummary()
+        binding.settingsClipMlHolder.setOnClickListener {
+            val prefs = getSharedPreferences("galeria_faces", android.content.Context.MODE_PRIVATE)
+            when {
+                org.fossify.gallery.clip.ClipMlModels.isRunning -> {
+                    org.fossify.gallery.clip.ClipMlModels.stop()
+                    updateClipMlSummary()
+                }
+                !org.fossify.gallery.clip.ClipMlModels.present(this) -> {
+                    // stiahnuť model a rovno zapnúť (aktivuje sa po dokončení sťahovania)
+                    prefs.edit().putBoolean("clip_ml", true).apply()
+                    org.fossify.gallery.services.IndexingService.start(this, org.fossify.gallery.services.IndexingService.TASK_CLIP_ML)
+                    binding.settingsClipMlSummary.text = getString(R.string.clip_ml_downloading)
+                }
+                else -> {
+                    val now = !prefs.getBoolean("clip_ml", false)
+                    prefs.edit().putBoolean("clip_ml", now).apply()
+                    if (!now) org.fossify.gallery.clip.ClipSearch.releaseMl()
+                    updateClipMlSummary()
+                }
+            }
+        }
+    }
+
+    private fun updateClipMlSummary() {
+        ensureBackgroundThread {
+            val present = org.fossify.gallery.clip.ClipMlModels.present(this)
+            val on = getSharedPreferences("galeria_faces", android.content.Context.MODE_PRIVATE).getBoolean("clip_ml", false)
+            runOnUiThread {
+                if (!isDestroyed) {
+                    binding.settingsClipMlSummary.text = when {
+                        org.fossify.gallery.clip.ClipMlModels.isRunning -> getString(R.string.clip_ml_downloading)
+                        present && on -> getString(R.string.clip_ml_on)
+                        present && !on -> getString(R.string.clip_ml_off)
+                        else -> getString(R.string.clip_ml_download_hint)
                     }
                 }
             }

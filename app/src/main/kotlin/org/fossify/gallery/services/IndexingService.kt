@@ -103,6 +103,7 @@ class IndexingService : Service() {
         TASK_OCR -> OcrIndexer.isRunning
         TASK_PHASH -> PhashIndexer.isRunning
         TASK_CLIP -> ClipIndexer.isRunning
+        TASK_CLIP_ML -> org.fossify.gallery.clip.ClipMlModels.isRunning
         TASK_REEMBED -> ReindexFaces.isRunning
         else -> false
     }
@@ -115,6 +116,7 @@ class IndexingService : Service() {
             TASK_OCR -> runOcr(done)
             TASK_PHASH -> runPhash(done)
             TASK_CLIP -> runClip(done)
+            TASK_CLIP_ML -> runClipMl(done)
             TASK_REEMBED -> runReembed(done)
             else -> done()
         }
@@ -191,6 +193,18 @@ class IndexingService : Service() {
             onProgress = { phase, d, t -> prog("clip", "$phase $d/$t") },
             onDone = { _ -> ClipSearch.invalidate(); clearProg("clip"); next() },
             onError = { clearProg("clip"); next() },
+        )
+    }
+
+    private fun runClipMl(next: () -> Unit) {
+        if (org.fossify.gallery.clip.ClipMlModels.isRunning) {
+            next(); return
+        }
+        org.fossify.gallery.clip.ClipMlModels.download(
+            applicationContext,
+            onProgress = { phase, d, t -> prog("clipml", "SK model: $phase $d/$t") },
+            onDone = { org.fossify.gallery.clip.ClipSearch.releaseMl(); clearProg("clipml"); next() },
+            onError = { clearProg("clipml"); next() },
         )
     }
 
@@ -301,6 +315,7 @@ class IndexingService : Service() {
         const val TASK_QR = "qr"
         const val TASK_PHASH = "phash"
         const val TASK_CLIP = "clip"
+        const val TASK_CLIP_ML = "clipml"
         const val TASK_REEMBED = "reembed"
         private const val CHANNEL_ID = "indexing_service"
         private const val NOTIF_ID = 49240

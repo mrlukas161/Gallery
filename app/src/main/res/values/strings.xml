@@ -117,6 +117,12 @@
     <string name="clip_tap_index">Model stiahnutý — ťuknutím naindexuje fotky</string>
     <string name="clip_running">Sťahujem/indexujem CLIP…</string>
     <string name="clip_result">%1$d fotiek naindexovaných — hľadaj predmety cez lupu</string>
+    <!-- CLIP multilingválny (priama slovenčina) -->
+    <string name="clip_ml_title">Priama slovenčina v hľadaní (AI model)</string>
+    <string name="clip_ml_download_hint">Ťuknutím stiahne multilingválny model (~500 MB, WiFi) — hľadanie rozumie priamo po slovensky. Netreba re-indexovať fotky.</string>
+    <string name="clip_ml_downloading">Sťahujem slovenský model (~500 MB)…</string>
+    <string name="clip_ml_on">Zapnuté — hľadanie rozumie priamo po slovensky (ťuknutím vypnúť)</string>
+    <string name="clip_ml_off">Stiahnuté, vypnuté — používa sa slovníkový preklad (ťuknutím zapnúť)</string>
     <string name="galeria_plus_section">Galéria+ (inteligentné funkcie)</string>
     <string name="changelog_title">Čo je nové (história zmien)</string>
     <string name="changelog_summary">Prehľad všetkých zmien medzi verziami — na odkontrolovanie funkcií</string>
