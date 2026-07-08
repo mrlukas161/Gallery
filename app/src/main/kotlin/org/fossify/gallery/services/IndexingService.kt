@@ -12,160 +12,233 @@ import android.os.IBinder
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import org.fossify.gallery.R
-import org.fossify.gallery.faces.FaceIndexer
-import org.fossify.gallery.faces.GeoIndexer
 import org.fossify.gallery.clip.ClipIndexer
 import org.fossify.gallery.clip.ClipSearch
+import org.fossify.gallery.faces.FaceIndexer
+import org.fossify.gallery.faces.GeoIndexer
 import org.fossify.gallery.faces.OcrIndexer
 import org.fossify.gallery.faces.PhashIndexer
 import org.fossify.gallery.faces.QrIndexer
 import org.fossify.gallery.faces.ReindexFaces
+import org.fossify.gallery.helpers.IndexPerf
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicInteger
 
-// Foreground služba pre indexovanie (tváre / poloha / OCR). Drží proces nažive aj keď zhasne obrazovka
-// alebo je apka na pozadí (HyperOS inak background prácu zabíja).
+// Foreground služba pre indexovanie. V režime Max/nabíjanie bežia funkcie PARALELNE (všetko naraz),
+// v obmedzenom režime postupne. Notifikácia ukazuje priebeh KAŽDEJ bežiacej funkcie. Ref-counted:
+// viac spustení (aj z rôznych tlačidiel) beží súčasne; služba skončí až keď dobehnú všetky.
 class IndexingService : Service() {
-    @Volatile
-    private var working = false
+    private val progressMap = ConcurrentHashMap<String, String>()
+    private val active = AtomicInteger(0)
 
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         ensureChannel()
-        startForegroundCompat(buildNotification(getString(R.string.indexing_running), -1, -1))
-        if (working) return START_NOT_STICKY
-        working = true
-        when (intent?.getStringExtra(EXTRA_TASK)) {
-            TASK_OCR -> runOcr { finish() }
-            TASK_QR -> runQr { finish() }
-            TASK_PHASH -> runPhash { finish() }
-            TASK_CLIP -> runClip { finish() }
-            TASK_FACES -> runFaces { finish() }
-            TASK_GEO -> runGeo { finish() }
-            TASK_REEMBED -> runReembed { finish() }
-            else -> runFaces { runGeo { runQr { if (autoOcrEnabled()) runOcr { finish() } else finish() } } } // AUTO = tváre+poloha+QR(+OCR)
+        startForegroundCompat(buildInitial())
+        when (val task = intent?.getStringExtra(EXTRA_TASK)) {
+            null, TASK_AUTO -> {
+                val list = ArrayList<String>()
+                list.add(TASK_FACES)
+                list.add(TASK_GEO)
+                list.add(TASK_QR)
+                if (autoOcrEnabled()) list.add(TASK_OCR)
+                launch(list, sequential = !IndexPerf.parallel(this))
+            }
+
+            else -> launch(listOf(task), sequential = false)
         }
         return START_NOT_STICKY
     }
 
+    // --- orchestrácia (ref-counted, paralelne alebo postupne) ---
+
+    private fun launch(tasks: List<String>, sequential: Boolean) {
+        val toRun = tasks.filter { !isTaskRunning(it) }
+        if (toRun.isEmpty()) {
+            maybeFinish()
+            return
+        }
+        active.addAndGet(toRun.size)
+        if (sequential) {
+            chain(toRun, 0)
+        } else {
+            toRun.forEach { t -> runOne(t) { taskFinished() } }
+        }
+    }
+
+    private fun chain(tasks: List<String>, i: Int) {
+        if (i >= tasks.size) return
+        runOne(tasks[i]) {
+            taskFinished()
+            chain(tasks, i + 1)
+        }
+    }
+
+    private fun taskFinished() {
+        active.decrementAndGet()
+        maybeFinish()
+    }
+
+    private fun maybeFinish() {
+        if (active.get() <= 0) finish()
+    }
+
+    private fun isTaskRunning(task: String): Boolean = when (task) {
+        TASK_FACES -> FaceIndexer.isRunning
+        TASK_GEO -> GeoIndexer.isRunning
+        TASK_QR -> QrIndexer.isRunning
+        TASK_OCR -> OcrIndexer.isRunning
+        TASK_PHASH -> PhashIndexer.isRunning
+        TASK_CLIP -> ClipIndexer.isRunning
+        TASK_REEMBED -> ReindexFaces.isRunning
+        else -> false
+    }
+
+    private fun runOne(task: String, done: () -> Unit) {
+        when (task) {
+            TASK_FACES -> runFaces(done)
+            TASK_GEO -> runGeo(done)
+            TASK_QR -> runQr(done)
+            TASK_OCR -> runOcr(done)
+            TASK_PHASH -> runPhash(done)
+            TASK_CLIP -> runClip(done)
+            TASK_REEMBED -> runReembed(done)
+            else -> done()
+        }
+    }
+
+    // --- jednotlivé indexery (bežia na vlastnom vlákne, hlásia progres kľúčom) ---
+
     private fun runFaces(next: () -> Unit) {
         if (FaceIndexer.isRunning) {
-            next()
-            return
+            next(); return
         }
         FaceIndexer.index(
             applicationContext, notify = false,
-            onProgress = { d, t -> update(getString(R.string.indexing_faces), d, t) },
-            onDone = { _, _, _ -> next() },
-            onError = { next() },
+            onProgress = { d, t -> prog("faces", "Tváre $d/$t") },
+            onDone = { _, _, _ -> clearProg("faces"); next() },
+            onError = { clearProg("faces"); next() },
         )
     }
 
     private fun runGeo(next: () -> Unit) {
         if (GeoIndexer.isRunning) {
-            next()
-            return
+            next(); return
         }
         GeoIndexer.index(
             applicationContext,
-            onProgress = { d, t -> update(getString(R.string.indexing_geo), d, t) },
-            onDone = { _, _ -> next() },
-            onError = { next() },
+            onProgress = { d, t -> prog("geo", "Poloha $d/$t") },
+            onDone = { _, _ -> clearProg("geo"); next() },
+            onError = { clearProg("geo"); next() },
+        )
+    }
+
+    private fun runQr(next: () -> Unit) {
+        if (QrIndexer.isRunning) {
+            next(); return
+        }
+        QrIndexer.index(
+            applicationContext, notify = false,
+            onProgress = { d, t -> prog("qr", "QR kódy $d/$t") },
+            onDone = { _, _ -> clearProg("qr"); next() },
+            onError = { clearProg("qr"); next() },
+        )
+    }
+
+    private fun runOcr(next: () -> Unit) {
+        if (OcrIndexer.isRunning) {
+            next(); return
+        }
+        OcrIndexer.index(
+            applicationContext, notify = false,
+            onProgress = { d, t -> prog("ocr", "OCR text $d/$t") },
+            onDone = { _, _ -> clearProg("ocr"); next() },
+            onError = { clearProg("ocr"); next() },
+        )
+    }
+
+    private fun runPhash(next: () -> Unit) {
+        if (PhashIndexer.isRunning) {
+            next(); return
+        }
+        PhashIndexer.index(
+            applicationContext, notify = false,
+            onProgress = { d, t -> prog("phash", "Podobné $d/$t") },
+            onDone = { _ -> clearProg("phash"); next() },
+            onError = { clearProg("phash"); next() },
+        )
+    }
+
+    private fun runClip(next: () -> Unit) {
+        if (ClipIndexer.isRunning) {
+            next(); return
+        }
+        ClipIndexer.index(
+            applicationContext, notify = false,
+            onProgress = { phase, d, t -> prog("clip", "$phase $d/$t") },
+            onDone = { _ -> ClipSearch.invalidate(); clearProg("clip"); next() },
+            onError = { clearProg("clip"); next() },
+        )
+    }
+
+    private fun runReembed(next: () -> Unit) {
+        if (ReindexFaces.isRunning) {
+            next(); return
+        }
+        ReindexFaces.run(
+            applicationContext,
+            onProgress = { d, t -> prog("reembed", "Presnosť tvárí $d/$t") },
+            onDone = { _ -> clearProg("reembed"); next() },
+            onError = { clearProg("reembed"); next() },
         )
     }
 
     private fun autoOcrEnabled(): Boolean =
         getSharedPreferences("galeria_faces", Context.MODE_PRIVATE).getBoolean("auto_ocr", false)
 
-    private fun runQr(next: () -> Unit) {
-        if (QrIndexer.isRunning) {
-            next()
-            return
-        }
-        QrIndexer.index(
-            applicationContext, notify = false,
-            onProgress = { d, t -> update(getString(R.string.indexing_qr), d, t) },
-            onDone = { _, _ -> next() },
-            onError = { next() },
-        )
+    // --- notifikácia s per-task priebehom ---
+
+    private fun prog(key: String, text: String) {
+        progressMap[key] = text
+        refreshNotification()
     }
 
-    private fun runClip(next: () -> Unit) {
-        if (ClipIndexer.isRunning) {
-            next()
-            return
-        }
-        ClipIndexer.index(
-            applicationContext, notify = false,
-            onProgress = { phase, d, t -> update(phase, d, t) },
-            onDone = { _ ->
-                ClipSearch.invalidate()
-                next()
-            },
-            onError = { next() },
-        )
+    private fun clearProg(key: String) {
+        progressMap.remove(key)
+        refreshNotification()
     }
 
-    private fun runPhash(next: () -> Unit) {
-        if (PhashIndexer.isRunning) {
-            next()
-            return
-        }
-        PhashIndexer.index(
-            applicationContext, notify = false,
-            onProgress = { d, t -> update(getString(R.string.indexing_phash), d, t) },
-            onDone = { _ -> next() },
-            onError = { next() },
-        )
-    }
-
-    private fun runReembed(next: () -> Unit) {
-        if (ReindexFaces.isRunning) {
-            next()
-            return
-        }
-        ReindexFaces.run(
-            applicationContext,
-            onProgress = { d, t -> update(getString(R.string.indexing_reembed), d, t) },
-            onDone = { _ -> next() },
-            onError = { next() },
-        )
-    }
-
-    private fun runOcr(next: () -> Unit) {
-        if (OcrIndexer.isRunning) {
-            next()
-            return
-        }
-        OcrIndexer.index(
-            applicationContext, notify = false,
-            onProgress = { d, t -> update(getString(R.string.indexing_ocr), d, t) },
-            onDone = { _, _ -> next() },
-            onError = { next() },
-        )
-    }
-
-    private fun finish() {
-        working = false
-        stopForegroundCompat()
-        stopSelf()
-    }
-
-    private fun update(phase: String, done: Int, total: Int) {
+    private fun refreshNotification() {
         try {
-            getSystemService(NotificationManager::class.java)?.notify(NOTIF_ID, buildNotification(phase, done, total))
+            val lines = progressMap.values.toList()
+            val big = if (lines.isEmpty()) getString(R.string.indexing_running) else lines.joinToString("\n")
+            val n = NotificationCompat.Builder(this, CHANNEL_ID)
+                .setSmallIcon(android.R.drawable.stat_notify_sync)
+                .setContentTitle(getString(R.string.app_name_brand))
+                .setContentText(lines.firstOrNull() ?: getString(R.string.indexing_running))
+                .setStyle(NotificationCompat.BigTextStyle().bigText(big))
+                .setOngoing(true)
+                .setOnlyAlertOnce(true)
+                .build()
+            getSystemService(NotificationManager::class.java)?.notify(NOTIF_ID, n)
         } catch (ignored: Throwable) {
         }
     }
 
-    private fun buildNotification(text: String, done: Int, total: Int): Notification {
-        val builder = NotificationCompat.Builder(this, CHANNEL_ID)
+    private fun buildInitial(): Notification =
+        NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.stat_notify_sync)
             .setContentTitle(getString(R.string.app_name_brand))
-            .setContentText(if (done >= 0 && total > 0) "$text $done / $total" else text)
+            .setContentText(getString(R.string.indexing_running))
             .setOngoing(true)
             .setOnlyAlertOnce(true)
-        if (done >= 0 && total > 0) builder.setProgress(total, done, false)
-        return builder.build()
+            .build()
+
+    private fun finish() {
+        progressMap.clear()
+        stopForegroundCompat()
+        stopSelf()
     }
 
     private fun startForegroundCompat(n: Notification) {
@@ -222,7 +295,6 @@ class IndexingService : Service() {
         @Volatile
         private var autoStarted = false
 
-        // automatický štart raz za spustenie procesu (tváre + poloha)
         fun startAutoOnce(context: Context) {
             if (autoStarted) return
             autoStarted = true

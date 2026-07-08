@@ -114,6 +114,7 @@ class SettingsActivity : SimpleActivity() {
         setupEmptyRecycleBin()
         updateTextColors(binding.settingsHolder)
         setupClearCache()
+        setupPerfMode()
         setupAutoIndex()
         setupFaceIndexing()
         setupPicasaImport()
@@ -1117,6 +1118,25 @@ class SettingsActivity : SimpleActivity() {
                 }
             }
         }
+    }
+
+    private fun setupPerfMode() {
+        updatePerfSummary()
+        binding.settingsPerfHolder.setOnClickListener {
+            val next = (org.fossify.gallery.helpers.IndexPerf.mode(this) + 1) % 3
+            org.fossify.gallery.helpers.IndexPerf.setMode(this, next)
+            updatePerfSummary()
+        }
+    }
+
+    private fun updatePerfSummary() {
+        binding.settingsPerfSummary.text = getString(
+            when (org.fossify.gallery.helpers.IndexPerf.mode(this)) {
+                org.fossify.gallery.helpers.IndexPerf.MAX -> R.string.perf_max
+                org.fossify.gallery.helpers.IndexPerf.CHARGER -> R.string.perf_charger
+                else -> R.string.perf_limited
+            }
+        )
     }
 
     private fun setupClip() {

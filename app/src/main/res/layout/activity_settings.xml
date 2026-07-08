@@ -1056,6 +1056,29 @@
                 android:text="@string/galeria_plus_section" />
 
             <RelativeLayout
+                android:id="@+id/settings_perf_holder"
+                style="@style/SettingsHolderTextViewStyle"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content">
+
+                <org.fossify.commons.views.MyTextView
+                    android:id="@+id/settings_perf_label"
+                    style="@style/SettingsTextLabelStyle"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/perf_title" />
+
+                <org.fossify.commons.views.MyTextView
+                    android:id="@+id/settings_perf_summary"
+                    style="@style/SettingsTextValueStyle"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_below="@+id/settings_perf_label"
+                    tools:text="Naplno" />
+
+            </RelativeLayout>
+
+            <RelativeLayout
                 android:id="@+id/settings_auto_index_holder"
                 style="@style/SettingsHolderTextViewStyle"
                 android:layout_width="match_parent"
