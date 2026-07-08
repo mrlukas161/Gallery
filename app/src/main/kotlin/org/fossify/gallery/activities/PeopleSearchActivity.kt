@@ -262,7 +262,7 @@ class PeopleSearchActivity : SimpleActivity() {
         }
         binding.searchCount.text = getString(R.string.search_count, paths.size)
         val list = ArrayList(paths)
-        binding.searchGrid.adapter = PersonPhotosAdapter(this, list) { path -> openPhoto(path) }
+        binding.searchGrid.adapter = PersonPhotosAdapter(this, list, onClick = { path -> openPhoto(path) })
     }
 
     private fun openPhoto(path: String) {

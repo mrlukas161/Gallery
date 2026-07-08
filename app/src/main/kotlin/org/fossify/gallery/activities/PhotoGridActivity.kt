@@ -23,7 +23,7 @@ class PhotoGridActivity : SimpleActivity() {
         paths = ArrayList(org.fossify.gallery.helpers.PathTransfer.forGrid ?: emptyList())
         org.fossify.gallery.helpers.PathTransfer.forGrid = null
         binding.photoGrid.layoutManager = GridLayoutManager(this, 3)
-        binding.photoGrid.adapter = PersonPhotosAdapter(this, paths) { path -> openPhoto(path) }
+        binding.photoGrid.adapter = PersonPhotosAdapter(this, paths, onClick = { path -> openPhoto(path) })
     }
 
     override fun onResume() {
