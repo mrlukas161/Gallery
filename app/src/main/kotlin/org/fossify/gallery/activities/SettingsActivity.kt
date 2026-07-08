@@ -114,6 +114,7 @@ class SettingsActivity : SimpleActivity() {
         setupEmptyRecycleBin()
         updateTextColors(binding.settingsHolder)
         setupClearCache()
+        setupChangelog()
         setupPerfMode()
         setupIndexAll()
         setupAutoIndex()
@@ -1118,6 +1119,12 @@ class SettingsActivity : SimpleActivity() {
                     }
                 }
             }
+        }
+    }
+
+    private fun setupChangelog() {
+        binding.settingsChangelogHolder.setOnClickListener {
+            startActivity(android.content.Intent(this, ChangelogActivity::class.java))
         }
     }
 

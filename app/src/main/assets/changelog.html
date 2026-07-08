@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="sk">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<style>
+  :root{
+    --bg:#ffffff; --fg:#1a1c22; --mut:#5b6472; --card:#f4f6fa; --line:#e2e6ee;
+    --accent:#2e6ad1; --new:#2f9e6b; --fix:#c9781a; --test:#2e6ad1;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{ --bg:#0e0f13; --fg:#e9edf2; --mut:#9aa3b2; --card:#181a21; --line:#262a33;
+      --accent:#4c8dff; --new:#3ecf8e; --fix:#ffb25d; --test:#7ab0ff; }
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--fg);
+    font:15px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
+    padding:14px 14px 40px;-webkit-text-size-adjust:100%}
+  h1{font-size:1.25rem;margin:.2rem 0 .1rem}
+  .sub{color:var(--mut);font-size:.85rem;margin-bottom:1rem}
+  .ver{background:var(--card);border:1px solid var(--line);border-radius:12px;
+    padding:12px 14px;margin:0 0 12px}
+  .ver h2{font-size:1.02rem;margin:0 0 .3rem;display:flex;align-items:baseline;gap:.5rem;flex-wrap:wrap}
+  .ver h2 .v{color:var(--accent);font-weight:700}
+  .ver h2 .d{color:var(--mut);font-size:.78rem;font-weight:400}
+  ul{margin:.4rem 0 .2rem;padding-left:1.1rem}
+  li{margin:.28rem 0}
+  .tag{font-size:.68rem;font-weight:700;padding:1px 6px;border-radius:6px;
+    vertical-align:middle;margin-right:.35rem;white-space:nowrap}
+  .t-new{background:color-mix(in srgb,var(--new) 18%,transparent);color:var(--new)}
+  .t-fix{background:color-mix(in srgb,var(--fix) 18%,transparent);color:var(--fix)}
+  .test{color:var(--test);font-size:.9rem;margin-top:.35rem}
+  .test b{color:var(--test)}
+  .todo{border-style:dashed;opacity:.92}
+  .note{color:var(--mut);font-size:.85rem;margin-top:.3rem}
+  code{background:color-mix(in srgb,var(--fg) 8%,transparent);padding:0 4px;border-radius:4px;font-size:.85em}
+</style>
+</head>
+<body>
+<h1>Galéria+ — história zmien</h1>
+<div class="sub">Najnovšie hore. Podľa „🔎 Vyskúšaj" si vieš každú funkciu odkontrolovať.</div>
+
+<div class="ver todo">
+  <h2><span class="v">Pripravuje sa</span></h2>
+  <ul>
+    <li>CLIP <b>multilingválny</b> model — priama slovenčina bez prekladového slovníka.</li>
+    <li><b>UX zjednotenie</b> — Ľudia / Duplikáty / Burst / Mapa do jedného miesta „Preskúmať".</li>
+    <li>Nájsť <b>nedetegované vzdialené tváre</b> v existujúcich fotkách (re-detekcia).</li>
+    <li>Bočný <b>fast-scroll posuvník</b> v mriežkach.</li>
+  </ul>
+</div>
+
+<div class="ver">
+  <h2><span class="v">0.31.0</span> <span class="d">info panel</span></h2>
+  <ul>
+    <li><span class="tag t-new">NOVÉ</span> <b>Info panel fotky</b> — v prehliadači menu <code>Info (poloha a osoby)</code>: GPS poloha + „Zobraziť na mape", osoby na fotke, tlačidlo „Označiť tváre".</li>
+  </ul>
+  <div class="test">🔎 <b>Vyskúšaj:</b> otvor fotku → menu (⋮) → „Info (poloha a osoby)".</div>
+</div>
+
+<div class="ver">
+  <h2><span class="v">0.30.0</span> <span class="d">všetko naraz + jemnejšia mapa</span></h2>
+  <ul>
+    <li><span class="tag t-new">NOVÉ</span> <b>Indexovať všetko naraz</b> — jeden ťuk rozbehne tváre + OCR + QR + polohu + duplikáty + CLIP súčasne.</li>
+    <li><span class="tag t-fix">ÚPRAVA</span> Mapa: jemnejšie clustre + väčší zoom → presnejšie pozície fotiek (~desiatky metrov).</li>
+  </ul>
+  <div class="test">🔎 <b>Vyskúšaj:</b> Nastavenia → Galéria+ → „Indexovať všetko naraz"; na mape sa priblíž naplno.</div>
+</div>
+
+<div class="ver">
+  <h2><span class="v">0.29.0</span> <span class="d">komparátor + OCR text</span></h2>
+  <ul>
+    <li><span class="tag t-new">NOVÉ</span> <b>Zobraziť text (OCR)</b> — v prehliadači menu → výberateľný/kopírovateľný rozpoznaný text fotky.</li>
+    <li><span class="tag t-fix">ÚPRAVA</span> Komparátor: väčší rozsah priblíženia na porovnanie detailu.</li>
+  </ul>
+  <div class="test">🔎 <b>Vyskúšaj:</b> otvor dokument → menu → „Zobraziť text (OCR)".</div>
+</div>
+
+<div class="ver">
+  <h2><span class="v">0.28.0</span> <span class="d">mapa ako Google Photos</span></h2>
+  <ul>
+    <li><span class="tag t-new">NOVÉ</span> Clustre sa zobrazujú ako <b>náhľady fotiek</b> (s počtom), nie holé kruhy.</li>
+    <li><span class="tag t-new">NOVÉ</span> <b>Ťuk na cluster</b> ho otvorí ako uzavretú galériu; pinch-zoom rozpadá.</li>
+  </ul>
+  <div class="test">🔎 <b>Vyskúšaj:</b> Ľudia → ikona mapy → ťukaj a približuj clustre.</div>
+</div>
+
+<div class="ver">
+  <h2><span class="v">0.27.1</span> <span class="d">oprava „fake app"</span></h2>
+  <ul>
+    <li><span class="tag t-fix">OPRAVA</span> <b>„Fake app" dialóg definitívne odstránený</b> (Splash už nespúšťa anti-fork kontrolu — kód dialógu je mŕtvy).</li>
+  </ul>
+  <div class="test">🔎 <b>Vyskúšaj:</b> po čistej inštalácii sa dialóg nesmie nikde objaviť.</div>
+</div>
+
+<div class="ver">
+  <h2><span class="v">0.27.0</span> <span class="d">uzavretý prehliadač</span></h2>
+  <ul>
+    <li><span class="tag t-fix">ÚPRAVA</span> <b>Swipe v prehliadači ostane len vo vybraných fotkách</b> (Ľudia / hľadanie / mapový cluster), nie celý priečinok.</li>
+  </ul>
+  <div class="test">🔎 <b>Vyskúšaj:</b> otvor fotku z osoby → listuj vľavo/vpravo (len jej fotky).</div>
+</div>
+
+<div class="ver">
+  <h2><span class="v">0.26.0</span> <span class="d">tváre</span></h2>
+  <ul>
+    <li><span class="tag t-fix">ÚPRAVA</span> Nájde <b>viac tvárí</b> (nižšie prahy) — aj menšie/vzdialené.</li>
+    <li><span class="tag t-new">NOVÉ</span> <b>„Toto nie je on"</b> aj v zobrazení celých fotiek (dlhé stlačenie).</li>
+  </ul>
+  <div class="test">🔎 <b>Vyskúšaj:</b> Ľudia → osoba → dlhé stlačenie zlej fotky → potvrď odstránenie.</div>
+</div>
+
+<div class="ver">
+  <h2><span class="v">0.25.0</span> <span class="d">výkon</span></h2>
+  <ul>
+    <li><span class="tag t-new">NOVÉ</span> <b>Paralelný beh</b> funkcií + notifikácia s priebehom každej.</li>
+    <li><span class="tag t-new">NOVÉ</span> <b>Režim výkonu</b>: Naplno / len pri nabíjaní / obmedzený.</li>
+  </ul>
+  <div class="test">🔎 <b>Vyskúšaj:</b> Nastavenia → Galéria+ → „Výkon indexovania".</div>
+</div>
+
+<div class="ver">
+  <h2><span class="v">0.24.0</span> <span class="d">CLIP sémantické hľadanie</span></h2>
+  <ul>
+    <li><span class="tag t-new">NOVÉ</span> <b>Hľadanie predmetov/scén</b> (auto, pláž, pes…) cez CLIP, 100 % lokálne. Model sa stiahne pri prvom spustení.</li>
+  </ul>
+  <div class="test">🔎 <b>Vyskúšaj:</b> Nastavenia → „CLIP sémantické hľadanie" → potom hlavná lupa.</div>
+</div>
+
+<div class="ver">
+  <h2><span class="v">0.19–0.23</span> <span class="d">základy inteligentných funkcií</span></h2>
+  <ul>
+    <li><span class="tag t-fix">OPRAVA</span> Kritická oprava presnosti tvárí (zarovnanie).</li>
+    <li><span class="tag t-new">NOVÉ</span> Obsahové hľadanie z hlavnej lupy (OCR text, mená osôb, QR).</li>
+    <li><span class="tag t-new">NOVÉ</span> <b>PC-sync = webová galéria</b> (otvor v prehliadači PC: mriežka, komparátor, kvalita sťahovania).</li>
+    <li><span class="tag t-new">NOVÉ</span> Filter na mape (osoby/QR); duplikáty naprieč knižnicou (pHash).</li>
+    <li><span class="tag t-new">NOVÉ</span> Komparátor podobných/burst; QR kódy; mapa fotiek.</li>
+  </ul>
+  <div class="test">🔎 <b>Vyskúšaj:</b> hlavná lupa (napíš meno/slovo z dokumentu); Nastavenia → „PC sync server".</div>
+</div>
+
+<div class="note">Tip pre tváre: ak sa učenie nezdá adaptívne, spusti raz Nastavenia → „Vylepšiť presnosť tvárí" (zjednotí staré a nové odtlačky).</div>
+</body>
+</html>
