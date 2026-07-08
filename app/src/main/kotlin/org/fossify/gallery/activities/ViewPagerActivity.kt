@@ -1442,6 +1442,10 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
         fullscreenToggled()
     }
 
+    override fun showPhotoInfoRequested() {
+        showPhotoInfo(getCurrentPath())
+    }
+
     override fun videoEnded(): Boolean {
         if (mIsSlideshowActive) {
             swipeToNextMedium()

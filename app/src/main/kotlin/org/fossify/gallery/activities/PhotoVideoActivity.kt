@@ -425,6 +425,10 @@ open class PhotoVideoActivity : BaseViewerActivity(), ViewPagerFragment.Fragment
         }.start()
     }
 
+    override fun showPhotoInfoRequested() {
+        if (mUri?.scheme == "file") showProperties()
+    }
+
     override fun videoEnded() = false
 
     override fun goToPrevItem() {}

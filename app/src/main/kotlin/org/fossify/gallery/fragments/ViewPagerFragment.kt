@@ -21,12 +21,16 @@ abstract class ViewPagerFragment : Fragment() {
     private var mTouchDownX = 0f
     private var mTouchDownY = 0f
     private var mCloseDownThreshold = 100f
+    private var mInfoUpThreshold = 150f
     private var mIgnoreCloseDown = false
 
     abstract fun fullscreenToggled(isFullscreen: Boolean)
 
     interface FragmentListener {
         fun fragmentClicked()
+
+        // Google Photos štýl: ťah nahor po fotke → info panel (poloha, ľudia, označiť tváre)
+        fun showPhotoInfoRequested()
 
         fun videoEnded(): Boolean
 
@@ -171,9 +175,17 @@ abstract class ViewPagerFragment : Fragment() {
                 val diffY = mTouchDownY - event.rawY
 
                 val downGestureDuration = System.currentTimeMillis() - mTouchDownTime
-                if (!mIgnoreCloseDown && (Math.abs(diffY) > Math.abs(diffX)) && (diffY < -mCloseDownThreshold) && downGestureDuration < MAX_CLOSE_DOWN_GESTURE_DURATION && context?.config?.allowDownGesture == true) {
-                    activity?.finish()
-                    activity?.overridePendingTransition(0, org.fossify.commons.R.anim.slide_down)
+                val verticalDominant = Math.abs(diffY) > Math.abs(diffX)
+                val quick = downGestureDuration < MAX_CLOSE_DOWN_GESTURE_DURATION
+                if (!mIgnoreCloseDown && verticalDominant && quick && context?.config?.allowDownGesture == true) {
+                    if (diffY < -mCloseDownThreshold) {
+                        // ťah nadol → zavrieť fotku
+                        activity?.finish()
+                        activity?.overridePendingTransition(0, org.fossify.commons.R.anim.slide_down)
+                    } else if (diffY > mInfoUpThreshold) {
+                        // ťah nahor → info panel (ako Google Photos)
+                        listener?.showPhotoInfoRequested()
+                    }
                 }
                 mIgnoreCloseDown = false
             }
