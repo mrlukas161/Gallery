@@ -58,6 +58,7 @@ class MapActivity : SimpleActivity() {
         org.fossify.gallery.helpers.PathTransfer.forMap = null
         binding.mapView.setTileSource(TileSourceFactory.MAPNIK)
         binding.mapView.setMultiTouchControls(true)
+        binding.mapView.setMaxZoomLevel(20.0) // dovoľ priblížiť viac -> presnejšie pozície fotiek
         binding.mapView.controller.setZoom(6.0)
         binding.mapView.controller.setCenter(GeoPoint(48.7, 19.7))
         binding.mapView.addMapListener(DelayedMapListener(object : MapListener {
@@ -295,8 +296,9 @@ class MapActivity : SimpleActivity() {
     // veľkosť zhlukovacej bunky v stupňoch ~ konštantná v pixeloch (adaptívne podľa zoomu) -> pri
     // väčšom priblížení menšie bunky = viac menších, lepšie umiestnených clusterov.
     private fun cellSizeDeg(zoom: Double): Double {
-        val degPerPixel = 360.0 / (256.0 * 2.0.pow(zoom.coerceIn(1.0, 21.0)))
-        return (degPerPixel * 90.0).coerceAtLeast(1e-7)
+        val degPerPixel = 360.0 / (256.0 * 2.0.pow(zoom.coerceIn(1.0, 22.0)))
+        // ~44 px na bunku pri vysokom zoome = rozbije fotky na presnejšie pozície (~desiatky m)
+        return (degPerPixel * 44.0).coerceAtLeast(1e-7)
     }
 
     private fun cluster(pts: List<GeoEntity>, cell: Double): List<Cluster> {

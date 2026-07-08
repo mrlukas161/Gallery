@@ -46,6 +46,18 @@ class IndexingService : Service() {
                 launch(list, sequential = !IndexPerf.parallel(this))
             }
 
+            TASK_ALL -> {
+                // jedným ťukom rozbehni VŠETKO naraz (podľa perf režimu paralelne/postupne)
+                val list = ArrayList<String>()
+                list.add(TASK_FACES)
+                list.add(TASK_GEO)
+                list.add(TASK_QR)
+                list.add(TASK_OCR)
+                list.add(TASK_PHASH)
+                if (org.fossify.gallery.clip.ClipModels.bothPresent(this)) list.add(TASK_CLIP)
+                launch(list, sequential = !IndexPerf.parallel(this))
+            }
+
             else -> launch(listOf(task), sequential = false)
         }
         return START_NOT_STICKY
@@ -282,6 +294,7 @@ class IndexingService : Service() {
     companion object {
         const val EXTRA_TASK = "task"
         const val TASK_AUTO = "auto"
+        const val TASK_ALL = "all"
         const val TASK_FACES = "faces"
         const val TASK_GEO = "geo"
         const val TASK_OCR = "ocr"

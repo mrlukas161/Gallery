@@ -118,6 +118,8 @@
     <string name="clip_running">Sťahujem/indexujem CLIP…</string>
     <string name="clip_result">%1$d fotiek naindexovaných — hľadaj predmety cez lupu</string>
     <string name="galeria_plus_section">Galéria+ (inteligentné funkcie)</string>
+    <string name="index_all_title">Indexovať všetko naraz</string>
+    <string name="index_all_summary">Ťuknutím rozbehne tváre, OCR, QR, polohu, duplikáty aj CLIP súčasne</string>
     <string name="perf_title">Výkon indexovania</string>
     <string name="perf_max">Naplno — všetky funkcie bežia naraz (rýchlejšie, zohreje telefón)</string>
     <string name="perf_charger">Naplno len pri nabíjaní</string>

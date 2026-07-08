@@ -115,6 +115,7 @@ class SettingsActivity : SimpleActivity() {
         updateTextColors(binding.settingsHolder)
         setupClearCache()
         setupPerfMode()
+        setupIndexAll()
         setupAutoIndex()
         setupFaceIndexing()
         setupPicasaImport()
@@ -1117,6 +1118,14 @@ class SettingsActivity : SimpleActivity() {
                     }
                 }
             }
+        }
+    }
+
+    private fun setupIndexAll() {
+        binding.settingsIndexAllSummary.text = getString(R.string.index_all_summary)
+        binding.settingsIndexAllHolder.setOnClickListener {
+            org.fossify.gallery.services.IndexingService.start(this, org.fossify.gallery.services.IndexingService.TASK_ALL)
+            binding.settingsIndexAllSummary.text = getString(R.string.indexing_started_bg)
         }
     }
 
