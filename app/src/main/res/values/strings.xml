@@ -122,6 +122,7 @@
     <string name="perf_max">Naplno — všetky funkcie bežia naraz (rýchlejšie, zohreje telefón)</string>
     <string name="perf_charger">Naplno len pri nabíjaní</string>
     <string name="perf_limited">Obmedzený — po jednej funkcii (šetrne)</string>
+    <string name="not_this_person_confirm">Odstrániť túto fotku od osoby %1$s? (už sa nebude navrhovať)</string>
     <string name="auto_ocr_title">OCR aj automaticky (na pozadí)</string>
     <string name="auto_ocr_on">Zapnuté — text sa číta sám (pomalé, najlepšie pri nabíjaní)</string>
     <string name="auto_ocr_off">Vypnuté — OCR len ručne tlačidlom vyššie</string>

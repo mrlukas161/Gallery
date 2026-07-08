@@ -116,7 +116,11 @@ class PersonActivity : SimpleActivity() {
             FaceSorter.sortPaths(loadedFaces.map { it.mediaFullPath }.distinct(), meta, sorting).take(2000)
         )
         if (showFullPhotos) {
-            binding.personGrid.adapter = PersonPhotosAdapter(this, photoPaths) { path -> openPhoto(path) }
+            binding.personGrid.adapter = PersonPhotosAdapter(
+                this, photoPaths,
+                onClick = { path -> openPhoto(path) },
+                onLongClick = if (personId >= 0) { path -> confirmNotThisPersonPhoto(path) } else null,
+            )
         } else {
             facesAdapter = PersonFacesAdapter(
                 this, facesSorted.toMutableList(),
@@ -192,12 +196,40 @@ class PersonActivity : SimpleActivity() {
         if (personId < 0) return
         ensureBackgroundThread {
             val dao = PeopleDatabase.getInstance(this).PeopleDao()
-            if (manualIds.contains(fid)) {
-                dao.deleteAssignment(fid)
-            } else {
-                dao.insertCannotLink(CannotLinkEntity(fid, personId))
-            }
+            if (manualIds.contains(fid)) dao.deleteAssignment(fid)
+            dao.insertCannotLink(CannotLinkEntity(fid, personId)) // aby sa už nenavrhla
             runOnUiThread { facesAdapter?.removeFace(face) }
+        }
+    }
+
+    // dlhé stlačenie fotky v zobrazení celých fotiek -> „toto nie je [osoba]" pre všetky jej tváre na fotke
+    private fun confirmNotThisPersonPhoto(path: String) {
+        if (personId < 0) return
+        AlertDialog.Builder(this)
+            .setTitle(R.string.action_not_this_person)
+            .setMessage(getString(R.string.not_this_person_confirm, personName ?: ""))
+            .setPositiveButton(android.R.string.ok) { _, _ -> notThisPersonForPath(path) }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
+    private fun notThisPersonForPath(path: String) {
+        if (personId < 0) return
+        val faces = loadedFaces.filter { it.mediaFullPath == path }
+        ensureBackgroundThread {
+            val dao = PeopleDatabase.getInstance(this).PeopleDao()
+            faces.forEach { f ->
+                f.id?.let { fid ->
+                    dao.deleteAssignment(fid)
+                    dao.insertCannotLink(CannotLinkEntity(fid, personId))
+                }
+            }
+            runOnUiThread {
+                if (isDestroyed || isFinishing) return@runOnUiThread
+                loadedFaces = loadedFaces.filter { it.mediaFullPath != path }
+                toast(R.string.person_saved)
+                render()
+            }
         }
     }
 

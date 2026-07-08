@@ -11,6 +11,7 @@ class PersonPhotosAdapter(
     val activity: Activity,
     val paths: List<String>,
     val onClick: (String) -> Unit,
+    val onLongClick: ((String) -> Unit)? = null,
 ) : RecyclerView.Adapter<PersonPhotosAdapter.ViewHolder>() {
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ViewHolder {
@@ -28,6 +29,10 @@ class PersonPhotosAdapter(
         fun bind(path: String) {
             Glide.with(activity).load(path).centerCrop().into(binding.photoImage)
             binding.root.setOnClickListener { onClick(path) }
+            binding.root.setOnLongClickListener {
+                onLongClick?.invoke(path)
+                onLongClick != null
+            }
         }
     }
 }
