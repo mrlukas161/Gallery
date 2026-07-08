@@ -242,7 +242,8 @@ class PersonActivity : SimpleActivity() {
     }
 
     private fun openPhoto(path: String) {
-        // otvor v ŠTANDARDNOM prehliadači Fossify (názov, vlastnosti, kopírovať/presunúť, mapa, tlač…)
+        // uzavretý set = len fotky tejto osoby (swipe neuteká do celého priečinka)
+        org.fossify.gallery.helpers.PathTransfer.forViewer = photoPaths
         Intent(this, ViewPagerActivity::class.java).apply {
             putExtra(PATH, path)
             putExtra(SKIP_AUTHENTICATION, true)

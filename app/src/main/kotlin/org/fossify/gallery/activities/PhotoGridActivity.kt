@@ -33,6 +33,7 @@ class PhotoGridActivity : SimpleActivity() {
     }
 
     private fun openPhoto(path: String) {
+        org.fossify.gallery.helpers.PathTransfer.forViewer = paths // uzavretý set = tento zhluk
         Intent(this, ViewPagerActivity::class.java).apply {
             putExtra(PATH, path)
             putExtra(SKIP_AUTHENTICATION, true)

@@ -293,6 +293,7 @@ class MapActivity : SimpleActivity() {
     }
 
     private fun openPhotoStandard(path: String) {
+        org.fossify.gallery.helpers.PathTransfer.forViewer = listOf(path)
         Intent(this, ViewPagerActivity::class.java).apply {
             putExtra(org.fossify.gallery.helpers.PATH, path)
             putExtra(org.fossify.gallery.helpers.SKIP_AUTHENTICATION, true)

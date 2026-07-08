@@ -266,6 +266,7 @@ class PeopleSearchActivity : SimpleActivity() {
     }
 
     private fun openPhoto(path: String) {
+        org.fossify.gallery.helpers.PathTransfer.forViewer = lastResults
         Intent(this, ViewPagerActivity::class.java).apply {
             putExtra(PATH, path)
             putExtra(SKIP_AUTHENTICATION, true)

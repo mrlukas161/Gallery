@@ -11,4 +11,8 @@ object PathTransfer {
 
     @Volatile
     var forCompare: List<String>? = null
+
+    // uzavretý set fotiek pre prehliadač (swipe ostane len v tomto zozname — Ľudia/hľadanie/cluster)
+    @Volatile
+    var forViewer: List<String>? = null
 }

@@ -195,6 +195,7 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
     private var mIsFullScreen = false
     private var mPos = -1
     private var mShowAll = false
+    private var mRestricted = false
     private var mIsSlideshowActive = false
     private var mPrevHashcode = 0
 
@@ -490,6 +491,21 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
             else -> mPath.getParentPath()
         }
         binding.mediumViewerToolbar.title = mPath.getFilenameFromPath()
+
+        // Galéria+: uzavretý set fotiek (Ľudia/hľadanie/mapový cluster) — swipe ostane len v ňom,
+        // nepreberá celý priečinok. Štandardné akcie (vlastnosti/zdieľať/mapa…) ostávajú.
+        val restrictPaths = org.fossify.gallery.helpers.PathTransfer.forViewer
+        org.fossify.gallery.helpers.PathTransfer.forViewer = null
+        if (!restrictPaths.isNullOrEmpty()) {
+            mRestricted = true
+            mShowAll = false
+            mMediaFiles.clear()
+            restrictPaths.forEach { p ->
+                mMediaFiles.add(
+                    Medium(null, p.getFilenameFromPath(), p, p.getParentPath(), 0, 0, File(p).length(), getTypeFromPath(p), 0, false, 0L, 0L)
+                )
+            }
+        }
 
         binding.viewPager.onGlobalLayout {
             if (!isDestroyed) {
@@ -1317,6 +1333,7 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
     }
 
     private fun refreshViewPager(refetchPosition: Boolean = false) {
+        if (mRestricted) return // uzavretý set — nepreberať celý priečinok
         val isRandomSorting = config.getFolderSorting(mDirectory) and SORT_BY_RANDOM != 0
         if (!isRandomSorting || isExternalIntent()) {
             GetMediaAsynctask(applicationContext, mDirectory, isPickImage = false, isPickVideo = false, showAll = mShowAll) {
