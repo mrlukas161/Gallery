@@ -3,10 +3,15 @@ package org.fossify.gallery.activities
 import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.BitmapShader
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
+import android.graphics.RectF
+import android.graphics.Shader
 import android.graphics.drawable.BitmapDrawable
+import java.io.File
 import android.os.Bundle
 import androidx.appcompat.app.AlertDialog
 import org.fossify.commons.extensions.beGone
@@ -42,6 +47,7 @@ class MapActivity : SimpleActivity() {
     private var filterPerson: Set<Long>? = null
     private var filterQrOnly = false
     private val iconCache = HashMap<Int, BitmapDrawable>()
+    private val thumbCache = HashMap<String, BitmapDrawable>()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -232,6 +238,10 @@ class MapActivity : SimpleActivity() {
             marker.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
             marker.icon = makeClusterIcon(cluster.paths.size)
             val cl = cluster
+            if (cluster.paths.size <= THUMB_MAX) {
+                // Google Photos štýl: malé clustre = náhľad reprezentatívnej fotky (+ počet)
+                loadThumbInto(marker, cluster.paths.first(), cluster.paths.size)
+            }
             marker.setOnMarkerClickListener { _, _ ->
                 onClusterTap(cl)
                 true
@@ -260,36 +270,14 @@ class MapActivity : SimpleActivity() {
         }
     }
 
-    // Klik na cluster: 1 fotka -> otvor; viac -> PRIBLÍŽ mapu (rozpadne sa na menšie); na maxime zoomu -> mriežka.
+    // Google Photos štýl: pinch-zoom rozpadá clustre; ŤUK na cluster ho OTVORÍ ako uzavretú galériu.
     private fun onClusterTap(cluster: Cluster) {
         if (cluster.paths.size == 1) {
             openPhotoStandard(cluster.paths.first())
             return
         }
-        val zoom = binding.mapView.zoomLevelDouble
-        if (zoom < MAX_ZOOM) {
-            // priblíž na skutočný rozsah clustra (bounding box), aby sa rozpadol na menšie
-            val ps = cluster.paths.toHashSet()
-            val members = points.filter { ps.contains(it.path) }
-            if (members.size >= 2) {
-                val north = members.maxOf { it.lat }
-                val south = members.minOf { it.lat }
-                val east = members.maxOf { it.lon }
-                val west = members.minOf { it.lon }
-                if (north == south && east == west) {
-                    binding.mapView.controller.animateTo(GeoPoint(north, east), (zoom + 3.0).coerceAtMost(MAX_ZOOM), 500L)
-                } else {
-                    binding.mapView.zoomToBoundingBox(BoundingBox(north, east, south, west), true, 100)
-                }
-            } else {
-                binding.mapView.controller.animateTo(GeoPoint(cluster.lat, cluster.lon), (zoom + 2.0).coerceAtMost(MAX_ZOOM), 500L)
-            }
-            // osmdroid po programovom zoome nemusí spoľahlivo vyvolať onZoom -> vynúť prekreslenie
-            binding.mapView.postDelayed({ if (!isDestroyed) redraw() }, 650L)
-        } else {
-            org.fossify.gallery.helpers.PathTransfer.forGrid = cluster.paths.take(1000)
-            startActivity(Intent(this, PhotoGridActivity::class.java))
-        }
+        org.fossify.gallery.helpers.PathTransfer.forGrid = cluster.paths.take(2000)
+        startActivity(Intent(this, PhotoGridActivity::class.java))
     }
 
     private fun openPhotoStandard(path: String) {
@@ -350,8 +338,89 @@ class MapActivity : SimpleActivity() {
         return drawable
     }
 
+    // načíta náhľad reprezentatívnej fotky do markera (async, cachované)
+    private fun loadThumbInto(marker: Marker, path: String, count: Int) {
+        val key = "$path|$count"
+        thumbCache[key]?.let { marker.icon = it; return }
+        ensureBackgroundThread {
+            val d = makeThumbDrawable(path, count)
+            runOnUiThread {
+                if (!isDestroyed && d != null) {
+                    thumbCache[key] = d
+                    marker.icon = d
+                    binding.mapView.invalidate()
+                }
+            }
+        }
+    }
+
+    private fun makeThumbDrawable(path: String, count: Int): BitmapDrawable? {
+        return try {
+            val size = (58 * resources.displayMetrics.density).toInt().coerceAtLeast(48)
+            val src = decodeSquare(path, size) ?: return null
+            val out = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+            val c = Canvas(out)
+            val rect = RectF(0f, 0f, size.toFloat(), size.toFloat())
+            val radius = size * 0.16f
+            val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+            paint.shader = BitmapShader(src, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP)
+            c.drawRoundRect(rect, radius, radius, paint)
+            paint.shader = null
+            paint.style = Paint.Style.STROKE
+            paint.strokeWidth = size * 0.06f
+            paint.color = Color.WHITE
+            c.drawRoundRect(rect, radius, radius, paint)
+            src.recycle()
+            if (count > 1) {
+                val br = size * 0.24f
+                val bx = size - br - 2f
+                val by = br + 2f
+                c.drawCircle(bx, by, br, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.parseColor("#E01976D2") })
+                val tp = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                    color = Color.WHITE
+                    textAlign = Paint.Align.CENTER
+                    isFakeBoldText = true
+                    textSize = br * 1.05f
+                }
+                val ty = by - (tp.descent() + tp.ascent()) / 2f
+                c.drawText(if (count > 99) "99+" else count.toString(), bx, ty, tp)
+            }
+            BitmapDrawable(resources, out)
+        } catch (e: Throwable) {
+            null
+        }
+    }
+
+    private fun decodeSquare(path: String, size: Int): Bitmap? {
+        if (!File(path).exists()) return null
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeFile(path, bounds)
+        val w = bounds.outWidth
+        val h = bounds.outHeight
+        if (w <= 0 || h <= 0) return null
+        var sample = 1
+        while (w / sample > size * 2 || h / sample > size * 2) sample *= 2
+        val bmp = BitmapFactory.decodeFile(path, BitmapFactory.Options().apply {
+            inSampleSize = sample
+            inPreferredConfig = Bitmap.Config.ARGB_8888
+        }) ?: return null
+        val dim = minOf(bmp.width, bmp.height)
+        val x = (bmp.width - dim) / 2
+        val y = (bmp.height - dim) / 2
+        val sq = try {
+            Bitmap.createBitmap(bmp, x, y, dim, dim)
+        } catch (e: Throwable) {
+            bmp
+        }
+        val scaled = Bitmap.createScaledBitmap(sq, size, size, true)
+        if (scaled != sq && sq != bmp) sq.recycle()
+        if (scaled != bmp && bmp != sq) bmp.recycle()
+        return scaled
+    }
+
     companion object {
         const val FILTER_PATHS = "filter_paths"
         private const val MAX_ZOOM = 19.0
+        private const val THUMB_MAX = 25
     }
 }
