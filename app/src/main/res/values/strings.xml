@@ -171,6 +171,12 @@
     <string name="pc_server_tap_to_start">Vypnutý — ťuknutím spustíš server; adresa pre PC sa rovno skopíruje do schránky</string>
     <string name="pc_server_running_at">Beží: %1$s\nŤuknutím zastavíš · podržaním znova skopíruješ adresu</string>
     <string name="pc_server_link_copied">Adresa skopírovaná: %1$s — na PC prilep do prehliadača (Ctrl+V)</string>
+    <string name="pc_marked_title">Fotky označené z PC</string>
+    <string name="pc_marked_message">Z PC galérie je označených %1$d súborov na zmazanie. Vymazať ich teraz z telefónu?</string>
+    <string name="pc_marked_delete">Vymazať</string>
+    <string name="pc_marked_later">Neskôr</string>
+    <string name="pc_marked_clear">Zrušiť označenia</string>
+    <string name="pc_marked_deleted">Vymazaných: %1$d</string>
     <string name="pc_server_stop">Zastaviť</string>
     <string name="pc_server_notif_title">PC sync server beží</string>
     <string name="pc_server_notif_text">Otvor na PC: %1$s\nPIN: %2$s\nServer beží len kým ho nezastavíš.</string>

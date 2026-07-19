@@ -161,7 +161,14 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
         private const val PICK_MEDIA = 2
         private const val PICK_WALLPAPER = 3
         private const val LAST_MEDIA_CHECK_PERIOD = 3000L
+        private const val REQ_PC_DELETE = 7021
+
+        // aby dialóg „označené z PC" neotravoval pri každom onResume, pýtame sa len keď sa počet zmení
+        @Volatile
+        private var lastPcMarkedPrompt = -1
     }
+
+    private var pendingPcDelete: List<String> = emptyList()
 
     private var mIsPickImageIntent = false
     private var mIsPickVideoIntent = false
@@ -303,6 +310,7 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
     override fun onResume() {
         super.onResume()
         updateMenuColors()
+        checkPcMarkedDeletions()
         config.isThirdPartyIntent = false
         mDateFormat = config.dateFormat
         mTimeFormat = getTimeFormat()
@@ -424,7 +432,94 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
         }
     }
 
+    // ---------- PC sync: fotky označené z webovej galérie na zmazanie ----------
+    private fun checkPcMarkedDeletions() {
+        ensureBackgroundThread {
+            val prefs = org.fossify.gallery.sync.SyncStore.prefs(this)
+            val all = org.fossify.gallery.sync.SyncStore.markedPaths(prefs)
+            // cesty, ktoré už neexistujú, tíško uprac
+            val gone = all.filter { !java.io.File(it).exists() }
+            if (gone.isNotEmpty()) org.fossify.gallery.sync.SyncStore.removeMarked(prefs, gone)
+            val marked = all - gone.toSet()
+            if (marked.isEmpty() || marked.size == lastPcMarkedPrompt) return@ensureBackgroundThread
+            runOnUiThread {
+                if (isDestroyed || isFinishing) return@runOnUiThread
+                lastPcMarkedPrompt = marked.size
+                androidx.appcompat.app.AlertDialog.Builder(this)
+                    .setTitle(R.string.pc_marked_title)
+                    .setMessage(getString(R.string.pc_marked_message, marked.size))
+                    .setPositiveButton(R.string.pc_marked_delete) { _, _ -> deletePcMarked(marked.toList()) }
+                    .setNegativeButton(R.string.pc_marked_later, null)
+                    .setNeutralButton(R.string.pc_marked_clear) { _, _ ->
+                        org.fossify.gallery.sync.SyncStore.clearMarked(prefs)
+                        lastPcMarkedPrompt = -1
+                    }
+                    .show()
+            }
+        }
+    }
+
+    private fun deletePcMarked(paths: List<String>) {
+        ensureBackgroundThread {
+            val uris = paths.mapNotNull { pcContentUriForPath(it) }
+            runOnUiThread {
+                if (isDestroyed || isFinishing || uris.isEmpty()) return@runOnUiThread
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+                    try {
+                        val pi = MediaStore.createDeleteRequest(contentResolver, uris)
+                        pendingPcDelete = paths
+                        startIntentSenderForResult(pi.intentSender, REQ_PC_DELETE, null, 0, 0, 0)
+                    } catch (e: Throwable) {
+                        toast(org.fossify.commons.R.string.unknown_error_occurred)
+                    }
+                } else {
+                    var deleted = 0
+                    uris.forEach {
+                        try {
+                            if (contentResolver.delete(it, null, null) > 0) deleted++
+                        } catch (ignored: Throwable) {
+                        }
+                    }
+                    if (deleted > 0) {
+                        org.fossify.gallery.sync.SyncStore.removeMarked(org.fossify.gallery.sync.SyncStore.prefs(this), paths)
+                        toast(getString(R.string.pc_marked_deleted, deleted))
+                        lastPcMarkedPrompt = -1
+                        mLoadedInitialPhotos = false
+                        getDirectories()
+                    }
+                }
+            }
+        }
+    }
+
+    private fun pcContentUriForPath(path: String): Uri? {
+        for (base in listOf(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, MediaStore.Video.Media.EXTERNAL_CONTENT_URI)) {
+            try {
+                contentResolver.query(base, arrayOf(MediaStore.MediaColumns._ID), "${MediaStore.MediaColumns.DATA} = ?", arrayOf(path), null)?.use { c ->
+                    if (c.moveToFirst()) {
+                        return android.content.ContentUris.withAppendedId(base, c.getLong(0))
+                    }
+                }
+            } catch (ignored: Throwable) {
+            }
+        }
+        return null
+    }
+
     override fun onActivityResult(requestCode: Int, resultCode: Int, resultData: Intent?) {
+        if (requestCode == REQ_PC_DELETE) {
+            if (resultCode == RESULT_OK && pendingPcDelete.isNotEmpty()) {
+                val prefs = org.fossify.gallery.sync.SyncStore.prefs(this)
+                org.fossify.gallery.sync.SyncStore.removeMarked(prefs, pendingPcDelete)
+                toast(getString(R.string.pc_marked_deleted, pendingPcDelete.size))
+                lastPcMarkedPrompt = -1
+                mLoadedInitialPhotos = false
+                getDirectories()
+            }
+            pendingPcDelete = emptyList()
+            super.onActivityResult(requestCode, resultCode, resultData)
+            return
+        }
         if (resultCode == RESULT_OK) {
             if (requestCode == PICK_MEDIA && resultData != null) {
                 val resultIntent = Intent()

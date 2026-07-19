@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>Galéria+</title>
+<title>Galéria+ Sync</title>
 <style>
   :root{
     --bg:#0e0f13; --bg2:#16181f; --fg:#e9edf2; --mut:#9aa3b2;
@@ -22,13 +22,14 @@
     padding:.45rem .7rem;cursor:pointer}
   button:hover{border-color:var(--accent)}
   button.pri{background:var(--accent2);border-color:var(--accent)}
+  button.warn{border-color:var(--danger);color:var(--danger)}
   button:disabled{opacity:.4;cursor:default}
+  select{background:var(--bg2);border:1px solid var(--line);border-radius:8px;padding:.4rem .5rem}
   a{color:var(--accent)}
 
-  /* ---- top bar ---- */
   header{
-    position:sticky;top:0;z-index:30;display:flex;gap:.6rem;align-items:center;
-    padding:.55rem .8rem;background:rgba(14,15,19,.92);
+    position:sticky;top:0;z-index:30;display:flex;gap:.55rem;align-items:center;
+    padding:.55rem .8rem;background:rgba(14,15,19,.94);
     backdrop-filter:blur(8px);border-bottom:1px solid var(--line);flex-wrap:wrap;
   }
   header h1{font-size:1rem;margin:0;font-weight:600;white-space:nowrap}
@@ -36,40 +37,49 @@
   header .spacer{flex:1 1 auto}
   header input[type=search]{
     background:var(--bg2);border:1px solid var(--line);border-radius:8px;
-    padding:.4rem .6rem;min-width:140px;max-width:260px;flex:1 1 140px}
+    padding:.4rem .6rem;min-width:130px;max-width:240px;flex:1 1 130px}
   .qbox{display:flex;align-items:center;gap:.4rem;color:var(--mut);font-size:.8rem}
-  .qbox input[type=range]{width:110px;accent-color:var(--accent)}
+  .qbox input[type=range]{width:100px;accent-color:var(--accent)}
   .qval{width:2.6rem;text-align:right;color:var(--fg)}
+  .chipbtn{border-radius:999px;padding:.35rem .7rem;font-size:.82rem}
+  .chipbtn.del{border-color:var(--danger)}
+  .chipbtn.del b{color:var(--danger)}
 
-  /* ---- grid ---- */
-  main{padding:.6rem}
-  #grid{
-    display:grid;gap:6px;
-    grid-template-columns:repeat(auto-fill,minmax(var(--thumb),1fr));
-  }
+  main{padding:.6rem;padding-bottom:70px}
+  #grid{display:grid;gap:6px;grid-template-columns:repeat(auto-fill,minmax(var(--thumb),1fr))}
   .cell{position:relative;aspect-ratio:1/1;overflow:hidden;border-radius:8px;
     background:var(--bg2);cursor:pointer;outline:2px solid transparent;outline-offset:-2px}
-  .cell img{width:100%;height:100%;object-fit:cover;display:block;opacity:0;
-    transition:opacity .25s}
+  .cell img{width:100%;height:100%;object-fit:cover;display:block;opacity:0;transition:opacity .25s}
   .cell img.on{opacity:1}
   .cell .vid{position:absolute;left:6px;top:6px;background:rgba(0,0,0,.6);
     border-radius:6px;padding:1px 6px;font-size:.7rem}
   .cell .nm{position:absolute;left:0;right:0;bottom:0;padding:3px 6px;font-size:.68rem;
     background:linear-gradient(transparent,rgba(0,0,0,.8));white-space:nowrap;
     overflow:hidden;text-overflow:ellipsis;color:#dfe5ee}
-  /* compare-mode selection */
-  body.cmp .cell{cursor:copy}
   .cell.sel{outline-color:var(--accent)}
   .cell .badge{position:absolute;right:6px;top:6px;width:22px;height:22px;border-radius:50%;
     background:var(--accent);color:#fff;font-weight:700;display:none;
-    align-items:center;justify-content:center;font-size:.8rem}
+    align-items:center;justify-content:center;font-size:.8rem;z-index:2}
   .cell.sel .badge{display:flex}
+  .cell .sync{position:absolute;right:6px;bottom:20px;background:rgba(20,60,40,.85);
+    color:var(--ok);border-radius:6px;padding:0 5px;font-size:.72rem;display:none;z-index:2}
+  .cell.issync .sync{display:block}
+  .cell.ismark{outline-color:var(--danger)}
+  .cell .mark{position:absolute;left:6px;bottom:20px;background:rgba(70,20,20,.85);
+    color:var(--danger);border-radius:6px;padding:0 5px;font-size:.72rem;display:none;z-index:2}
+  .cell.ismark .mark{display:block}
 
   .empty{color:var(--mut);text-align:center;padding:3rem 1rem}
 
-  /* ---- lightbox (single) ---- */
-  .ov{position:fixed;inset:0;z-index:50;background:rgba(6,7,10,.97);
-    display:none;flex-direction:column}
+  /* bottom action bar (selection mode) */
+  #selbar{position:fixed;left:0;right:0;bottom:0;z-index:40;display:none;gap:.5rem;
+    align-items:center;padding:.55rem .8rem;background:rgba(14,15,19,.97);
+    border-top:1px solid var(--line);flex-wrap:wrap}
+  #selbar.on{display:flex}
+  #selbar .info{color:var(--mut);font-size:.85rem}
+
+  /* overlays */
+  .ov{position:fixed;inset:0;z-index:50;background:rgba(6,7,10,.97);display:none;flex-direction:column}
   .ov.on{display:flex}
   .ov .bar{display:flex;gap:.5rem;align-items:center;padding:.5rem .7rem;
     border-bottom:1px solid var(--line);flex-wrap:wrap}
@@ -78,22 +88,54 @@
   .stage{flex:1;overflow:hidden;position:relative;touch-action:none}
   .stage img{position:absolute;left:50%;top:50%;transform-origin:center;
     max-width:none;user-select:none;-webkit-user-drag:none}
+  .navbtn{position:absolute;top:50%;transform:translateY(-50%);z-index:5;
+    font-size:1.6rem;padding:.6rem .8rem;background:rgba(20,22,28,.7)}
+  #vPrev{left:10px} #vNext{right:10px}
 
-  /* ---- comparator ---- */
+  /* comparator */
   .cmpwrap{flex:1;display:flex;min-height:0}
   .pane{flex:1;min-width:0;display:flex;flex-direction:column;border-right:1px solid var(--line)}
   .pane:last-child{border-right:0}
-  .pane .ph{display:flex;gap:.4rem;align-items:center;padding:.4rem .6rem;
-    border-bottom:1px solid var(--line);font-size:.8rem;color:var(--mut)}
-  .pane .ph .kp{margin-left:auto}
+  .pane .ph{display:flex;gap:.35rem;align-items:center;padding:.35rem .5rem;
+    border-bottom:1px solid var(--line);font-size:.78rem;color:var(--mut);flex-wrap:wrap}
+  .pane .ph .nm{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1 1 auto}
+  .pane .ph .st{font-size:.72rem}
+  .pane[data-side="0"] .ph{border-top:3px solid #1976D2}
+  .pane[data-side="1"] .ph{border-top:3px solid #FB8C00}
   .pane .stage{border:0}
   @media(max-width:640px){.cmpwrap{flex-direction:column}
     .pane{border-right:0;border-bottom:1px solid var(--line)}}
 
+  /* filmstrip in group comparator */
+  #strip{display:flex;gap:6px;overflow-x:auto;padding:.5rem .6rem;border-top:1px solid var(--line);
+    background:var(--bg2);min-height:86px}
+  .sthumb{position:relative;flex:0 0 auto;width:72px;height:72px;border-radius:8px;overflow:hidden;
+    cursor:pointer;outline:2px solid transparent;outline-offset:-2px}
+  .sthumb img{width:100%;height:100%;object-fit:cover}
+  .sthumb.left{outline-color:#1976D2}
+  .sthumb.right{outline-color:#FB8C00}
+  .sthumb .sb{position:absolute;left:3px;top:3px;background:#1976D2;color:#fff;border-radius:5px;
+    padding:0 4px;font-size:.68rem;font-weight:700;display:none}
+  .sthumb.left .sb{display:block}
+  .sthumb.right .sb{display:block;background:#FB8C00}
+  .sthumb .del{position:absolute;inset:0;background:rgba(200,40,40,.45);display:none;
+    align-items:center;justify-content:center;font-size:1.2rem}
+  .sthumb.marked .del{display:flex}
+
+  /* groups overlay */
+  #groups main{overflow:auto;padding:.8rem}
+  .gsec{margin:0 0 1rem}
+  .gsec h2{font-size:.95rem;margin:.2rem 0 .5rem;color:var(--fg)}
+  .grow{display:flex;gap:6px;align-items:center;margin-bottom:8px;background:var(--bg2);
+    border:1px solid var(--line);border-radius:10px;padding:6px;cursor:pointer;overflow:hidden}
+  .grow:hover{border-color:var(--accent)}
+  .grow img{width:64px;height:64px;object-fit:cover;border-radius:6px;flex:0 0 auto}
+  .grow .gi{margin-left:auto;color:var(--mut);font-size:.8rem;white-space:nowrap;padding:0 .5rem}
+
   .hint{color:var(--mut);font-size:.78rem}
   .tag{background:var(--chip);border:1px solid var(--line);border-radius:999px;
     padding:.15rem .5rem;font-size:.72rem;color:var(--mut)}
-  .toast{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);
+  .toast{position:fixed;left:50%;bottom:64px;transform:translateX(-50%);
     background:var(--bg2);border:1px solid var(--line);border-radius:10px;
     padding:.5rem .9rem;z-index:99;opacity:0;transition:opacity .3s;pointer-events:none}
   .toast.on{opacity:1}
@@ -101,15 +143,22 @@
 </head>
 <body>
 <header>
-  <h1>Galéria+</h1>
+  <h1>Galéria+ Sync</h1>
   <span class="count" id="count">…</span>
   <input type="search" id="q" placeholder="Hľadať názov / priečinok…" autocomplete="off">
+  <select id="filter" title="Filter podľa stavu synchronizácie">
+    <option value="all">Všetko</option>
+    <option value="new">Nové (nestiahnuté)</option>
+    <option value="synced">✓ Stiahnuté do PC</option>
+  </select>
   <span class="spacer"></span>
-  <span class="qbox" title="Kvalita sťahovania (menšie JPEG)">
+  <span class="qbox" title="Kvalita sťahovania obrázkov (menšie JPEG)">
     ↓ q<input type="range" id="quality" min="30" max="100" step="5" value="70">
     <span class="qval" id="qval">70%</span>
   </span>
-  <button id="cmpBtn">Porovnať</button>
+  <button class="chipbtn" id="groupsBtn">Podobné / série</button>
+  <button class="chipbtn" id="selBtn">Vybrať</button>
+  <button class="chipbtn del" id="markedChip" style="display:none">🗑 <b id="markedN">0</b> na zmazanie</button>
 </header>
 
 <main>
@@ -117,40 +166,67 @@
   <div class="empty" id="empty" style="display:none">Žiadne položky.</div>
 </main>
 
+<!-- selection action bar -->
+<div id="selbar">
+  <span class="info" id="selInfo">0 vybraných</span>
+  <button class="pri" id="selDl">⬇ Stiahnuť</button>
+  <button id="selCmp" disabled>Porovnať 2</button>
+  <button class="warn" id="selMark">🗑 Označiť na zmazanie</button>
+  <button id="selAll">Vybrať zobrazené</button>
+  <button id="selOff">Zrušiť</button>
+</div>
+
 <!-- Single fullscreen viewer -->
 <div class="ov" id="viewer">
   <div class="bar">
     <button id="vClose">✕</button>
     <span class="t" id="vTitle"></span>
+    <span class="tag" id="vState"></span>
     <button id="vFit">Prispôsobiť</button>
     <button id="vFull">1:1</button>
+    <button class="warn" id="vMark">🗑 Označiť</button>
     <button class="pri" id="vDl">Stiahnuť</button>
   </div>
-  <div class="stage" id="vStage"></div>
+  <div class="stage" id="vStage">
+    <button class="navbtn" id="vPrev">‹</button>
+    <button class="navbtn" id="vNext">›</button>
+  </div>
 </div>
 
-<!-- Comparator -->
+<!-- Groups (similar/burst) overlay -->
+<div class="ov" id="groups">
+  <div class="bar">
+    <button id="gClose">✕</button>
+    <span class="t">Podobné fotky — série (burst) a duplikáty. Klik na skupinu = porovnanie.</span>
+  </div>
+  <main id="gBody"><div class="empty">Načítavam skupiny…</div></main>
+</div>
+
+<!-- Group comparator -->
 <div class="ov" id="cmp">
   <div class="bar">
     <button id="cClose">✕</button>
-    <span class="t">Porovnanie — vyber si, ktorú ponechať</span>
-    <label class="hint"><input type="checkbox" id="cLink" checked> Zosynchronizovať priblíženie</label>
+    <span class="t" id="cTitle">Porovnanie</span>
+    <label class="hint"><input type="checkbox" id="cLink" checked> Synchronizovať priblíženie</label>
     <button id="cFit">Prispôsobiť obe</button>
   </div>
   <div class="cmpwrap">
-    <div class="pane" data-i="0">
-      <div class="ph"><span class="nm"></span><span class="kp"></span>
-        <button class="keep pri">Ponechať túto</button>
-        <button class="dl">Stiahnuť</button></div>
+    <div class="pane" data-side="0">
+      <div class="ph"><span class="nm"></span><span class="st"></span>
+        <button class="keeponly pri" title="Všetky ostatné v skupine označí na zmazanie">✓ Ponechať len túto</button>
+        <button class="mk warn">🗑</button>
+        <button class="dl">⬇</button></div>
       <div class="stage"></div>
     </div>
-    <div class="pane" data-i="1">
-      <div class="ph"><span class="nm"></span><span class="kp"></span>
-        <button class="keep pri">Ponechať túto</button>
-        <button class="dl">Stiahnuť</button></div>
+    <div class="pane" data-side="1">
+      <div class="ph"><span class="nm"></span><span class="st"></span>
+        <button class="keeponly pri" title="Všetky ostatné v skupine označí na zmazanie">✓ Ponechať len túto</button>
+        <button class="mk warn">🗑</button>
+        <button class="dl">⬇</button></div>
       <div class="stage"></div>
     </div>
   </div>
+  <div id="strip"></div>
 </div>
 
 <div class="toast" id="toast"></div>
@@ -158,24 +234,25 @@
 <script>
 "use strict";
 (function(){
-  // ---- token: from URL (?token=) so every request can carry it ----
   var P = new URLSearchParams(location.search);
   var TOKEN = P.get("token") || "";
   function api(path, extra){
     var u = path + (path.indexOf("?")<0 ? "?" : "&") + "token=" + encodeURIComponent(TOKEN);
     return extra ? (u + "&" + extra) : u;
   }
+  function post(path, extra){ return fetch(api(path, extra), {method:"POST"}); }
   function isImage(m){ return (m||"").indexOf("image/")===0; }
 
   var $ = function(s,r){ return (r||document).querySelector(s); };
-  var grid = $("#grid"), items = [], byId = {};
+  var grid=$("#grid"), items=[], byId={}, lastList=[];
+  var state={marked:{}, synced:{}}; // id-string keyed
   var toastT;
   function toast(msg){
     var t=$("#toast"); t.textContent=msg; t.classList.add("on");
-    clearTimeout(toastT); toastT=setTimeout(function(){t.classList.remove("on");},1800);
+    clearTimeout(toastT); toastT=setTimeout(function(){t.classList.remove("on");},2000);
   }
 
-  // ------- quality slider -------
+  // ------- quality -------
   var qEl=$("#quality"), qVal=$("#qval");
   function quality(){ return parseInt(qEl.value,10)||70; }
   qEl.addEventListener("input", function(){
@@ -185,32 +262,71 @@
   try{ var sq=localStorage.getItem("gq"); if(sq){ qEl.value=sq; qVal.textContent=sq+"%"; } }catch(e){}
 
   function fileUrl(id, reduced){
-    // reduced download honours quality slider + caps long edge to 2048px
     return reduced ? api("/api/file", "id="+id+"&q="+quality()+"&max=2048")
                    : api("/api/file", "id="+id);
   }
+  function reportSynced(id){
+    post("/api/synced","id="+id).then(function(){
+      state.synced[String(id)]=Date.now();
+      paintCellState(id); applyFilter();
+    }).catch(function(){});
+  }
   function download(it){
     var a=document.createElement("a");
-    a.href=fileUrl(it.id, isImage(it.mime)); // videos: raw; images: reduced
+    a.href=fileUrl(it.id, isImage(it.mime));
     a.download=it.name;
     document.body.appendChild(a); a.click(); a.remove();
+    reportSynced(it.id);
     toast("Sťahujem "+it.name+(isImage(it.mime)?" ("+quality()+"%)":""));
   }
 
-  // ------- lazy thumbnails -------
-  var THUMB = 300; // px hint sent to /api/thumb (covers hi-dpi)
-  var io = new IntersectionObserver(function(ents){
+  // ------- marked-delete helpers -------
+  function isMarked(id){ return !!state.marked[String(id)]; }
+  function setMark(id, del, cb){
+    post("/api/mark","id="+id+"&del="+(del?1:0)).then(function(r){
+      if(!r.ok) throw 0;
+      if(del) state.marked[String(id)]=true; else delete state.marked[String(id)];
+      paintCellState(id); updateMarkedChip();
+      if(cb) cb(true);
+    }).catch(function(){ toast("Označenie zlyhalo"); if(cb) cb(false); });
+  }
+  function updateMarkedChip(){
+    var n=Object.keys(state.marked).length;
+    $("#markedChip").style.display = n? "" : "none";
+    $("#markedN").textContent=n;
+  }
+  $("#markedChip").onclick=function(){
+    var n=Object.keys(state.marked).length;
+    if(confirm(n+" fotiek označených na zmazanie.\nSamotné zmazanie potvrdíš V TELEFÓNE (appka sa opýta pri otvorení).\n\nZrušiť všetky označenia?")){
+      post("/api/clearmarks").then(function(){
+        state.marked={}; updateMarkedChip(); renderKeepingScroll();
+        toast("Označenia zrušené");
+      });
+    }
+  };
+
+  // ------- lazy thumbs -------
+  var THUMB=300;
+  var io=new IntersectionObserver(function(ents){
     ents.forEach(function(e){
       if(!e.isIntersecting) return;
       var img=e.target, id=img.dataset.id;
-      img.src = api("/api/thumb", "id="+id+"&s="+THUMB);
+      img.src=api("/api/thumb","id="+id+"&s="+THUMB);
       img.addEventListener("load", function(){ img.classList.add("on"); });
       img.addEventListener("error", function(){ img.classList.add("on"); img.style.opacity=.25; });
       io.unobserve(img);
     });
   }, {rootMargin:"400px"});
 
+  function paintCellState(id){
+    var c=grid.querySelector('.cell[data-id="'+id+'"]');
+    if(!c) return;
+    c.classList.toggle("issync", !!state.synced[String(id)]);
+    c.classList.toggle("ismark", isMarked(id));
+  }
+
   function render(list){
+    lastList=list;
     grid.textContent="";
     io.disconnect();
     if(!list.length){ $("#empty").style.display="block"; return; }
@@ -219,36 +335,49 @@
     list.forEach(function(it){
       var c=document.createElement("div");
       c.className="cell"; c.dataset.id=it.id;
+      if(state.synced[String(it.id)]) c.classList.add("issync");
+      if(isMarked(it.id)) c.classList.add("ismark");
       var img=document.createElement("img");
       img.dataset.id=it.id; img.alt=it.name; img.loading="lazy";
       c.appendChild(img);
       if(!isImage(it.mime)){ var v=document.createElement("span"); v.className="vid"; v.textContent="▶ video"; c.appendChild(v); }
       var nm=document.createElement("span"); nm.className="nm"; nm.textContent=it.name; c.appendChild(nm);
       var b=document.createElement("span"); b.className="badge"; c.appendChild(b);
+      var sy=document.createElement("span"); sy.className="sync"; sy.textContent="✓ v PC"; c.appendChild(sy);
+      var mk=document.createElement("span"); mk.className="mark"; mk.textContent="🗑"; c.appendChild(mk);
       c.addEventListener("click", function(){ onCell(it, c); });
       frag.appendChild(c);
       io.observe(img);
     });
     grid.appendChild(frag);
+    refreshSelBadges();
   }
+  function renderKeepingScroll(){ var y=window.scrollY; applyFilter(); window.scrollTo(0,y); }
 
-  // ------- search filter -------
-  var qInput=$("#q"), filterT;
-  qInput.addEventListener("input", function(){
-    clearTimeout(filterT);
-    filterT=setTimeout(function(){
-      var q=qInput.value.trim().toLowerCase();
-      render(!q ? items : items.filter(function(it){
-        return (it.name+" "+(it.relpath||it.bucket||"")).toLowerCase().indexOf(q)>=0;
-      }));
-    },160);
-  });
+  // ------- search + filter -------
+  var qInput=$("#q"), filterT, fSel=$("#filter");
+  function applyFilter(){
+    var q=qInput.value.trim().toLowerCase();
+    var f=fSel.value;
+    var list=items.filter(function(it){
+      if(q && (it.name+" "+(it.relpath||it.bucket||"")).toLowerCase().indexOf(q)<0) return false;
+      var sy=!!state.synced[String(it.id)];
+      if(f==="new" && sy) return false;
+      if(f==="synced" && !sy) return false;
+      return true;
+    });
+    render(list);
+    $("#count").textContent=list.length+" / "+items.length;
+  }
+  qInput.addEventListener("input", function(){ clearTimeout(filterT); filterT=setTimeout(applyFilter,160); });
+  fSel.addEventListener("change", applyFilter);
 
-  // ================= ZOOM/PAN engine (shared) =================
-  // Attaches an <img> to a stage element with wheel-zoom, drag-pan, pinch, dblclick.
+  // ================= zoom/pan viewer engine =================
   function makeViewer(stage){
     var img=document.createElement("img");
-    stage.textContent=""; stage.appendChild(img);
+    // keep nav buttons if present
+    stage.querySelectorAll("img").forEach(function(o){o.remove();});
+    stage.appendChild(img);
     var st={scale:1,x:0,y:0,nw:0,nh:0,fit:1,onchange:null};
     function apply(){
       img.style.transform="translate(-50%,-50%) translate("+st.x+"px,"+st.y+"px) scale("+st.scale+")";
@@ -259,13 +388,10 @@
       st.fit=Math.min(r.width/st.nw, r.height/st.nh);
       if(!isFinite(st.fit)||st.fit<=0) st.fit=1;
       st.scale=st.fit; st.x=0; st.y=0; apply();
-      if(st.onchange) st.onchange(st.scale);
+      if(st.onchange) st.onchange(st);
     }
-    function one(){ st.scale=1; st.x=0; st.y=0; apply(); if(st.onchange) st.onchange(st.scale); }
-    img.addEventListener("load", function(){
-      st.nw=img.naturalWidth; st.nh=img.naturalHeight; fit();
-    });
-    // wheel zoom toward cursor
+    function one(){ st.scale=1; st.x=0; st.y=0; apply(); if(st.onchange) st.onchange(st); }
+    img.addEventListener("load", function(){ st.nw=img.naturalWidth; st.nh=img.naturalHeight; fit(); });
     stage.addEventListener("wheel", function(e){
       e.preventDefault();
       var f=Math.exp(-e.deltaY*0.0015);
@@ -275,144 +401,328 @@
       ns=Math.min(Math.max(ns, st.fit*0.5), 40);
       var r=stage.getBoundingClientRect();
       var cx=e.clientX-r.left-r.width/2, cy=e.clientY-r.top-r.height/2;
-      // keep point under cursor stable
       st.x=cx-(cx-st.x)*(ns/st.scale);
       st.y=cy-(cy-st.y)*(ns/st.scale);
       st.scale=ns; apply();
-      if(st.onchange) st.onchange(st.scale);
+      if(st.onchange) st.onchange(st);
     }
-    // drag pan
     var drag=null;
     stage.addEventListener("pointerdown", function(e){
+      if(e.target.tagName==="BUTTON") return;
       drag={x:e.clientX,y:e.clientY,ox:st.x,oy:st.y};
-      stage.setPointerCapture(e.pointerId);
+      try{stage.setPointerCapture(e.pointerId);}catch(_){}
     });
     stage.addEventListener("pointermove", function(e){
       if(!drag)return;
       st.x=drag.ox+(e.clientX-drag.x); st.y=drag.oy+(e.clientY-drag.y); apply();
+      if(st.onchange) st.onchange(st);
     });
     function endDrag(e){ drag=null; try{stage.releasePointerCapture(e.pointerId);}catch(_){} }
     stage.addEventListener("pointerup", endDrag);
     stage.addEventListener("pointercancel", endDrag);
     stage.addEventListener("dblclick", function(e){
+      if(e.target.tagName==="BUTTON") return;
       if(st.scale > st.fit*1.05){ fit(); } else { zoomAt(e, st.fit*2.5); }
     });
     return {
       el:img, st:st,
-      load:function(src){ img.classList.remove("on"); img.src=src; },
+      load:function(src){ img.src=src; },
       fit:fit, one:one,
-      setScale:function(ns){ // used by sync-link; keep center
-        ns=Math.min(Math.max(ns, st.fit*0.5),40); st.scale=ns; apply();
-      }
+      setState:function(o){ st.scale=o.scale; st.x=o.x; st.y=o.y; apply(); }
     };
   }
 
   // ================= single viewer =================
-  var viewer=$("#viewer"), vv=makeViewer($("#vStage")), vCur=null;
+  var viewer=$("#viewer"), vv=null, vCur=null;
+  function viewerState(it){
+    var s=[];
+    if(state.synced[String(it.id)]) s.push("✓ v PC");
+    if(isMarked(it.id)) s.push("🗑 na zmazanie");
+    $("#vState").textContent=s.join(" · ");
+    $("#vMark").textContent=isMarked(it.id)?"Zrušiť 🗑":"🗑 Označiť";
+  }
   function openViewer(it){
-    vCur=it; $("#vTitle").textContent=it.relpath||it.name;
+    vCur=it;
+    $("#vTitle").textContent=it.relpath||it.name;
+    viewerState(it);
     var stage=$("#vStage");
+    stage.querySelectorAll("video").forEach(function(v){v.remove();});
     if(isImage(it.mime)){
-      stage.style.display="";
-      vv.load(fileUrl(it.id,false)); // full image, raw quality for viewing
+      vv=makeViewer(stage);
+      vv.load(fileUrl(it.id,false));
     }else{
-      // video -> use a <video> element instead of the zoom img
-      stage.innerHTML="";
+      stage.querySelectorAll("img").forEach(function(o){o.remove();});
       var vid=document.createElement("video");
-      vid.controls=true; vid.style.cssText="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);max-width:100%;max-height:100%";
+      vid.controls=true; vid.style.cssText="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);max-width:96%;max-height:96%";
       vid.src=fileUrl(it.id,false); stage.appendChild(vid);
+      vv=null;
     }
     viewer.classList.add("on");
   }
-  $("#vClose").onclick=function(){ viewer.classList.remove("on"); $("#vStage").innerHTML=""; vv=makeViewer($("#vStage")); };
-  $("#vFit").onclick=function(){ vv.fit(); };
-  $("#vFull").onclick=function(){ vv.one(); };
-  $("#vDl").onclick=function(){ if(vCur) download(vCur); };
-
-  // ================= compare mode =================
-  var cmpMode=false, sel=[], cmpBtn=$("#cmpBtn");
-  function setCmpMode(on){
-    cmpMode=on; document.body.classList.toggle("cmp",on);
-    cmpBtn.classList.toggle("pri",on);
-    cmpBtn.textContent = on ? "Zrušiť porovnanie ("+sel.length+"/2)" : "Porovnať";
-    if(!on){ sel=[]; document.querySelectorAll(".cell.sel").forEach(function(c){c.classList.remove("sel");});
-      refreshBadges(); }
+  function stepViewer(dir){
+    if(!vCur) return;
+    var i=lastList.findIndex(function(x){return x.id===vCur.id;});
+    if(i<0) return;
+    var n=i+dir;
+    if(n<0||n>=lastList.length) return;
+    openViewer(lastList[n]);
   }
-  cmpBtn.onclick=function(){ setCmpMode(!cmpMode); };
+  $("#vPrev").onclick=function(e){ e.stopPropagation(); stepViewer(-1); };
+  $("#vNext").onclick=function(e){ e.stopPropagation(); stepViewer(1); };
+  $("#vClose").onclick=function(){ viewer.classList.remove("on"); };
+  $("#vFit").onclick=function(){ if(vv) vv.fit(); };
+  $("#vFull").onclick=function(){ if(vv) vv.one(); };
+  $("#vDl").onclick=function(){ if(vCur) download(vCur); };
+  $("#vMark").onclick=function(){
+    if(!vCur) return;
+    setMark(vCur.id, !isMarked(vCur.id), function(){ viewerState(vCur); });
+  };
 
-  function refreshBadges(){
-    document.querySelectorAll(".cell").forEach(function(c){
+  // ================= selection mode =================
+  var selMode=false, sel=[];
+  var selBtn=$("#selBtn"), selbar=$("#selbar");
+  function setSelMode(on){
+    selMode=on;
+    selBtn.classList.toggle("pri",on);
+    selbar.classList.toggle("on",on);
+    if(!on){ sel=[]; refreshSelBadges(); }
+    updateSelbar();
+  }
+  selBtn.onclick=function(){ setSelMode(!selMode); };
+  $("#selOff").onclick=function(){ setSelMode(false); };
+  $("#selAll").onclick=function(){
+    sel=lastList.map(function(it){return String(it.id);});
+    refreshSelBadges(); updateSelbar();
+  };
+  function refreshSelBadges(){
+    grid.querySelectorAll(".cell").forEach(function(c){
       var i=sel.indexOf(c.dataset.id);
       var b=c.querySelector(".badge");
       if(i>=0){ c.classList.add("sel"); b.textContent=(i+1); } else { c.classList.remove("sel"); }
     });
-    cmpBtn.textContent="Zrušiť porovnanie ("+sel.length+"/2)";
   }
-
+  function updateSelbar(){
+    $("#selInfo").textContent=sel.length+" vybraných";
+    $("#selDl").disabled = !sel.length;
+    $("#selMark").disabled = !sel.length;
+    var two = sel.length===2 && sel.every(function(id){ return byId[id] && isImage(byId[id].mime); });
+    $("#selCmp").disabled=!two;
+  }
   function onCell(it, cell){
-    if(!cmpMode){ openViewer(it); return; }
-    var id=String(it.id), k=sel.indexOf(id);
-    if(k>=0){ sel.splice(k,1); }
-    else{
-      if(sel.length>=2) sel.shift();       // keep most recent two
-      sel.push(id);
+    if(selMode){
+      var id=String(it.id), k=sel.indexOf(id);
+      if(k>=0) sel.splice(k,1); else sel.push(id);
+      refreshSelBadges(); updateSelbar();
+      return;
     }
-    refreshBadges();
-    if(sel.length===2) openCompare();
+    openViewer(it);
+  }
+  // sequential download of selection (each reported as synced)
+  $("#selDl").onclick=function(){
+    var list=sel.slice();
+    if(!list.length) return;
+    toast("Sťahujem "+list.length+" súborov…");
+    var i=0;
+    (function next(){
+      if(i>=list.length){ toast("Hotovo — stiahnutých "+list.length); return; }
+      var it=byId[list[i]]; i++;
+      if(it){ download(it); }
+      setTimeout(next, 500);
+    })();
+  };
+  $("#selMark").onclick=function(){
+    var list=sel.slice();
+    if(!list.length) return;
+    var i=0;
+    (function next(){
+      if(i>=list.length){ toast("Označených na zmazanie: "+list.length); applyFilter(); return; }
+      setMark(list[i], true, function(){ i++; next(); });
+    })();
+  };
+  $("#selCmp").onclick=function(){
+    if(sel.length===2) openCompareGroup(sel.slice(), "Porovnanie 2 fotiek");
+  };
+
+  // ================= groups (burst + similar) =================
+  var groupsOv=$("#groups");
+  $("#groupsBtn").onclick=function(){
+    groupsOv.classList.add("on");
+    loadGroups();
+  };
+  $("#gClose").onclick=function(){ groupsOv.classList.remove("on"); };
+  var groupsCache=null;
+  function loadGroups(){
+    var body=$("#gBody");
+    if(groupsCache){ renderGroups(groupsCache); return; }
+    body.innerHTML='<div class="empty">Načítavam skupiny…</div>';
+    fetch(api("/api/groups"))
+      .then(function(r){ if(!r.ok) throw new Error("HTTP "+r.status); return r.json(); })
+      .then(function(g){ groupsCache=g; renderGroups(g); })
+      .catch(function(e){ body.innerHTML='<div class="empty">Skupiny sa nepodarilo načítať ('+e.message+')</div>'; });
+  }
+  function renderGroups(g){
+    var body=$("#gBody");
+    body.textContent="";
+    function section(title, groups, hintEmpty){
+      var sec=document.createElement("div"); sec.className="gsec";
+      var h=document.createElement("h2"); h.textContent=title+" ("+groups.length+")"; sec.appendChild(h);
+      if(!groups.length){
+        var e=document.createElement("div"); e.className="hint"; e.textContent=hintEmpty; sec.appendChild(e);
+      }
+      groups.forEach(function(ids){
+        var known=ids.filter(function(id){return byId[String(id)];});
+        if(known.length<2) return;
+        var row=document.createElement("div"); row.className="grow";
+        known.slice(0,8).forEach(function(id){
+          var im=document.createElement("img");
+          im.loading="lazy"; im.src=api("/api/thumb","id="+id+"&s=128");
+          row.appendChild(im);
+        });
+        var gi=document.createElement("span"); gi.className="gi";
+        gi.textContent=known.length+" fotiek ›";
+        row.appendChild(gi);
+        row.onclick=function(){
+          groupsOv.classList.remove("on");
+          openCompareGroup(known.map(String), title+" — "+known.length+" fotiek");
+        };
+        sec.appendChild(row);
+      });
+      body.appendChild(sec);
+    }
+    section("📸 Série (burst)", g.burst||[], "Žiadne série — fotky nasnímané tesne po sebe.");
+    section("🔁 Duplikáty (podobné)", g.similar||[],
+      "Žiadne duplikáty. Ak si ešte nespustil index duplikátov v telefóne (Nastavenia → Duplikáty), skupiny tu nebudú.");
   }
 
-  var cmp=$("#cmp"), panes=[$('.pane[data-i="0"]'),$('.pane[data-i="1"]')], pv=[null,null];
-  function openCompare(){
-    [0,1].forEach(function(i){
-      var it=byId[sel[i]]; var pane=panes[i];
-      pane.querySelector(".nm").textContent=it.relpath||it.name;
-      // rebuild a fresh viewer per open (avoids stale listeners)
-      pv[i]=makeViewer(pane.querySelector(".stage"));
-      pv[i].st.onchange=function(sc){ syncFrom(i, sc); };
-      pv[i].load(fileUrl(it.id,false));
-      pane.querySelector(".kp").textContent="";
-      pane.querySelector(".keep").onclick=function(){ decideKeep(i); };
-      pane.querySelector(".dl").onclick=function(){ download(it); };
-    });
+  // ================= group comparator =================
+  var cmp=$("#cmp"), panes=[$('.pane[data-side="0"]'),$('.pane[data-side="1"]')], pv=[null,null];
+  var gIds=[], gL=0, gR=1, cmpSyncing=false;
+  function openCompareGroup(ids, title){
+    gIds=ids.filter(function(id){return byId[id];});
+    if(gIds.length<2){ toast("Skupina je prikrátka"); return; }
+    gL=0; gR=1;
+    $("#cTitle").textContent=title||"Porovnanie";
+    buildStrip();
+    loadPane(0); loadPane(1);
     cmp.classList.add("on");
   }
-  function syncFrom(i, sc){
-    if(!$("#cLink").checked) return;
-    var o=pv[1-i]; if(o){ o.setScale(sc); }
+  function paneIdx(side){ return side===0 ? gL : gR; }
+  function loadPane(side){
+    var id=gIds[paneIdx(side)];
+    var it=byId[id];
+    if(!it) return;
+    var pane=panes[side];
+    pane.querySelector(".nm").textContent=it.name;
+    paintPaneState(side);
+    pv[side]=makeViewer(pane.querySelector(".stage"));
+    pv[side].st.onchange=function(st){ syncPanes(side, st); };
+    pv[side].load(fileUrl(it.id,false));
+    pane.querySelector(".keeponly").onclick=function(){ keepOnly(id); };
+    pane.querySelector(".mk").onclick=function(){
+      setMark(id, !isMarked(id), function(){ paintPaneState(side); buildStrip(); });
+    };
+    pane.querySelector(".dl").onclick=function(){ download(it); };
+    highlightStrip();
   }
-  function decideKeep(i){
-    var keep=byId[sel[i]], drop=byId[sel[1-i]];
-    panes[i].querySelector(".kp").innerHTML='<span class="tag" style="color:var(--ok);border-color:var(--ok)">✓ ponechať</span>';
-    panes[1-i].querySelector(".kp").innerHTML='<span class="tag" style="color:var(--danger);border-color:var(--danger)">vymazať v telefóne</span>';
-    toast("Ponechať: "+keep.name+"  ·  Vymazať: "+drop.name);
-    // NOTE: deletion is a phone-side action (MediaStore). Web view only recommends.
+  function paintPaneState(side){
+    var id=gIds[paneIdx(side)];
+    var st=panes[side].querySelector(".st");
+    st.innerHTML = isMarked(id)
+      ? '<span class="tag" style="color:var(--danger);border-color:var(--danger)">🗑 na zmazanie</span>'
+      : (state.synced[String(id)] ? '<span class="tag" style="color:var(--ok);border-color:var(--ok)">✓ v PC</span>' : '');
+    panes[side].querySelector(".mk").textContent = isMarked(id) ? "↩" : "🗑";
   }
-  $("#cClose").onclick=function(){ cmp.classList.remove("on");
-    panes.forEach(function(p){ p.querySelector(".stage").innerHTML=""; }); pv=[null,null]; };
+  function syncPanes(side, st){
+    if(cmpSyncing || !$("#cLink").checked) return;
+    var o=pv[1-side]; if(!o) return;
+    cmpSyncing=true;
+    o.setState(st);
+    cmpSyncing=false;
+  }
+  // „ponechať len túto" — všetky OSTATNÉ id v skupine označí na zmazanie
+  function keepOnly(keepId){
+    var others=gIds.filter(function(id){ return id!==keepId; });
+    if(!confirm("Ponechať len túto fotku a označiť na zmazanie "+others.length+" ostatných?")) return;
+    var i=0;
+    (function next(){
+      if(i>=others.length){
+        toast("Označených na zmazanie: "+others.length+" · zmazanie potvrdíš v telefóne");
+        buildStrip(); paintPaneState(0); paintPaneState(1); applyFilter();
+        return;
+      }
+      setMark(others[i], true, function(){ i++; next(); });
+    })();
+  }
+  function buildStrip(){
+    var s=$("#strip");
+    s.textContent="";
+    gIds.forEach(function(id, i){
+      var d=document.createElement("div");
+      d.className="sthumb"+(isMarked(id)?" marked":"");
+      var im=document.createElement("img");
+      im.loading="lazy"; im.src=api("/api/thumb","id="+id+"&s=128");
+      d.appendChild(im);
+      var sb=document.createElement("span"); sb.className="sb"; d.appendChild(sb);
+      var del=document.createElement("span"); del.className="del"; del.textContent="🗑"; d.appendChild(del);
+      d.onclick=function(){
+        // ťuk = do ľavého panela; doterajšia ľavá ide vpravo (ako v telefóne)
+        if(i===gL) return;
+        gR=gL; gL=i;
+        loadPane(0); loadPane(1);
+      };
+      d.dataset.i=i;
+      s.appendChild(d);
+    });
+    highlightStrip();
+  }
+  function highlightStrip(){
+    $("#strip").querySelectorAll(".sthumb").forEach(function(d){
+      var i=parseInt(d.dataset.i,10);
+      d.classList.toggle("left", i===gL);
+      d.classList.toggle("right", i===gR);
+      var sb=d.querySelector(".sb");
+      sb.textContent = i===gL ? "Ľ" : (i===gR ? "P" : "");
+    });
+  }
+  $("#cClose").onclick=function(){
+    cmp.classList.remove("on");
+    panes.forEach(function(p){ p.querySelector(".stage").querySelectorAll("img").forEach(function(o){o.remove();}); });
+    pv=[null,null];
+    renderKeepingScroll();
+  };
   $("#cFit").onclick=function(){ pv.forEach(function(v){ if(v) v.fit(); }); };
 
-  // esc closes overlays
   document.addEventListener("keydown", function(e){
     if(e.key==="Escape"){
       if(cmp.classList.contains("on")) $("#cClose").click();
+      else if(groupsOv.classList.contains("on")) $("#gClose").click();
       else if(viewer.classList.contains("on")) $("#vClose").click();
+      else if(selMode) setSelMode(false);
+    }
+    if(viewer.classList.contains("on")){
+      if(e.key==="ArrowLeft") stepViewer(-1);
+      if(e.key==="ArrowRight") stepViewer(1);
     }
   });
 
-  // ================= load list =================
-  fetch(api("/api/list"))
-    .then(function(r){ if(!r.ok) throw new Error("HTTP "+r.status); return r.json(); })
-    .then(function(data){
-      items=data; byId={};
-      items.forEach(function(it){ byId[String(it.id)]=it; });
-      $("#count").textContent=items.length+" položiek";
-      render(items);
-    })
-    .catch(function(err){
-      $("#count").textContent="chyba";
-      $("#empty").style.display="block";
-      $("#empty").textContent="Nepodarilo sa načítať zoznam ("+err.message+"). Skontroluj token v URL.";
-    });
+  // ================= initial load =================
+  Promise.all([
+    fetch(api("/api/list")).then(function(r){ if(!r.ok) throw new Error("HTTP "+r.status); return r.json(); }),
+    fetch(api("/api/state")).then(function(r){ return r.ok? r.json() : {marked:[],synced:{}}; }).catch(function(){ return {marked:[],synced:{}}; })
+  ]).then(function(res){
+    items=res[0]; byId={};
+    items.forEach(function(it){ byId[String(it.id)]=it; });
+    var st=res[1]||{};
+    state.marked={};
+    (st.marked||[]).forEach(function(id){ state.marked[String(id)]=true; });
+    state.synced=st.synced||{};
+    updateMarkedChip();
+    applyFilter();
+  }).catch(function(err){
+    $("#count").textContent="chyba";
+    $("#empty").style.display="block";
+    $("#empty").textContent="Nepodarilo sa načítať zoznam ("+err.message+"). Skontroluj token v URL.";
+  });
 })();
 </script>
 </body>

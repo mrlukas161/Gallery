@@ -41,9 +41,11 @@ class MediaServer(
         val relpath: String,
         val size: Long,
         val mtime: Long,
+        val taken: Long,
         val bucket: String,
         val mime: String,
         val uri: Uri,
+        val path: String,
     )
 
     @Volatile
@@ -69,6 +71,11 @@ class MediaServer(
                 "/api/file" -> handleFile(session)
                 "/api/thumb" -> handleThumb(session)
                 "/api/upload" -> handleUpload(session)
+                "/api/groups" -> handleGroups()
+                "/api/state" -> handleState()
+                "/api/mark" -> handleMark(session)
+                "/api/synced" -> handleSynced(session)
+                "/api/clearmarks" -> handleClearMarks()
                 "/" -> handleRoot(session)
                 else -> json(Status.NOT_FOUND, """{"error":"not_found"}""")
             }
@@ -102,6 +109,7 @@ class MediaServer(
                     .put("name", it.name)
                     .put("size", it.size)
                     .put("mtime", it.mtime)
+                    .put("taken", it.taken)
                     .put("bucket", it.bucket)
                     .put("mime", it.mime)
             )
@@ -179,6 +187,86 @@ class MediaServer(
         } ?: return json(Status.INTERNAL_ERROR, """{"error":"save failed"}""")
         rebuildIndex()
         return json(Status.OK, JSONObject().put("saved", saved.first).put("uri", saved.second).toString())
+    }
+
+    // ---------- SYNC MANAŽÉR: skupiny, značky na zmazanie, evidencia stiahnutých ----------
+    // Perzistentné v prefs "galeria_pcsync": marked_delete = StringSet ciest; synced_json = {cesta: čas_ms}.
+    // Kľúč = cesta (stabilná aj po reštarte servera/telefónu); klientovi sa mapuje na aktuálne id.
+
+    private val syncPrefs get() = appContext.getSharedPreferences(SyncStore.PREFS, Context.MODE_PRIVATE)
+
+    // burst série (rovnaký priečinok, odstup ≤3 s) + duplikáty podľa pHash (ak je index)
+    private fun handleGroups(): Response {
+        val o = JSONObject()
+        // burst: len obrázky, zoradené podľa bucket+taken
+        val burst = JSONArray()
+        val images = index.values.filter { it.mime.startsWith("image/") }.sortedWith(compareBy({ it.bucket }, { it.taken }))
+        var cur = ArrayList<Long>()
+        var prevBucket = ""
+        var prevTaken = 0L
+        for (it in images) {
+            if (cur.isNotEmpty() && it.bucket == prevBucket && it.taken > 0 && prevTaken > 0 && it.taken - prevTaken <= 3000) {
+                cur.add(it.id)
+            } else {
+                if (cur.size >= 2) burst.put(JSONArray(cur))
+                cur = arrayListOf(it.id)
+            }
+            prevBucket = it.bucket
+            prevTaken = it.taken
+        }
+        if (cur.size >= 2) burst.put(JSONArray(cur))
+        o.put("burst", burst)
+        // duplikáty: pHash skupiny (cesty -> id cez reverzný index)
+        val similar = JSONArray()
+        try {
+            val byPath = index.values.associateBy { it.path }
+            val hashes = org.fossify.gallery.faces.PhashDatabase.getInstance(appContext).PhashDao().getAllHashes()
+            val groups = org.fossify.gallery.faces.PhashGrouper.groupBySimilarity(hashes)
+            for (g in groups) {
+                val ids = g.mapNotNull { byPath[it]?.id }
+                if (ids.size >= 2) similar.put(JSONArray(ids))
+            }
+        } catch (ignored: Throwable) {
+        }
+        o.put("similar", similar)
+        return json(Status.OK, o.toString())
+    }
+
+    // aktuálny stav značiek pre klienta: marked=[id...], synced={id: čas_ms}
+    private fun handleState(): Response {
+        val marked = SyncStore.markedPaths(syncPrefs)
+        val synced = SyncStore.syncedMap(syncPrefs)
+        val mArr = JSONArray()
+        val sObj = JSONObject()
+        for (it in index.values) {
+            if (it.path in marked) mArr.put(it.id)
+            synced[it.path]?.let { ts -> sObj.put(it.id.toString(), ts) }
+        }
+        return json(Status.OK, JSONObject().put("marked", mArr).put("synced", sObj).toString())
+    }
+
+    private fun handleMark(session: IHTTPSession): Response {
+        val id = session.parameters["id"]?.firstOrNull()?.toLongOrNull()
+            ?: return json(Status.BAD_REQUEST, """{"error":"bad id"}""")
+        val item = index[id] ?: return json(Status.NOT_FOUND, """{"error":"unknown id"}""")
+        if (item.path.isEmpty()) return json(Status.NOT_FOUND, """{"error":"no path"}""")
+        val del = session.parameters["del"]?.firstOrNull() != "0"
+        SyncStore.setMarked(syncPrefs, item.path, del)
+        return json(Status.OK, """{"ok":true,"marked":${SyncStore.markedPaths(syncPrefs).size}}""")
+    }
+
+    private fun handleSynced(session: IHTTPSession): Response {
+        val id = session.parameters["id"]?.firstOrNull()?.toLongOrNull()
+            ?: return json(Status.BAD_REQUEST, """{"error":"bad id"}""")
+        val item = index[id] ?: return json(Status.NOT_FOUND, """{"error":"unknown id"}""")
+        if (item.path.isEmpty()) return json(Status.NOT_FOUND, """{"error":"no path"}""")
+        SyncStore.addSynced(syncPrefs, item.path)
+        return json(Status.OK, """{"ok":true}""")
+    }
+
+    private fun handleClearMarks(): Response {
+        SyncStore.clearMarked(syncPrefs)
+        return json(Status.OK, """{"ok":true}""")
     }
 
     private fun handleRoot(session: IHTTPSession): Response {
@@ -269,26 +357,33 @@ class MediaServer(
             MediaStore.MediaColumns.DISPLAY_NAME,
             MediaStore.MediaColumns.SIZE,
             MediaStore.MediaColumns.DATE_MODIFIED,
+            MediaStore.MediaColumns.DATE_TAKEN,
             MediaStore.MediaColumns.BUCKET_DISPLAY_NAME,
             MediaStore.MediaColumns.MIME_TYPE,
+            MediaStore.MediaColumns.DATA,
         )
         resolver.query(base, proj, null, null, "${MediaStore.MediaColumns.DATE_MODIFIED} DESC")?.use { c ->
             val iId = c.getColumnIndexOrThrow(MediaStore.MediaColumns._ID)
             val iNm = c.getColumnIndexOrThrow(MediaStore.MediaColumns.DISPLAY_NAME)
             val iSz = c.getColumnIndexOrThrow(MediaStore.MediaColumns.SIZE)
             val iMt = c.getColumnIndexOrThrow(MediaStore.MediaColumns.DATE_MODIFIED)
+            val iTk = c.getColumnIndex(MediaStore.MediaColumns.DATE_TAKEN)
             val iBk = c.getColumnIndexOrThrow(MediaStore.MediaColumns.BUCKET_DISPLAY_NAME)
             val iMm = c.getColumnIndexOrThrow(MediaStore.MediaColumns.MIME_TYPE)
+            val iDt = c.getColumnIndex(MediaStore.MediaColumns.DATA)
             while (c.moveToNext()) {
                 val id = c.getLong(iId)
                 val name = c.getString(iNm) ?: "$id"
                 val bucket = c.getString(iBk) ?: "Camera"
                 val mime = c.getString(iMm) ?: if (isVideo) "video/*" else "image/*"
                 val uri = Uri.withAppendedPath(base, id.toString())
+                val mtime = c.getLong(iMt)
+                val taken = if (iTk >= 0) c.getLong(iTk).takeIf { it > 0 } ?: (mtime * 1000) else mtime * 1000
                 into[id] = Item(
                     id = id, name = name, relpath = "$bucket/$name",
-                    size = c.getLong(iSz), mtime = c.getLong(iMt),
+                    size = c.getLong(iSz), mtime = mtime, taken = taken,
                     bucket = bucket, mime = mime, uri = uri,
+                    path = (if (iDt >= 0) c.getString(iDt) else null) ?: "",
                 )
             }
         }
