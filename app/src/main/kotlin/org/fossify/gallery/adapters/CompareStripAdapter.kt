@@ -27,6 +27,13 @@ class CompareStripAdapter(
         notifyItemChanged(pos)
     }
 
+    // „Ponechať len túto": označí na zmazanie VŠETKY ostatné fotky skupiny (napr. 60 fotiek -> 1 ostáva)
+    fun markAllExcept(pos: Int) {
+        marked.clear()
+        paths.indices.forEach { if (it != pos) marked.add(it) }
+        notifyDataSetChanged()
+    }
+
     // ktorá fotka je práve v ľavom (Ľ, modrá) a pravom (P, oranžová) paneli
     fun setActive(left: Int, right: Int) {
         val changed = setOf(activeLeft, activeRight, left, right).filter { it in paths.indices }

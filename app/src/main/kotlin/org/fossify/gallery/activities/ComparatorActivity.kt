@@ -200,9 +200,35 @@ class ComparatorActivity : SimpleActivity() {
         updateActive()
     }
 
+    // podržanie fotky vo filmstripe -> jasná ponuka namiesto tichého prepínania
     private fun onStripLong(pos: Int) {
-        adapter?.toggleMark(pos)
-        updateInfo()
+        val a = adapter ?: return
+        val name = paths.getOrNull(pos)?.substringAfterLast('/') ?: return
+        val markLabel = getString(if (a.marked.contains(pos)) R.string.compare_unmark else R.string.compare_mark_delete)
+        val options = arrayOf(getString(R.string.compare_keep_only_this), markLabel)
+        androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle(name)
+            .setItems(options) { _, which ->
+                when (which) {
+                    0 -> {
+                        a.markAllExcept(pos)
+                        // ponechaná fotka rovno do ľavého panela, nech vidí čo ostáva
+                        rightIndex = leftIndex.takeIf { it != pos } ?: rightIndex
+                        leftIndex = pos
+                        loadPane(true, keepZoom = true)
+                        loadPane(false, keepZoom = true)
+                        updateActive()
+                        updateInfo()
+                        toast(getString(R.string.compare_kept_only, a.marked.size))
+                    }
+                    1 -> {
+                        a.toggleMark(pos)
+                        updateInfo()
+                    }
+                }
+            }
+            .setNegativeButton(org.fossify.commons.R.string.cancel, null)
+            .show()
     }
 
     private fun loadPane(left: Boolean, keepZoom: Boolean = false) {

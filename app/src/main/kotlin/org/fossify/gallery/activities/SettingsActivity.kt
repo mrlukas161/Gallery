@@ -1240,8 +1240,27 @@ class SettingsActivity : SimpleActivity() {
                 binding.settingsPcServerSummary.postDelayed({ updatePcServerSummary() }, 400)
             } else {
                 org.fossify.gallery.services.HttpSyncService.start(this)
-                binding.settingsPcServerSummary.postDelayed({ updatePcServerSummary() }, 700)
+                // po nabehnutí servera rovno skopíruj hotovú adresu s tokenom do schránky
+                binding.settingsPcServerSummary.postDelayed({
+                    updatePcServerSummary()
+                    copyServerLink(silent = false)
+                }, 900)
             }
+        }
+        // podržanie riadku = skopírovať adresu znova (keď server beží)
+        binding.settingsPcServerHolder.setOnLongClickListener {
+            if (org.fossify.gallery.services.HttpSyncService.isRunning) copyServerLink(silent = false)
+            true
+        }
+    }
+
+    private fun copyServerLink(silent: Boolean) {
+        val link = org.fossify.gallery.services.HttpSyncService.shareUrl() ?: return
+        try {
+            val cm = getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+            cm.setPrimaryClip(android.content.ClipData.newPlainText("Galéria+ server", link))
+            if (!silent) toast(getString(R.string.pc_server_link_copied, link))
+        } catch (ignored: Throwable) {
         }
     }
 
@@ -1250,8 +1269,7 @@ class SettingsActivity : SimpleActivity() {
         binding.settingsPcServerSummary.text = if (org.fossify.gallery.services.HttpSyncService.isRunning) {
             getString(
                 R.string.pc_server_running_at,
-                org.fossify.gallery.services.HttpSyncService.currentUrl ?: "?",
-                org.fossify.gallery.services.HttpSyncService.currentPin ?: "?",
+                org.fossify.gallery.services.HttpSyncService.shareUrl() ?: "?",
             )
         } else {
             getString(R.string.pc_server_tap_to_start)

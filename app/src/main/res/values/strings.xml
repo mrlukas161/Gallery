@@ -168,8 +168,9 @@
     <string name="clear_filter">Zrušiť filter</string>
     <!-- PC sync (lokálny LAN server) -->
     <string name="pc_server_title">PC sync server (WiFi)</string>
-    <string name="pc_server_tap_to_start">Vypnutý — ťuknutím spustíš server na zálohu fotiek z PC</string>
-    <string name="pc_server_running_at">Beží: %1$s · PIN %2$s (ťuknutím zastavíš)</string>
+    <string name="pc_server_tap_to_start">Vypnutý — ťuknutím spustíš server; adresa pre PC sa rovno skopíruje do schránky</string>
+    <string name="pc_server_running_at">Beží: %1$s\nŤuknutím zastavíš · podržaním znova skopíruješ adresu</string>
+    <string name="pc_server_link_copied">Adresa skopírovaná: %1$s — na PC prilep do prehliadača (Ctrl+V)</string>
     <string name="pc_server_stop">Zastaviť</string>
     <string name="pc_server_notif_title">PC sync server beží</string>
     <string name="pc_server_notif_text">Otvor na PC: %1$s\nPIN: %2$s\nServer beží len kým ho nezastavíš.</string>
@@ -199,6 +200,10 @@
     <string name="compare_delete">Vymazať označené</string>
     <string name="compare_marked">Označené: %1$d</string>
     <string name="compare_marked_none">Nič nie je označené</string>
+    <string name="compare_keep_only_this">✓ Ponechať len túto — všetky ostatné označiť na zmazanie</string>
+    <string name="compare_mark_delete">Označiť na zmazanie</string>
+    <string name="compare_unmark">Zrušiť označenie</string>
+    <string name="compare_kept_only">Táto ostáva · na zmazanie označených: %1$d</string>
     <string name="compare_pane_label">%1$s · ostrosť %2$d%%</string>
     <string name="compare_done">Hotovo</string>
     <string name="face_indexing_error">Chyba: %1$s (ťuknutím skús znova)</string>

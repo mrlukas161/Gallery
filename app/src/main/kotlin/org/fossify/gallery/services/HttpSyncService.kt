@@ -94,11 +94,12 @@ class HttpSyncService : Service() {
             Intent(this, HttpSyncService::class.java).setAction(ACTION_STOP),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
+        val fullLink = "$url/?token=$pin"
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.stat_sys_upload)
             .setContentTitle(getString(R.string.pc_server_notif_title))
-            .setContentText("$url  •  PIN $pin")
-            .setStyle(NotificationCompat.BigTextStyle().bigText(getString(R.string.pc_server_notif_text, url, pin)))
+            .setContentText(fullLink)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(getString(R.string.pc_server_notif_text, fullLink, pin)))
             .setOngoing(true)
             .setOnlyAlertOnce(true)
             .addAction(0, getString(R.string.pc_server_stop), stopIntent)
@@ -155,6 +156,13 @@ class HttpSyncService : Service() {
         @Volatile
         var currentUrl: String? = null
             private set
+
+        // hotová adresa pre PC prehliadač — stačí prilepiť (Ctrl+V), token je v nej
+        fun shareUrl(): String? {
+            val u = currentUrl ?: return null
+            val p = currentPin ?: return null
+            return "$u/?token=$p"
+        }
 
         private fun newPin(): String {
             val r = SecureRandom()
