@@ -367,6 +367,47 @@ class ComparatorActivity : SimpleActivity() {
         updateInfo()
     }
 
+    // scrcpy / hardvérová klávesnica z PC: rýchle triedenie skupiny bez myši.
+    // ←/→ = prechádzanie (ďalšia fotka do ľavého panela), X/Del = označ ľavú, K = ponechať len ľavú,
+    // Enter = vymazať označené. V turnajovom režime ←/→ = vyber víťaza.
+    override fun onKeyDown(keyCode: Int, event: android.view.KeyEvent?): Boolean {
+        when (keyCode) {
+            android.view.KeyEvent.KEYCODE_DPAD_RIGHT -> {
+                if (duelMode) duelPick(false) else advanceLeft(1)
+                return true
+            }
+            android.view.KeyEvent.KEYCODE_DPAD_LEFT -> {
+                if (duelMode) duelPick(true) else advanceLeft(-1)
+                return true
+            }
+            android.view.KeyEvent.KEYCODE_X, android.view.KeyEvent.KEYCODE_DEL, android.view.KeyEvent.KEYCODE_FORWARD_DEL -> {
+                adapter?.toggleMark(leftIndex)
+                updateInfo()
+                return true
+            }
+            android.view.KeyEvent.KEYCODE_K -> {
+                adapter?.let { a ->
+                    a.markAllExcept(leftIndex)
+                    updateInfo()
+                    toast(getString(R.string.compare_kept_only, a.marked.size))
+                }
+                return true
+            }
+            android.view.KeyEvent.KEYCODE_ENTER, android.view.KeyEvent.KEYCODE_NUMPAD_ENTER -> {
+                deleteMarked()
+                return true
+            }
+        }
+        return super.onKeyDown(keyCode, event)
+    }
+
+    private fun advanceLeft(dir: Int) {
+        val next = (leftIndex + dir).coerceIn(0, paths.lastIndex)
+        if (next == leftIndex) return
+        onStripTap(next)
+        binding.compareStrip.scrollToPosition(next)
+    }
+
     private fun contentUriForPath(path: String): Uri? {
         return try {
             contentResolver.query(

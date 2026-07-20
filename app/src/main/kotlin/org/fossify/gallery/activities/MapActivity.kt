@@ -61,13 +61,20 @@ class MapActivity : SimpleActivity() {
         binding.mapView.setMaxZoomLevel(20.0) // dovoľ priblížiť viac -> presnejšie pozície fotiek
         binding.mapView.controller.setZoom(6.0)
         binding.mapView.controller.setCenter(GeoPoint(48.7, 19.7))
+        // Clustre prepočítať pri KAŽDEJ zmene zoomu. Pinch v osmdroid nie vždy vyšle ZoomEvent
+        // (fractional zoom), preto: (1) listener aj na scroll (pri pinch sa hýbe stred mapy),
+        // (2) poistkový watcher porovnávajúci zoomLevelDouble s naposledy vykresleným.
         binding.mapView.addMapListener(DelayedMapListener(object : MapListener {
-            override fun onScroll(event: ScrollEvent?) = false
+            override fun onScroll(event: ScrollEvent?): Boolean {
+                redrawIfZoomChanged()
+                return false
+            }
+
             override fun onZoom(event: ZoomEvent?): Boolean {
                 redraw()
                 return false
             }
-        }, 300))
+        }, 150))
         load()
     }
 
@@ -86,10 +93,12 @@ class MapActivity : SimpleActivity() {
             }
         }
         binding.mapView.onResume()
+        binding.mapView.postDelayed(zoomWatcher, 300)
     }
 
     override fun onPause() {
         super.onPause()
+        binding.mapView.removeCallbacks(zoomWatcher)
         binding.mapView.onPause()
     }
 
@@ -229,10 +238,27 @@ class MapActivity : SimpleActivity() {
         }
     }
 
+    private var lastDrawnZoom = -1.0
+
+    // poistka: prekresli, len ak sa zoom od posledného vykreslenia reálne zmenil
+    private fun redrawIfZoomChanged() {
+        if (kotlin.math.abs(binding.mapView.zoomLevelDouble - lastDrawnZoom) > 0.05) redraw()
+    }
+
+    // watcher beží každých 300 ms — zachytí aj pinch, ktorý nevyšle žiadny event
+    private val zoomWatcher = object : Runnable {
+        override fun run() {
+            if (isDestroyed || isFinishing) return
+            redrawIfZoomChanged()
+            binding.mapView.postDelayed(this, 300)
+        }
+    }
+
     private fun redraw() {
         if (isDestroyed) return
         binding.mapView.overlays.clear()
         val zoom = binding.mapView.zoomLevelDouble
+        lastDrawnZoom = zoom
         for (cluster in cluster(points, cellSizeDeg(zoom))) {
             val marker = Marker(binding.mapView)
             marker.position = GeoPoint(cluster.lat, cluster.lon)

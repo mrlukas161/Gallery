@@ -69,7 +69,22 @@
     color:var(--danger);border-radius:6px;padding:0 5px;font-size:.72rem;display:none;z-index:2}
   .cell.ismark .mark{display:block}
 
+  .cell.cur{outline:3px dashed #fff;outline-offset:-3px}
+  .cell.cur.sel{outline:3px dashed var(--accent)}
+  .cell.cur.ismark{outline:3px dashed var(--danger)}
+
   .empty{color:var(--mut);text-align:center;padding:3rem 1rem}
+
+  /* keyboard help */
+  #help .bar .t{color:var(--fg);font-weight:600}
+  #help main{overflow:auto;padding:1rem;display:flex;gap:2rem;flex-wrap:wrap}
+  #help section{min-width:260px;flex:1 1 260px;max-width:420px}
+  #help h2{font-size:.92rem;margin:.2rem 0 .5rem;color:var(--accent)}
+  #help table{border-collapse:collapse;width:100%;font-size:.85rem}
+  #help td{padding:.28rem .4rem;border-bottom:1px solid var(--line);color:var(--mut)}
+  #help td:first-child{white-space:nowrap;width:1%}
+  #help kbd{background:var(--chip);border:1px solid var(--line);border-bottom-width:2px;
+    border-radius:6px;padding:1px 7px;font:600 .8rem ui-monospace,Consolas,monospace;color:var(--fg)}
 
   /* bottom action bar (selection mode) */
   #selbar{position:fixed;left:0;right:0;bottom:0;z-index:40;display:none;gap:.5rem;
@@ -158,6 +173,7 @@
   </span>
   <button class="chipbtn" id="groupsBtn">Podobné / série</button>
   <button class="chipbtn" id="selBtn">Vybrať</button>
+  <button class="chipbtn" id="helpBtn" title="Klávesové skratky (?)">⌨</button>
   <button class="chipbtn del" id="markedChip" style="display:none">🗑 <b id="markedN">0</b> na zmazanie</button>
 </header>
 
@@ -227,6 +243,56 @@
     </div>
   </div>
   <div id="strip"></div>
+</div>
+
+<!-- Keyboard help -->
+<div class="ov" id="help">
+  <div class="bar">
+    <button id="hClose">✕</button>
+    <span class="t">⌨ Klávesové skratky</span>
+  </div>
+  <main>
+    <section>
+      <h2>Mriežka</h2>
+      <table>
+        <tr><td><kbd>←</kbd><kbd>→</kbd><kbd>↑</kbd><kbd>↓</kbd></td><td>pohyb kurzora po fotkách</td></tr>
+        <tr><td><kbd>Enter</kbd></td><td>otvoriť fotku</td></tr>
+        <tr><td><kbd>Medzerník</kbd></td><td>vybrať / odobrať z výberu</td></tr>
+        <tr><td><kbd>X</kbd> / <kbd>Delete</kbd></td><td>označiť na zmazanie 🗑</td></tr>
+        <tr><td><kbd>D</kbd></td><td>stiahnuť (výber, inak kurzorovú)</td></tr>
+        <tr><td><kbd>S</kbd></td><td>výberový režim zap/vyp</td></tr>
+        <tr><td><kbd>G</kbd></td><td>Podobné / série</td></tr>
+        <tr><td><kbd>F</kbd></td><td>prepnúť filter (Všetko/Nové/Stiahnuté)</td></tr>
+        <tr><td><kbd>/</kbd></td><td>hľadanie</td></tr>
+        <tr><td><kbd>?</kbd></td><td>tento pomocník</td></tr>
+        <tr><td><kbd>Esc</kbd></td><td>zavrieť / zrušiť výber</td></tr>
+      </table>
+    </section>
+    <section>
+      <h2>Prehliadač fotky</h2>
+      <table>
+        <tr><td><kbd>←</kbd><kbd>→</kbd></td><td>predošlá / ďalšia</td></tr>
+        <tr><td><kbd>X</kbd> / <kbd>Delete</kbd></td><td>označiť na zmazanie 🗑</td></tr>
+        <tr><td><kbd>D</kbd></td><td>stiahnuť</td></tr>
+        <tr><td><kbd>F</kbd></td><td>prispôsobiť</td></tr>
+        <tr><td><kbd>1</kbd></td><td>mierka 1:1</td></tr>
+        <tr><td><kbd>Esc</kbd></td><td>zavrieť</td></tr>
+      </table>
+    </section>
+    <section>
+      <h2>Porovnávač skupiny</h2>
+      <table>
+        <tr><td><kbd>→</kbd> / <kbd>←</kbd></td><td>ďalšia / predošlá fotka do ľavého panela</td></tr>
+        <tr><td><kbd>X</kbd> / <kbd>Delete</kbd></td><td>označiť ĽAVÚ na zmazanie</td></tr>
+        <tr><td><kbd>K</kbd></td><td>✓ ponechať len ĽAVÚ (ostatné označiť)</td></tr>
+        <tr><td><kbd>T</kbd></td><td>vymeniť panely</td></tr>
+        <tr><td><kbd>D</kbd></td><td>stiahnuť ľavú</td></tr>
+        <tr><td><kbd>F</kbd></td><td>prispôsobiť obe</td></tr>
+        <tr><td><kbd>Esc</kbd></td><td>zavrieť</td></tr>
+      </table>
+      <p class="hint" style="margin-top:.8rem">Tip: rovnaké klávesy (←/→, X, K, Enter) fungujú aj v telefónnej appke cez <b>scrcpy</b> — porovnávač aj prehliadač fotiek.</p>
+    </section>
+  </main>
 </div>
 
 <div class="toast" id="toast"></div>
@@ -351,6 +417,12 @@
     });
     grid.appendChild(frag);
     refreshSelBadges();
+    // obnov kurzor po prerenderovaní (filter/hľadanie/refresh)
+    if(typeof curIdx!=="undefined" && curIdx>=0){
+      curIdx=Math.min(curIdx, list.length-1);
+      var cc=grid.children[curIdx];
+      if(cc) cc.classList.add("cur");
+    }
   }
   function renderKeepingScroll(){ var y=window.scrollY; applyFilter(); window.scrollTo(0,y); }
 
@@ -692,16 +764,137 @@
   };
   $("#cFit").onclick=function(){ pv.forEach(function(v){ if(v) v.fit(); }); };
 
+  // ================= keyboard =================
+  var help=$("#help");
+  $("#helpBtn").onclick=function(){ help.classList.add("on"); };
+  $("#hClose").onclick=function(){ help.classList.remove("on"); };
+
+  // kurzor v mriežke
+  var curIdx=-1;
+  function gridColumns(){
+    var cells=grid.children;
+    if(cells.length<2) return 1;
+    var t0=cells[0].offsetTop, n=0;
+    for(var i=0;i<cells.length;i++){ if(cells[i].offsetTop===t0) n++; else break; }
+    return Math.max(1,n);
+  }
+  function setCursor(i){
+    if(!lastList.length){ curIdx=-1; return; }
+    i=Math.min(Math.max(i,0),lastList.length-1);
+    var old=grid.querySelector(".cell.cur"); if(old) old.classList.remove("cur");
+    curIdx=i;
+    var c=grid.children[i];
+    if(c){ c.classList.add("cur"); c.scrollIntoView({block:"nearest"}); }
+  }
+  function cursorItem(){ return curIdx>=0 && curIdx<lastList.length ? lastList[curIdx] : null; }
+
+  // porovnávač: posun ľavého panela (ako ťuk na filmstrip)
+  function cmpAdvance(dir){
+    var n=Math.min(Math.max(gL+dir,0),gIds.length-1);
+    if(n===gL) return;
+    gR=gL; gL=n;
+    loadPane(0); loadPane(1);
+    var th=$("#strip").querySelector('.sthumb[data-i="'+n+'"]');
+    if(th) th.scrollIntoView({inline:"nearest",block:"nearest"});
+  }
+  function cmpSwap(){
+    var t=gL; gL=gR; gR=t;
+    loadPane(0); loadPane(1);
+  }
+
   document.addEventListener("keydown", function(e){
+    var tag=(e.target.tagName||"").toUpperCase();
+    var typing = tag==="INPUT"||tag==="SELECT"||tag==="TEXTAREA";
     if(e.key==="Escape"){
-      if(cmp.classList.contains("on")) $("#cClose").click();
+      if(typing){ e.target.blur(); return; }
+      if(help.classList.contains("on")) help.classList.remove("on");
+      else if(cmp.classList.contains("on")) $("#cClose").click();
       else if(groupsOv.classList.contains("on")) $("#gClose").click();
       else if(viewer.classList.contains("on")) $("#vClose").click();
       else if(selMode) setSelMode(false);
+      return;
     }
+    if(typing) return;
+    if(e.key==="?"){ e.preventDefault(); help.classList.toggle("on"); return; }
+    if(help.classList.contains("on")) return;
+
+    // --- porovnávač skupiny ---
+    if(cmp.classList.contains("on")){
+      var lid=gIds[gL];
+      switch(e.key){
+        case "ArrowRight": e.preventDefault(); cmpAdvance(1); break;
+        case "ArrowLeft": e.preventDefault(); cmpAdvance(-1); break;
+        case "x": case "X": case "Delete":
+          e.preventDefault();
+          setMark(lid, !isMarked(lid), function(){ paintPaneState(0); paintPaneState(1); buildStrip(); });
+          break;
+        case "k": case "K": e.preventDefault(); keepOnly(lid); break;
+        case "t": case "T": e.preventDefault(); cmpSwap(); break;
+        case "d": case "D": e.preventDefault(); if(byId[lid]) download(byId[lid]); break;
+        case "f": case "F": e.preventDefault(); pv.forEach(function(v){ if(v) v.fit(); }); break;
+      }
+      return;
+    }
+    if(groupsOv.classList.contains("on")) return;
+
+    // --- prehliadač fotky ---
     if(viewer.classList.contains("on")){
-      if(e.key==="ArrowLeft") stepViewer(-1);
-      if(e.key==="ArrowRight") stepViewer(1);
+      switch(e.key){
+        case "ArrowLeft": e.preventDefault(); stepViewer(-1); break;
+        case "ArrowRight": e.preventDefault(); stepViewer(1); break;
+        case "x": case "X": case "Delete":
+          e.preventDefault();
+          if(vCur) setMark(vCur.id, !isMarked(vCur.id), function(){ viewerState(vCur); });
+          break;
+        case "d": case "D": e.preventDefault(); if(vCur) download(vCur); break;
+        case "f": case "F": e.preventDefault(); if(vv) vv.fit(); break;
+        case "1": e.preventDefault(); if(vv) vv.one(); break;
+      }
+      return;
+    }
+
+    // --- mriežka ---
+    var cols=gridColumns();
+    switch(e.key){
+      case "ArrowRight": e.preventDefault(); setCursor(curIdx<0?0:curIdx+1); break;
+      case "ArrowLeft": e.preventDefault(); setCursor(curIdx<0?0:curIdx-1); break;
+      case "ArrowDown": e.preventDefault(); setCursor(curIdx<0?0:curIdx+cols); break;
+      case "ArrowUp": e.preventDefault(); setCursor(curIdx<0?0:curIdx-cols); break;
+      case "Enter": {
+        var it=cursorItem(); if(it) openViewer(it);
+        break;
+      }
+      case " ": {
+        e.preventDefault();
+        var it2=cursorItem(); if(!it2) break;
+        if(!selMode) setSelMode(true);
+        var id=String(it2.id), k=sel.indexOf(id);
+        if(k>=0) sel.splice(k,1); else sel.push(id);
+        refreshSelBadges(); updateSelbar();
+        break;
+      }
+      case "x": case "X": case "Delete": {
+        e.preventDefault();
+        var it3=cursorItem(); if(it3) setMark(it3.id, !isMarked(it3.id));
+        break;
+      }
+      case "d": case "D": {
+        e.preventDefault();
+        if(sel.length){ $("#selDl").click(); }
+        else { var it4=cursorItem(); if(it4) download(it4); }
+        break;
+      }
+      case "s": case "S": e.preventDefault(); setSelMode(!selMode); break;
+      case "g": case "G": e.preventDefault(); $("#groupsBtn").click(); break;
+      case "f": case "F": {
+        e.preventDefault();
+        var order=["all","new","synced"];
+        fSel.value=order[(order.indexOf(fSel.value)+1)%order.length];
+        applyFilter();
+        toast("Filter: "+fSel.options[fSel.selectedIndex].text);
+        break;
+      }
+      case "/": e.preventDefault(); qInput.focus(); qInput.select(); break;
     }
   });
 

@@ -1446,6 +1446,25 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
         showPhotoInfo(getCurrentPath())
     }
 
+    // scrcpy / hardvérová klávesnica: ←/→ listovanie, I = info panel fotky
+    override fun onKeyDown(keyCode: Int, event: android.view.KeyEvent?): Boolean {
+        when (keyCode) {
+            android.view.KeyEvent.KEYCODE_DPAD_LEFT -> {
+                goToPrevItem()
+                return true
+            }
+            android.view.KeyEvent.KEYCODE_DPAD_RIGHT -> {
+                goToNextItem()
+                return true
+            }
+            android.view.KeyEvent.KEYCODE_I -> {
+                showPhotoInfo(getCurrentPath())
+                return true
+            }
+        }
+        return super.onKeyDown(keyCode, event)
+    }
+
     override fun videoEnded(): Boolean {
         if (mIsSlideshowActive) {
             swipeToNextMedium()
