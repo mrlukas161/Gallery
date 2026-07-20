@@ -35,6 +35,9 @@ class ComparatorActivity : SimpleActivity() {
     private val binding by viewBinding(ActivityComparatorBinding::inflate)
     private var paths = ArrayList<String>()
     private var sharp = HashMap<String, Double>()
+    private var quality = HashMap<String, org.fossify.gallery.faces.PhotoQuality.Result>()
+    private var totalScore = HashMap<String, Double>()
+    private var pq: org.fossify.gallery.faces.PhotoQuality? = null
     private var bestIndex = -1
     private var leftIndex = 0
     private var rightIndex = 0
@@ -104,15 +107,20 @@ class ComparatorActivity : SimpleActivity() {
         adapter?.setActive(leftIndex, rightIndex)
     }
 
-    // šípky pod panelom: posun konkrétny panel na predošlú/ďalšiu fotku (deterministicky, aj pri priblížení)
+    // šípky: posun panela ZARADOM podľa zoznamu dole; fotku zobrazenú v druhom paneli PRESKOČÍ
+    // (Ľ a P tak nikdy nie sú tá istá fotka)
     private fun stepPane(left: Boolean, dir: Int) {
         if (duelMode) return
-        val cur = if (left) leftIndex else rightIndex
-        val next = (cur + dir).coerceIn(0, paths.lastIndex)
-        if (next == cur) return
+        val other = if (left) rightIndex else leftIndex
+        var next = if (left) leftIndex else rightIndex
+        do {
+            next += dir
+        } while (next in paths.indices && next == other)
+        if (next !in paths.indices) return
         if (left) leftIndex = next else rightIndex = next
         loadPane(left, keepZoom = true)
         updateActive()
+        binding.compareStrip.scrollToPosition(next)
     }
 
     private fun toggleDuel() {
@@ -169,24 +177,68 @@ class ComparatorActivity : SimpleActivity() {
         binding.compareStrip.adapter = a
     }
 
+    // ostrosť + expozícia + tváre (zavreté oči, úsmev) -> celkové skóre; ★ = najlepšia podľa skóre
     private fun computeSharpness() {
         ensureBackgroundThread {
             val map = HashMap<String, Double>()
-            for (p in paths) map[p] = try {
-                Sharpness.score(p)
+            val qmap = HashMap<String, org.fossify.gallery.faces.PhotoQuality.Result>()
+            val analyzer = pq ?: try {
+                org.fossify.gallery.faces.PhotoQuality(this)
             } catch (e: Throwable) {
-                0.0
+                null
+            }?.also { pq = it }
+            for (p in paths) {
+                map[p] = try {
+                    Sharpness.score(p)
+                } catch (e: Throwable) {
+                    0.0
+                }
+                analyzer?.let {
+                    try {
+                        qmap[p] = it.analyze(p)
+                    } catch (ignored: Throwable) {
+                    }
+                }
             }
             runOnUiThread {
                 if (isDestroyed || isFinishing) return@runOnUiThread
                 sharp = map
-                bestIndex = paths.indices.maxByOrNull { sharp[paths[it]] ?: 0.0 } ?: -1
+                quality = qmap
+                recomputeScores()
                 adapter?.bestIndex = bestIndex
+                adapter?.warns = paths.indices.filter { (quality[paths[it]]?.closedEyes ?: 0) > 0 }.toSet()
                 adapter?.notifyDataSetChanged()
                 loadPane(true)
                 loadPane(false)
             }
         }
+    }
+
+    // váhy: ostrosť 55 % + expozícia 15 % + otvorené oči 25 % + bonus za úsmev 5 %
+    private fun recomputeScores() {
+        val maxS = sharp.values.maxOrNull() ?: 0.0
+        totalScore.clear()
+        for (p in paths) {
+            val sn = if (maxS > 0) (sharp[p] ?: 0.0) / maxS else 0.0
+            val q = quality[p]
+            totalScore[p] = if (q == null) {
+                sn
+            } else {
+                val openRatio = if (q.faces > 0) 1.0 - q.closedEyes.toDouble() / q.faces else 1.0
+                val smileBonus = if (q.faces > 0 && q.smiles > 0) 0.05 else 0.0
+                (0.55 * sn + 0.15 * q.exposure + 0.25 * openRatio + smileBonus).coerceIn(0.0, 1.0)
+            }
+        }
+        bestIndex = paths.indices.maxByOrNull { totalScore[paths[it]] ?: 0.0 } ?: -1
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        try {
+            pq?.close()
+        } catch (ignored: Throwable) {
+        }
+        pq = null
     }
 
     // ťuk na fotku vo filmstripe -> zobrazí sa VĽAVO (Ľ), doterajšia ľavá sa presunie VPRAVO (P)
@@ -257,14 +309,20 @@ class ComparatorActivity : SimpleActivity() {
             .into(view)
         val name = paths[index].substringAfterLast('/')
         val side = if (left) "Ľ · " else "P · "
-        if (sharp.isEmpty()) {
+        val score = totalScore[paths[index]]
+        if (score == null) {
             label.text = side + name
             return
         }
-        val maxS = sharp.values.maxOrNull() ?: 0.0
-        val pct = if (maxS > 0) ((sharp[paths[index]] ?: 0.0) / maxS * 100).toInt() else 0
+        val q = quality[paths[index]]
+        val icons = buildString {
+            if (q != null && q.faces > 0) {
+                if (q.smiles > 0) append(" 😊")
+                if (q.closedEyes > 0) append(" 😑${if (q.closedEyes > 1) q.closedEyes else ""}")
+            }
+        }
         val star = if (index == bestIndex) " ★" else ""
-        label.text = side + getString(R.string.compare_pane_label, name, pct) + star
+        label.text = side + getString(R.string.compare_pane_label, name, (score * 100).toInt()) + icons + star
     }
 
     private fun updateInfo() {
@@ -359,8 +417,10 @@ class ComparatorActivity : SimpleActivity() {
         rightIndex = rightIndex.coerceIn(0, paths.lastIndex)
         if (leftIndex == rightIndex) rightIndex = (leftIndex + 1) % paths.size
         sharp = HashMap(sharp.filterKeys { paths.contains(it) })
-        bestIndex = paths.indices.maxByOrNull { sharp[paths[it]] ?: 0.0 } ?: -1
+        quality = HashMap(quality.filterKeys { paths.contains(it) })
+        recomputeScores()
         rebuildAdapter()
+        adapter?.warns = paths.indices.filter { (quality[paths[it]]?.closedEyes ?: 0) > 0 }.toSet()
         loadPane(true)
         loadPane(false)
         updateActive()
@@ -401,12 +461,8 @@ class ComparatorActivity : SimpleActivity() {
         return super.onKeyDown(keyCode, event)
     }
 
-    private fun advanceLeft(dir: Int) {
-        val next = (leftIndex + dir).coerceIn(0, paths.lastIndex)
-        if (next == leftIndex) return
-        onStripTap(next)
-        binding.compareStrip.scrollToPosition(next)
-    }
+    // klávesové šípky (aj scrcpy): mení fotku ľavého panela zaradom, pravý panel ostáva ako referencia
+    private fun advanceLeft(dir: Int) = stepPane(true, dir)
 
     private fun contentUriForPath(path: String): Uri? {
         return try {

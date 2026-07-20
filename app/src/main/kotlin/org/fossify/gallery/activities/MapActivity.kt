@@ -239,35 +239,73 @@ class MapActivity : SimpleActivity() {
     }
 
     private var lastDrawnZoom = -1.0
+    private var lastSeenZoom = -1.0
+
+    // celé prepočítavanie clusterov beží MIMO UI vlákna (predtým na ňom -> sekanie/ANR pri pinch)
+    private val mapExec = java.util.concurrent.Executors.newSingleThreadExecutor()
+
+    // náhľady dekódujú max 2 vlákna (predtým nové vlákno per marker -> explózia vlákien a pád)
+    private val thumbExec = java.util.concurrent.Executors.newFixedThreadPool(2)
+
+    // generácia prekreslenia: staršie bežiace výpočty/náhľady sa po dobehnutí zahodia
+    private val redrawGen = java.util.concurrent.atomic.AtomicInteger()
 
     // poistka: prekresli, len ak sa zoom od posledného vykreslenia reálne zmenil
     private fun redrawIfZoomChanged() {
         if (kotlin.math.abs(binding.mapView.zoomLevelDouble - lastDrawnZoom) > 0.05) redraw()
     }
 
-    // watcher beží každých 300 ms — zachytí aj pinch, ktorý nevyšle žiadny event
+    // watcher (300 ms): počas gesta NEprekresľuje — čaká, kým sa zoom ustáli, potom prekreslí RAZ
     private val zoomWatcher = object : Runnable {
         override fun run() {
             if (isDestroyed || isFinishing) return
-            redrawIfZoomChanged()
+            val z = binding.mapView.zoomLevelDouble
+            if (kotlin.math.abs(z - lastSeenZoom) > 0.02) {
+                lastSeenZoom = z // gesto ešte beží — nechaj mapu plynulú, prekreslíme po ustálení
+            } else if (kotlin.math.abs(z - lastDrawnZoom) > 0.05) {
+                redraw()
+            }
             binding.mapView.postDelayed(this, 300)
         }
     }
 
     private fun redraw() {
         if (isDestroyed) return
-        binding.mapView.overlays.clear()
+        val gen = redrawGen.incrementAndGet()
         val zoom = binding.mapView.zoomLevelDouble
+        val centerLat = try {
+            binding.mapView.mapCenter.latitude
+        } catch (e: Throwable) {
+            48.7
+        }
         lastDrawnZoom = zoom
-        for (cluster in cluster(points, cellSizeDeg(zoom))) {
+        val pts = points
+        val density = resources.displayMetrics.density
+        mapExec.execute {
+            val markers = try {
+                computeMarkers(pts, zoom, centerLat, density)
+            } catch (e: Throwable) {
+                emptyList()
+            }
+            runOnUiThread {
+                if (isDestroyed || gen != redrawGen.get()) return@runOnUiThread
+                applyMarkers(markers, gen)
+            }
+        }
+    }
+
+    private fun applyMarkers(markers: List<Cluster>, gen: Int) {
+        binding.mapView.overlays.clear()
+        // pri extrémnom počte markerov nevyrábaj náhľady (dekódovanie stoviek bitmáp = zámrz)
+        val allowThumbs = markers.size <= 350
+        for (cluster in markers) {
             val marker = Marker(binding.mapView)
             marker.position = GeoPoint(cluster.lat, cluster.lon)
             marker.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
             marker.icon = makeClusterIcon(cluster.paths.size)
             val cl = cluster
-            if (cluster.paths.size <= THUMB_MAX) {
-                // Google Photos štýl: malé clustre = náhľad reprezentatívnej fotky (+ počet)
-                loadThumbInto(marker, cluster.paths.first(), cluster.paths.size)
+            if (allowThumbs && cluster.paths.size <= THUMB_MAX) {
+                loadThumbInto(marker, cluster.paths.first(), cluster.paths.size, gen)
             }
             marker.setOnMarkerClickListener { _, _ ->
                 onClusterTap(cl)
@@ -276,6 +314,79 @@ class MapActivity : SimpleActivity() {
             binding.mapView.overlays.add(marker)
         }
         binding.mapView.invalidate()
+    }
+
+    // Clustering v pozadí: bunka ~64 dp (≈ veľkosť náhľadu), post-merge príliš blízkych clusterov
+    // (nekryjú sa) a pri veľkom zoome „spiderfy" — málopočetné skupiny sa rozložia do kruhu,
+    // aby sa dala vybrať každá fotka; po oddialení sa prirodzene zoskupia späť.
+    private fun computeMarkers(pts: List<GeoEntity>, zoom: Double, centerLat: Double, density: Float): List<Cluster> {
+        if (pts.isEmpty()) return emptyList()
+        val degPerPx = 360.0 / (256.0 * 2.0.pow(zoom.coerceIn(1.0, 22.0)))
+        val cellPx = 64.0 * density
+        val cell = (degPerPx * cellPx).coerceAtLeast(1e-7)
+        val grid = HashMap<Long, MutableList<GeoEntity>>()
+        for (p in pts) {
+            val gx = floor(p.lon / cell).toLong()
+            val gy = floor(p.lat / cell).toLong()
+            grid.getOrPut(gx * 100_000_000L + gy) { mutableListOf() }.add(p)
+        }
+        var clusters = grid.values.map { list ->
+            Cluster(list.map { it.lat }.average(), list.map { it.lon }.average(), list.map { it.path })
+        }
+        // post-merge: centroidy susedných buniek môžu byť tesne pri sebe -> spoj, nech sa náhľady neprekrývajú
+        if (clusters.size in 2..800) {
+            val cosLat = kotlin.math.cos(Math.toRadians(centerLat)).coerceAtLeast(0.2)
+            val minPx = cellPx * 0.8
+            val sorted = clusters.sortedByDescending { it.paths.size }
+            val used = BooleanArray(sorted.size)
+            val out = ArrayList<Cluster>(sorted.size)
+            for (i in sorted.indices) {
+                if (used[i]) continue
+                var lat = sorted[i].lat
+                var lon = sorted[i].lon
+                var n = sorted[i].paths.size
+                val paths = ArrayList(sorted[i].paths)
+                for (j in i + 1 until sorted.size) {
+                    if (used[j]) continue
+                    val o = sorted[j]
+                    val dxPx = (o.lon - lon) / degPerPx
+                    val dyPx = (o.lat - lat) / (degPerPx * cosLat)
+                    if (dxPx * dxPx + dyPx * dyPx < minPx * minPx) {
+                        // vážený priemer polohy + zlúčené fotky
+                        val m = o.paths.size
+                        lat = (lat * n + o.lat * m) / (n + m)
+                        lon = (lon * n + o.lon * m) / (n + m)
+                        n += m
+                        paths.addAll(o.paths)
+                        used[j] = true
+                    }
+                }
+                used[i] = true
+                out.add(Cluster(lat, lon, paths))
+            }
+            clusters = out
+        }
+        // spiderfy: pri veľkom zoome rozlož malé skupiny do kruhu — každá fotka samostatne vyberateľná
+        if (zoom >= SPREAD_ZOOM) {
+            val cosLat = kotlin.math.cos(Math.toRadians(centerLat)).coerceAtLeast(0.2)
+            val rPx = 46.0 * density
+            val spread = ArrayList<Cluster>(clusters.size * 2)
+            for (c in clusters) {
+                if (c.paths.size in 2..SPREAD_MAX) {
+                    val n = c.paths.size
+                    for ((i, p) in c.paths.withIndex()) {
+                        val ang = 2.0 * Math.PI * i / n
+                        val lon = c.lon + rPx * kotlin.math.cos(ang) * degPerPx
+                        val lat = c.lat + rPx * kotlin.math.sin(ang) * degPerPx * cosLat
+                        spread.add(Cluster(lat, lon, listOf(p)))
+                    }
+                } else {
+                    spread.add(c)
+                }
+            }
+            clusters = spread
+        }
+        return clusters
     }
 
     private fun fitToPoints() {
@@ -319,27 +430,6 @@ class MapActivity : SimpleActivity() {
 
     private data class Cluster(val lat: Double, val lon: Double, val paths: List<String>)
 
-    // veľkosť zhlukovacej bunky v stupňoch ~ konštantná v pixeloch (adaptívne podľa zoomu) -> pri
-    // väčšom priblížení menšie bunky = viac menších, lepšie umiestnených clusterov.
-    private fun cellSizeDeg(zoom: Double): Double {
-        val degPerPixel = 360.0 / (256.0 * 2.0.pow(zoom.coerceIn(1.0, 22.0)))
-        // ~44 px na bunku pri vysokom zoome = rozbije fotky na presnejšie pozície (~desiatky m)
-        return (degPerPixel * 44.0).coerceAtLeast(1e-7)
-    }
-
-    private fun cluster(pts: List<GeoEntity>, cell: Double): List<Cluster> {
-        if (pts.isEmpty()) return emptyList()
-        val map = HashMap<String, MutableList<GeoEntity>>()
-        for (p in pts) {
-            val gx = floor(p.lon / cell).toLong()
-            val gy = floor(p.lat / cell).toLong()
-            map.getOrPut("$gx,$gy") { mutableListOf() }.add(p)
-        }
-        return map.values.map { list ->
-            Cluster(list.map { it.lat }.average(), list.map { it.lon }.average(), list.map { it.path })
-        }
-    }
-
     private fun makeClusterIcon(count: Int): BitmapDrawable {
         iconCache[count]?.let { return it }
         val size = (48 * resources.displayMetrics.density).toInt()
@@ -366,19 +456,30 @@ class MapActivity : SimpleActivity() {
         return drawable
     }
 
-    // načíta náhľad reprezentatívnej fotky do markera (async, cachované)
-    private fun loadThumbInto(marker: Marker, path: String, count: Int) {
+    // načíta náhľad reprezentatívnej fotky do markera (bounded executor + zahodenie zastaraných úloh)
+    private fun loadThumbInto(marker: Marker, path: String, count: Int, gen: Int) {
         val key = "$path|$count"
         thumbCache[key]?.let { marker.icon = it; return }
-        ensureBackgroundThread {
+        thumbExec.execute {
+            if (isDestroyed || gen != redrawGen.get()) return@execute
             val d = makeThumbDrawable(path, count)
             runOnUiThread {
-                if (!isDestroyed && d != null) {
+                if (!isDestroyed && d != null && gen == redrawGen.get()) {
+                    if (thumbCache.size > 250) thumbCache.clear()
                     thumbCache[key] = d
                     marker.icon = d
                     binding.mapView.invalidate()
                 }
             }
+        }
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        try {
+            mapExec.shutdownNow()
+            thumbExec.shutdownNow()
+        } catch (ignored: Throwable) {
         }
     }
 
@@ -448,7 +549,10 @@ class MapActivity : SimpleActivity() {
 
     companion object {
         const val FILTER_PATHS = "filter_paths"
-        private const val MAX_ZOOM = 19.0
         private const val THUMB_MAX = 25
+
+        // od tohto zoomu sa malé skupiny rozkladajú do kruhu (spiderfy), aby sa dali vyberať jednotlivo
+        private const val SPREAD_ZOOM = 17.5
+        private const val SPREAD_MAX = 8
     }
 }

@@ -19,6 +19,7 @@ class CompareStripAdapter(
 
     val marked = HashSet<Int>()
     var bestIndex = -1
+    var warns: Set<Int> = emptySet() // pozície so zavretými očami (😑)
     private var activeLeft = -1
     private var activeRight = -1
 
@@ -64,6 +65,7 @@ class CompareStripAdapter(
         fun bind(pos: Int) {
             Glide.with(activity).load(File(paths[pos])).centerCrop().into(binding.stripImage)
             binding.stripBest.visibility = if (pos == bestIndex) View.VISIBLE else View.GONE
+            binding.stripWarn.visibility = if (warns.contains(pos)) View.VISIBLE else View.GONE
             binding.stripOverlay.visibility = if (marked.contains(pos)) View.VISIBLE else View.GONE
             when (pos) {
                 activeLeft -> {

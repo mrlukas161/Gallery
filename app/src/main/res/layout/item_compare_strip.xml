@@ -35,6 +35,19 @@
         android:visibility="gone" />
 
     <TextView
+        android:id="@+id/strip_warn"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom|start"
+        android:layout_margin="3dp"
+        android:background="#B3000000"
+        android:paddingLeft="3dp"
+        android:paddingRight="3dp"
+        android:text="😑"
+        android:textSize="13sp"
+        android:visibility="gone" />
+
+    <TextView
         android:id="@+id/strip_badge"
         android:layout_width="22dp"
         android:layout_height="22dp"
