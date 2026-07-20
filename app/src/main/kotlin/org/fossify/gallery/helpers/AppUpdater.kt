@@ -106,7 +106,44 @@ object AppUpdater {
         }
     }
 
+    // Tichá samo-aktualizácia cez PackageInstaller session. Pri PRVEJ inštalácii touto cestou si
+    // systém vyžiada potvrdenie (a jednorazovo povolenie „inštalovať neznáme aplikácie" pre Galéria+);
+    // od ďalšej aktualizácie je appka vlastným installerom -> USER_ACTION_NOT_REQUIRED = žiadne dialógy
+    // (obchádza aj Mi installer/Play Protect obrazovky, ktoré visia na ACTION_VIEW ceste).
     private fun installApk(activity: Activity, apkFile: File) {
+        try {
+            installViaSession(activity, apkFile)
+        } catch (e: Throwable) {
+            installViaIntent(activity, apkFile)
+        }
+    }
+
+    private fun installViaSession(activity: Activity, apkFile: File) {
+        val installer = activity.packageManager.packageInstaller
+        val params = android.content.pm.PackageInstaller.SessionParams(
+            android.content.pm.PackageInstaller.SessionParams.MODE_FULL_INSTALL
+        ).apply {
+            setAppPackageName(activity.packageName)
+            if (android.os.Build.VERSION.SDK_INT >= 31) {
+                setRequireUserAction(android.content.pm.PackageInstaller.SessionParams.USER_ACTION_NOT_REQUIRED)
+            }
+        }
+        val sessionId = installer.createSession(params)
+        installer.openSession(sessionId).use { session ->
+            session.openWrite("galeria.apk", 0, apkFile.length()).use { out ->
+                apkFile.inputStream().use { it.copyTo(out) }
+                session.fsync(out)
+            }
+            val cbIntent = Intent(activity, org.fossify.gallery.receivers.UpdateResultReceiver::class.java)
+            val flags = android.app.PendingIntent.FLAG_UPDATE_CURRENT or
+                (if (android.os.Build.VERSION.SDK_INT >= 31) android.app.PendingIntent.FLAG_MUTABLE else 0)
+            val pending = android.app.PendingIntent.getBroadcast(activity, sessionId, cbIntent, flags)
+            session.commit(pending.intentSender)
+        }
+    }
+
+    // fallback: klasický inštalačný intent (so systémovými dialógmi)
+    private fun installViaIntent(activity: Activity, apkFile: File) {
         val uri = FileProvider.getUriForFile(activity, "${activity.packageName}.provider", apkFile)
         val intent = Intent(Intent.ACTION_VIEW).apply {
             setDataAndType(uri, "application/vnd.android.package-archive")
