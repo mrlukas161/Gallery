@@ -16,6 +16,7 @@ import android.os.Bundle
 import androidx.appcompat.app.AlertDialog
 import org.fossify.commons.extensions.beGone
 import org.fossify.commons.extensions.beVisible
+import org.fossify.commons.extensions.isVideoFast
 import org.fossify.commons.extensions.viewBinding
 import org.fossify.commons.helpers.NavigationIcon
 import org.fossify.commons.helpers.ensureBackgroundThread
@@ -46,6 +47,8 @@ class MapActivity : SimpleActivity() {
     private var filterPaths: HashSet<String>? = null
     private var filterPerson: Set<Long>? = null
     private var filterQrOnly = false
+    private var showPhotos = true
+    private var showVideos = true
     private val iconCache = HashMap<Int, BitmapDrawable>()
     private val thumbCache = HashMap<String, BitmapDrawable>()
 
@@ -144,9 +147,11 @@ class MapActivity : SimpleActivity() {
         return result
     }
 
-    // filter priamo na mape: osoby (mená) + len s QR kódom
+    // filter priamo na mape: typ (fotky/videá) + osoby (mená) + len s QR kódom
     private fun applyMapFilters(geos: List<GeoEntity>): List<GeoEntity> {
         var result = geos
+        if (!showPhotos) result = result.filter { it.path.isVideoFast() }
+        if (!showVideos) result = result.filter { !it.path.isVideoFast() }
         val fp = filterPerson
         if (fp != null && fp.isNotEmpty()) {
             val photoPersons = try {
@@ -188,15 +193,21 @@ class MapActivity : SimpleActivity() {
             runOnUiThread {
                 if (isDestroyed || isFinishing) return@runOnUiThread
                 val labels = ArrayList<String>()
+                labels.add(getString(R.string.map_filter_photos))
+                labels.add(getString(R.string.map_filter_videos))
+                val personOffset = 2
                 persons.forEach { labels.add(it.name ?: "#${it.id}") }
                 labels.add(getString(R.string.filter_qr_code))
                 val qrIndex = labels.size - 1
                 val checked = BooleanArray(labels.size) { i ->
-                    if (i == qrIndex) {
-                        filterQrOnly
-                    } else {
-                        val pid = persons[i].id
-                        pid != null && filterPerson?.contains(pid) == true
+                    when {
+                        i == 0 -> showPhotos
+                        i == 1 -> showVideos
+                        i == qrIndex -> filterQrOnly
+                        else -> {
+                            val pid = persons[i - personOffset].id
+                            pid != null && filterPerson?.contains(pid) == true
+                        }
                     }
                 }
                 AlertDialog.Builder(this)
@@ -205,18 +216,22 @@ class MapActivity : SimpleActivity() {
                         checked[which] = isChecked
                     }
                     .setPositiveButton(android.R.string.ok) { _, _ ->
+                        showPhotos = checked[0]
+                        showVideos = checked[1]
                         val sel = HashSet<Long>()
-                        persons.forEachIndexed { i, p -> if (checked[i]) p.id?.let { sel.add(it) } }
+                        persons.forEachIndexed { i, p -> if (checked[i + personOffset]) p.id?.let { sel.add(it) } }
                         filterPerson = if (sel.isEmpty()) null else sel
                         filterQrOnly = checked[qrIndex]
                         binding.mapToolbar.title =
-                            if (filterPerson != null || filterQrOnly) getString(R.string.map_selection)
+                            if (filterPerson != null || filterQrOnly || !showPhotos || !showVideos) getString(R.string.map_selection)
                             else getString(R.string.app_name_brand)
                         reloadPoints()
                     }
                     .setNeutralButton(R.string.clear_filter) { _, _ ->
                         filterPerson = null
                         filterQrOnly = false
+                        showPhotos = true
+                        showVideos = true
                         reloadPoints()
                     }
                     .setNegativeButton(android.R.string.cancel, null)
@@ -366,26 +381,9 @@ class MapActivity : SimpleActivity() {
             }
             clusters = out
         }
-        // spiderfy: pri veľkom zoome rozlož malé skupiny do kruhu — každá fotka samostatne vyberateľná
-        if (zoom >= SPREAD_ZOOM) {
-            val cosLat = kotlin.math.cos(Math.toRadians(centerLat)).coerceAtLeast(0.2)
-            val rPx = 46.0 * density
-            val spread = ArrayList<Cluster>(clusters.size * 2)
-            for (c in clusters) {
-                if (c.paths.size in 2..SPREAD_MAX) {
-                    val n = c.paths.size
-                    for ((i, p) in c.paths.withIndex()) {
-                        val ang = 2.0 * Math.PI * i / n
-                        val lon = c.lon + rPx * kotlin.math.cos(ang) * degPerPx
-                        val lat = c.lat + rPx * kotlin.math.sin(ang) * degPerPx * cosLat
-                        spread.add(Cluster(lat, lon, listOf(p)))
-                    }
-                } else {
-                    spread.add(c)
-                }
-            }
-            clusters = spread
-        }
+        // ŽIADNE umelé rozkladanie do kruhu: fotky odfotené na tom istom mieste (pár metrov) ostávajú
+        // vždy JEDEN cluster s počtom — ťuk ho otvorí ako galériu. Rozdelia sa len fotky, ktoré sú
+        // reálne ďalej od seba (pri max zoome ~20+ m = samostatné bunky).
         return clusters
     }
 
@@ -500,6 +498,17 @@ class MapActivity : SimpleActivity() {
             paint.color = Color.WHITE
             c.drawRoundRect(rect, radius, radius, paint)
             src.recycle()
+            if (path.isVideoFast()) {
+                // ▶ badge v strede — reprezentant clustra je video
+                val pr = size * 0.18f
+                c.drawCircle(size / 2f, size / 2f, pr, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.parseColor("#99000000") })
+                val tp = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                    color = Color.WHITE
+                    textAlign = Paint.Align.CENTER
+                    textSize = pr * 1.1f
+                }
+                c.drawText("▶", size / 2f, size / 2f - (tp.descent() + tp.ascent()) / 2f, tp)
+            }
             if (count > 1) {
                 val br = size * 0.24f
                 val bx = size - br - 2f
@@ -522,17 +531,7 @@ class MapActivity : SimpleActivity() {
 
     private fun decodeSquare(path: String, size: Int): Bitmap? {
         if (!File(path).exists()) return null
-        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-        BitmapFactory.decodeFile(path, bounds)
-        val w = bounds.outWidth
-        val h = bounds.outHeight
-        if (w <= 0 || h <= 0) return null
-        var sample = 1
-        while (w / sample > size * 2 || h / sample > size * 2) sample *= 2
-        val bmp = BitmapFactory.decodeFile(path, BitmapFactory.Options().apply {
-            inSampleSize = sample
-            inPreferredConfig = Bitmap.Config.ARGB_8888
-        }) ?: return null
+        val bmp = (if (path.isVideoFast()) videoFrame(path) else decodeImage(path, size)) ?: return null
         val dim = minOf(bmp.width, bmp.height)
         val x = (bmp.width - dim) / 2
         val y = (bmp.height - dim) / 2
@@ -547,12 +546,37 @@ class MapActivity : SimpleActivity() {
         return scaled
     }
 
+    private fun decodeImage(path: String, size: Int): Bitmap? {
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeFile(path, bounds)
+        val w = bounds.outWidth
+        val h = bounds.outHeight
+        if (w <= 0 || h <= 0) return null
+        var sample = 1
+        while (w / sample > size * 2 || h / sample > size * 2) sample *= 2
+        return BitmapFactory.decodeFile(path, BitmapFactory.Options().apply {
+            inSampleSize = sample
+            inPreferredConfig = Bitmap.Config.ARGB_8888
+        })
+    }
+
+    private fun videoFrame(path: String): Bitmap? {
+        val mmr = android.media.MediaMetadataRetriever()
+        return try {
+            mmr.setDataSource(path)
+            mmr.frameAtTime
+        } catch (e: Throwable) {
+            null
+        } finally {
+            try {
+                mmr.release()
+            } catch (ignored: Throwable) {
+            }
+        }
+    }
+
     companion object {
         const val FILTER_PATHS = "filter_paths"
         private const val THUMB_MAX = 25
-
-        // od tohto zoomu sa malé skupiny rozkladajú do kruhu (spiderfy), aby sa dali vyberať jednotlivo
-        private const val SPREAD_ZOOM = 17.5
-        private const val SPREAD_MAX = 8
     }
 }

@@ -1,11 +1,14 @@
 package org.fossify.gallery.faces
 
 import android.content.Context
+import android.media.MediaMetadataRetriever
 import android.provider.MediaStore
 import androidx.exifinterface.media.ExifInterface
+import org.fossify.commons.extensions.isVideoFast
 import org.fossify.commons.helpers.ensureBackgroundThread
 
-// Prečíta GPS z EXIF každej fotky (rýchle – len hlavička) a uloží do geo.db. Resumovateľné.
+// Prečíta GPS z EXIF každej fotky (rýchle – len hlavička) a z metadát videí (ISO6709) a uloží do
+// geo.db. Typ (fotka/video) sa rozlišuje príponou cesty — bez zmeny schémy. Resumovateľné.
 object GeoIndexer {
     @Volatile
     var isRunning = false
@@ -24,7 +27,7 @@ object GeoIndexer {
             try {
                 val dao = GeoDatabase.getInstance(appCtx).GeoDao()
                 val processed = dao.getIndexedPaths().toHashSet()
-                val todo = queryImages(appCtx).filter { it !in processed }
+                val todo = (queryImages(appCtx) + queryVideos(appCtx)).filter { it !in processed }
                 val total = todo.size
                 var done = 0
                 for (path in todo) {
@@ -32,7 +35,13 @@ object GeoIndexer {
                     var lat = 0.0
                     var lon = 0.0
                     var has = false
-                    try {
+                    if (path.isVideoFast()) {
+                        videoLatLon(path)?.let { (la, lo) ->
+                            lat = la
+                            lon = lo
+                            has = true
+                        }
+                    } else try {
                         val exif = ExifInterface(path)
                         val ll = FloatArray(2)
                         if (exif.getLatLong(ll) && (ll[0] != 0f || ll[1] != 0f)) {
@@ -84,5 +93,43 @@ object GeoIndexer {
         } catch (ignored: Throwable) {
         }
         return list
+    }
+
+    private fun queryVideos(context: Context): List<String> {
+        val list = ArrayList<String>()
+        try {
+            context.contentResolver.query(
+                MediaStore.Video.Media.EXTERNAL_CONTENT_URI,
+                arrayOf(MediaStore.Video.Media.DATA),
+                null, null, null,
+            )?.use { cursor ->
+                val dataCol = cursor.getColumnIndexOrThrow(MediaStore.Video.Media.DATA)
+                while (cursor.moveToNext()) {
+                    cursor.getString(dataCol)?.let { list.add(it) }
+                }
+            }
+        } catch (ignored: Throwable) {
+        }
+        return list
+    }
+
+    // GPS z metadát videa: ISO6709 reťazec typu "+48.1465+017.1078/" (len hlavička, rýchle)
+    private fun videoLatLon(path: String): Pair<Double, Double>? {
+        val mmr = MediaMetadataRetriever()
+        return try {
+            mmr.setDataSource(path)
+            val loc = mmr.extractMetadata(MediaMetadataRetriever.METADATA_KEY_LOCATION) ?: return null
+            val m = Regex("([+-]\\d+(?:\\.\\d+)?)([+-]\\d+(?:\\.\\d+)?)").find(loc) ?: return null
+            val lat = m.groupValues[1].toDoubleOrNull() ?: return null
+            val lon = m.groupValues[2].toDoubleOrNull() ?: return null
+            if (lat == 0.0 && lon == 0.0) null else lat to lon
+        } catch (e: Throwable) {
+            null
+        } finally {
+            try {
+                mmr.release()
+            } catch (ignored: Throwable) {
+            }
+        }
     }
 }
