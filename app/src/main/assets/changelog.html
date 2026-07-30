@@ -48,6 +48,14 @@
 </div>
 
 <div class="ver">
+  <h2><span class="v">0.51.0</span> <span class="d">hľadanie: presné zhody vyhrávajú</span></h2>
+  <ul>
+    <li><span class="tag t-fix">OPRAVA</span> <b>„peter" už nevráti mačky.</b> Príčina: k výsledkom sa vždy primiešavalo aj sémantické hľadanie (CLIP), ktoré pri mene nemá čo nájsť, tak vracalo náhodné podobné fotky. Teraz platí: ak sa nájde <b>presná zhoda</b> (meno osoby, text na fotke, QR kód), zobrazia sa <b>len</b> tie. Sémantické hľadanie predmetov nastúpi až vtedy, keď presná zhoda neexistuje — a s prísnejším prahom.</li>
+  </ul>
+  <div class="test">🔎 <b>Vyskúšaj:</b> lupa → meno osoby (dostaneš jej fotky + dokumenty s tým menom); potom „pláž" alebo „auto" (nastúpi hľadanie predmetov).</div>
+</div>
+
+<div class="ver">
   <h2><span class="v">0.50.0</span> <span class="d">presné série, rýchle duplikáty, špeciálne fotky</span></h2>
   <ul>
     <li><span class="tag t-fix">ÚPRAVA</span> <b>Série (burst) sa rozpoznávajú presne</b> — podľa názvov súborov od fotoaparátu (…BURST001), nie len podľa 3-sekundového odhadu. Menej falošných skupín, žiadne rozpadnuté série.</li>
