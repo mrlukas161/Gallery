@@ -8,11 +8,19 @@ import java.net.URL
 // Správa CLIP ONNX modelov: sťahovanie pri prvom použití do filesDir/clip/ (nie v APK).
 // Model = Immich ViT-B/32 (OpenAI) — vizuál + text enkodér, 512-dim, opset 19.
 object ClipModels {
-    // ~335 MB vizuál (indexovanie fotiek) + ~242 MB text (hľadanie)
-    private const val VISUAL_URL = "https://huggingface.co/immich-app/ViT-B-32__openai/resolve/main/visual/model.onnx"
-    private const val TEXTUAL_URL = "https://huggingface.co/immich-app/ViT-B-32__openai/resolve/main/textual/model.onnx"
-    private const val VISUAL_MIN = 300_000_000L
-    private const val TEXTUAL_MIN = 200_000_000L
+    // Najprv skúsi KVANTOVANÉ modely (~88 MB vizuál + ~64 MB text namiesto 335+242 MB) — rovnaký
+    // ViT-B/32 priestor, takže existujúci index fotiek ostáva platný. Ak sa nestiahnu (iná cesta v
+    // repozitári), automaticky sa použijú pôvodné overené modely. Poradie = prvý fungujúci vyhráva.
+    private val VISUAL_URLS = listOf(
+        "https://huggingface.co/IacobIonut01/Gallery/resolve/main/clip/visual_quant.onnx",
+        "https://huggingface.co/immich-app/ViT-B-32__openai/resolve/main/visual/model.onnx",
+    )
+    private val TEXTUAL_URLS = listOf(
+        "https://huggingface.co/IacobIonut01/Gallery/resolve/main/clip/textual_quant.onnx",
+        "https://huggingface.co/immich-app/ViT-B-32__openai/resolve/main/textual/model.onnx",
+    )
+    private const val VISUAL_MIN = 60_000_000L
+    private const val TEXTUAL_MIN = 40_000_000L
 
     fun dir(context: Context): File = File(context.applicationContext.filesDir, "clip").apply { mkdirs() }
     fun visualFile(context: Context): File = File(dir(context), "visual.onnx")
@@ -25,13 +33,29 @@ object ClipModels {
     // stiahne chýbajúce modely; onProgress(fáza 1..2, percentá 0..100). Vráti true ak sú oba na mieste.
     fun ensure(context: Context, running: () -> Boolean, onProgress: (phase: String, pct: Int) -> Unit): Boolean {
         if (!visualPresent(context)) {
-            if (!download(VISUAL_URL, visualFile(context), running) { p -> onProgress("model 1/2", p) }) return false
+            if (!downloadAny(VISUAL_URLS, visualFile(context), VISUAL_MIN, running) { p -> onProgress("model 1/2", p) }) return false
         }
         if (!running()) return false
         if (!textualPresent(context)) {
-            if (!download(TEXTUAL_URL, textualFile(context), running) { p -> onProgress("model 2/2", p) }) return false
+            if (!downloadAny(TEXTUAL_URLS, textualFile(context), TEXTUAL_MIN, running) { p -> onProgress("model 2/2", p) }) return false
         }
         return bothPresent(context)
+    }
+
+    // vyskúša adresy po poradí; berie prvú, ktorá sa stiahne a má rozumnú veľkosť
+    private fun downloadAny(
+        urls: List<String>, dest: File, minSize: Long,
+        running: () -> Boolean, onProgress: (Int) -> Unit,
+    ): Boolean {
+        for (u in urls) {
+            if (!running()) return false
+            if (download(u, dest, running, onProgress) && dest.length() >= minSize) return true
+            try {
+                if (dest.exists() && dest.length() < minSize) dest.delete()
+            } catch (ignored: Throwable) {
+            }
+        }
+        return false
     }
 
     private fun download(urlStr: String, dest: File, running: () -> Boolean, onProgress: (Int) -> Unit): Boolean {

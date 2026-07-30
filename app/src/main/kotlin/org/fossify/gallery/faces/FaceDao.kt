@@ -31,6 +31,10 @@ interface FaceDao {
     @Query("UPDATE faces SET embedding = :embedding WHERE id = :id")
     fun updateEmbedding(id: Long, embedding: ByteArray)
 
+    // oprava polohy tváre po prepracovaní (upright priestor) — id ostáva, menovka prežije
+    @Query("UPDATE faces SET bbox_left = :left, bbox_top = :top, bbox_right = :right, bbox_bottom = :bottom, score = :score WHERE id = :id")
+    fun updateFaceBox(id: Long, left: Int, top: Int, right: Int, bottom: Int, score: Float)
+
     @Query("SELECT COUNT(*) FROM indexed_photos WHERE face_count > 0")
     fun getPhotosWithFacesCount(): Int
 

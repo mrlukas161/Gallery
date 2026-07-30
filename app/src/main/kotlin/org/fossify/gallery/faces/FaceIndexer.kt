@@ -185,21 +185,7 @@ object FaceIndexer {
         return list
     }
 
-    private fun decodeDownscaled(path: String): Bitmap? {
-        if (!File(path).exists()) return null
-        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-        BitmapFactory.decodeFile(path, bounds)
-        val w = bounds.outWidth
-        val h = bounds.outHeight
-        if (w <= 0 || h <= 0) return null
-        var sample = 1
-        while (w / sample > MAX_DECODE_SIZE || h / sample > MAX_DECODE_SIZE) {
-            sample *= 2
-        }
-        val opts = BitmapFactory.Options().apply {
-            inSampleSize = sample
-            inPreferredConfig = Bitmap.Config.ARGB_8888
-        }
-        return BitmapFactory.decodeFile(path, opts)
-    }
+    // VŽDY „na stojato" (EXIF) — inak detektor na fotkách na výšku tváre nenájde a výrezy sú otočené
+    private fun decodeDownscaled(path: String): Bitmap? =
+        UprightDecoder.decode(path, MAX_DECODE_SIZE)?.bitmap
 }

@@ -19,7 +19,6 @@ import org.fossify.gallery.faces.GeoIndexer
 import org.fossify.gallery.faces.OcrIndexer
 import org.fossify.gallery.faces.PhashIndexer
 import org.fossify.gallery.faces.QrIndexer
-import org.fossify.gallery.faces.ReindexFaces
 import org.fossify.gallery.helpers.IndexPerf
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
@@ -104,7 +103,7 @@ class IndexingService : Service() {
         TASK_PHASH -> PhashIndexer.isRunning
         TASK_CLIP -> ClipIndexer.isRunning
         TASK_CLIP_ML -> org.fossify.gallery.clip.ClipMlModels.isRunning
-        TASK_REEMBED -> ReindexFaces.isRunning
+        TASK_REEMBED -> org.fossify.gallery.faces.RefreshFaces.isRunning
         else -> false
     }
 
@@ -208,14 +207,16 @@ class IndexingService : Service() {
         )
     }
 
+    // „Prepracovať tváre" — nahrádza staré prepočítanie odtlačkov: navyše opraví otočenie (EXIF)
+    // a doplní predtým nenájdené (vzdialené) tváre, pričom menovky ostávajú zachované
     private fun runReembed(next: () -> Unit) {
-        if (ReindexFaces.isRunning) {
+        if (org.fossify.gallery.faces.RefreshFaces.isRunning) {
             next(); return
         }
-        ReindexFaces.run(
+        org.fossify.gallery.faces.RefreshFaces.run(
             applicationContext,
-            onProgress = { d, t -> prog("reembed", "Presnosť tvárí $d/$t") },
-            onDone = { _ -> clearProg("reembed"); next() },
+            onProgress = { d, t -> prog("reembed", "Prepracovanie tvárí $d/$t") },
+            onDone = { _, _ -> clearProg("reembed"); next() },
             onError = { clearProg("reembed"); next() },
         )
     }

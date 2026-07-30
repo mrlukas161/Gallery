@@ -9,4 +9,8 @@ object FaceFilter {
 
     fun isGood(f: FaceEntity): Boolean =
         f.score >= MIN_SCORE && (f.bboxRight - f.bboxLeft) >= MIN_SIZE
+
+    // rovnaký filter už pri detekcii (pred zápisom do DB)
+    fun isUsable(d: FaceDetectionHelper.DetectedFace): Boolean =
+        d.score >= MIN_SCORE && (d.right - d.left) >= MIN_SIZE
 }

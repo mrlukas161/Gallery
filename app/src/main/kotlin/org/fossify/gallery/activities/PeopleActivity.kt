@@ -103,8 +103,23 @@ class PeopleActivity : SimpleActivity() {
         val facesDao = FacesDatabase.getInstance(this).FaceDao()
         val peopleDao = PeopleDatabase.getInstance(this).PeopleDao()
         val faces = facesDao.getAllFaces().filter { FaceFilter.isGood(it) }
-        // osoba = LEN potvrdené tváre; žiadne auto-skupiny ani domiešavanie
-        val all = PersonGrouper.confirmedPersons(faces, peopleDao.getPersons(), peopleDao.getAssignments())
+        // základ = ručne potvrdené tváre
+        var all = PersonGrouper.confirmedPersons(faces, peopleDao.getPersons(), peopleDao.getAssignments())
+        // + automatické zaradenie tvárí nad zvolenou istotou (0 = vypnuté)
+        val threshold = org.fossify.gallery.helpers.FaceAuto.threshold(this)
+        if (threshold > 0f) {
+            val anchors = try {
+                peopleDao.getAllAnchors().groupBy({ it.personId }, { FaceEmbedder.toFloats(it.embedding) })
+            } catch (e: Throwable) {
+                emptyMap()
+            }
+            val links = try {
+                peopleDao.getCannotLinks()
+            } catch (e: Throwable) {
+                emptyList()
+            }
+            all = PersonGrouper.withAutoMatches(all, faces, anchors, links, threshold)
+        }
         if (filterGroupId < 0) return all
         val members = ExtrasDatabase.getInstance(this).ExtrasDao().getMembers(filterGroupId).toHashSet()
         return all.filter { p -> p.id != null && members.contains(p.id) }

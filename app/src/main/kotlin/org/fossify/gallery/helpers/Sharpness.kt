@@ -28,21 +28,40 @@ object Sharpness {
             val p = px[it]
             ((p shr 16 and 0xFF) * 299 + (p shr 8 and 0xFF) * 587 + (p and 0xFF) * 114) / 1000
         }
-        var sum = 0.0
-        var sum2 = 0.0
-        var n = 0
-        for (y in 1 until h - 1) {
-            val row = y * w
-            for (x in 1 until w - 1) {
-                val i = row + x
-                val lap = (gray[i - 1] + gray[i + 1] + gray[i - w] + gray[i + w] - 4 * gray[i]).toDouble()
-                sum += lap
-                sum2 += lap * lap
-                n++
+        // Laplacián po DLAŽDICIACH (8×8) a z nich horný kvartil namiesto jedného globálneho čísla:
+        // pri portrétoch s rozmazaným pozadím (bokeh) globálny rozptyl klame — rozhoduje, či je
+        // ostrá tá NAJOSTREJŠIA časť fotky (typicky tvár), nie priemer celej plochy.
+        val tiles = 8
+        val scores = ArrayList<Double>(tiles * tiles)
+        for (ty in 0 until tiles) {
+            for (tx in 0 until tiles) {
+                val x0 = (w * tx / tiles).coerceAtLeast(1)
+                val x1 = (w * (tx + 1) / tiles).coerceAtMost(w - 1)
+                val y0 = (h * ty / tiles).coerceAtLeast(1)
+                val y1 = (h * (ty + 1) / tiles).coerceAtMost(h - 1)
+                if (x1 - x0 < 2 || y1 - y0 < 2) continue
+                var s = 0.0
+                var s2 = 0.0
+                var cnt = 0
+                for (y in y0 until y1) {
+                    val row = y * w
+                    for (x in x0 until x1) {
+                        val i = row + x
+                        val lap = (gray[i - 1] + gray[i + 1] + gray[i - w] + gray[i + w] - 4 * gray[i]).toDouble()
+                        s += lap
+                        s2 += lap * lap
+                        cnt++
+                    }
+                }
+                if (cnt > 0) {
+                    val m = s / cnt
+                    scores.add(s2 / cnt - m * m)
+                }
             }
         }
-        if (n == 0) return 0.0
-        val mean = sum / n
-        return sum2 / n - mean * mean
+        if (scores.isEmpty()) return 0.0
+        scores.sort()
+        // horný kvartil = „ako ostrý je ostrý objekt fotky"
+        return scores[(scores.size * 3 / 4).coerceAtMost(scores.size - 1)]
     }
 }

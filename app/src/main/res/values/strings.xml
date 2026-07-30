@@ -103,7 +103,7 @@
     <string name="indexing_faces">Tváre</string>
     <string name="indexing_geo">Poloha</string>
     <string name="indexing_ocr">Text (OCR)</string>
-    <string name="indexing_reembed">Presnosť tvárí</string>
+    <string name="indexing_reembed">Prepracovanie tvárí</string>
     <string name="indexing_qr">QR kódy</string>
     <string name="indexing_phash">Podobné fotky</string>
     <string name="phash_title">Duplikáty / podobné fotky (index)</string>
@@ -155,10 +155,10 @@
     <string name="auto_ocr_off">Vypnuté — OCR len ručne tlačidlom vyššie</string>
     <string name="indexing_started_bg">Spustené na pozadí (sleduj notifikáciu)</string>
     <!-- Vylepšenie presnosti tvárí (5-bodové prepočítanie) -->
-    <string name="reembed_title">Vylepšiť presnosť tvárí</string>
-    <string name="reembed_tap">Prepočíta všetky tváre presnejším zarovnaním (ťukni)</string>
-    <string name="reembed_running">Prepočítavam tváre…</string>
-    <string name="reembed_confirm">Prepočítam odtlačky všetkých tvárí presnejším 5-bodovým zarovnaním. Tvoje pomenovania a skupiny ostanú zachované, no vzorové tváre z Picasy sa vymažú — po dokončení ich treba znova naimportovať. Spustiť?</string>
+    <string name="reembed_title">Prepracovať tváre (oprava otočenia + vzdialené)</string>
+    <string name="reembed_tap">Opraví otočené tváre a nájde aj tie, ktoré predtým unikli (ťukni)</string>
+    <string name="reembed_running">Prepracovávam tváre…</string>
+    <string name="reembed_confirm">Prejdem všetky už naskenované fotky správne otočené (podľa EXIF): opravím tváre, ktoré sa zobrazovali nabok, a nájdem aj tie, ktoré detektor predtým prehliadol (vzdialené, na fotkách na výšku). Tvoje pomenovania a skupiny ostanú zachované. Trvá to dlhšie — najlepšie pri nabíjaní. Spustiť?</string>
     <!-- QR / čiarové kódy -->
     <string name="qr_title">QR a čiarové kódy (beta)</string>
     <string name="qr_tap_to_start">Ťuknutím prehľadám fotky a nájdem QR/čiarové kódy</string>
@@ -191,6 +191,18 @@
     <string name="doc_kind_screenshot">Screenshoty s textom</string>
     <string name="doc_kind_id">Preukazy</string>
     <string name="live_text_reading">Čítam text z fotky…</string>
+    <!-- Automatické zaradenie tvárí -->
+    <string name="face_auto_title">Automatické zaraďovanie tvárí</string>
+    <string name="face_auto_off">Vypnuté — v albume osoby sú len ručne potvrdené tváre</string>
+    <string name="face_auto_strict">Prísne — pridá len tváre, ktorými si je istá</string>
+    <string name="face_auto_normal">Vyvážené — automaticky pridá podobné tváre (odporúčané)</string>
+    <string name="face_auto_loose">Voľné — pridá aj menej isté (občas sa pomýli)</string>
+    <!-- Automatické zaradenie tvárí -->
+    <string name="face_auto_title">Automatické zaraďovanie tvárí</string>
+    <string name="face_auto_off">Vypnuté — v albume osoby sú len ručne potvrdené tváre</string>
+    <string name="face_auto_strict">Prísne — pridá len tváre, ktorými si je istá</string>
+    <string name="face_auto_normal">Vyvážené — automaticky pridá podobné tváre (odporúčané)</string>
+    <string name="face_auto_loose">Voľné — pridá aj menej isté (občas sa pomýli)</string>
     <string name="pc_server_stop">Zastaviť</string>
     <string name="pc_server_notif_title">PC sync server beží</string>
     <string name="pc_server_notif_text">Otvor na PC: %1$s\nPIN: %2$s\nServer beží len kým ho nezastavíš.</string>

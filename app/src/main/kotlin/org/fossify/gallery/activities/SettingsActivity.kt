@@ -119,6 +119,7 @@ class SettingsActivity : SimpleActivity() {
         setupIndexAll()
         setupAutoIndex()
         setupFaceIndexing()
+        setupFaceAuto()
         setupPicasaImport()
         setupReembed()
         setupOcrIndexing()
@@ -921,6 +922,36 @@ class SettingsActivity : SimpleActivity() {
             if (uri != null) startPicasaImport(uri)
         }
 
+    private fun setupFaceAuto() {
+        updateFaceAutoSummary()
+        binding.settingsFaceAutoHolder.setOnClickListener {
+            val values = floatArrayOf(
+                org.fossify.gallery.helpers.FaceAuto.OFF,
+                org.fossify.gallery.helpers.FaceAuto.STRICT,
+                org.fossify.gallery.helpers.FaceAuto.NORMAL,
+                org.fossify.gallery.helpers.FaceAuto.LOOSE,
+            )
+            val labels = values.map { getString(org.fossify.gallery.helpers.FaceAuto.labelRes(it)) }.toTypedArray()
+            val cur = org.fossify.gallery.helpers.FaceAuto.threshold(this)
+            val checked = values.indexOfFirst { kotlin.math.abs(it - cur) < 0.001f }.coerceAtLeast(0)
+            androidx.appcompat.app.AlertDialog.Builder(this)
+                .setTitle(R.string.face_auto_title)
+                .setSingleChoiceItems(labels, checked) { dlg, which ->
+                    org.fossify.gallery.helpers.FaceAuto.setThreshold(this, values[which])
+                    updateFaceAutoSummary()
+                    dlg.dismiss()
+                }
+                .setNegativeButton(org.fossify.commons.R.string.cancel, null)
+                .show()
+        }
+    }
+
+    private fun updateFaceAutoSummary() {
+        if (isDestroyed) return
+        val v = org.fossify.gallery.helpers.FaceAuto.threshold(this)
+        binding.settingsFaceAutoSummary.text = getString(org.fossify.gallery.helpers.FaceAuto.labelRes(v))
+    }
+
     private fun setupPicasaImport() {
         updatePicasaImportSummary()
         binding.settingsPicasaImportHolder.setOnClickListener {
@@ -988,8 +1019,8 @@ class SettingsActivity : SimpleActivity() {
     private fun setupReembed() {
         updateReembedSummary()
         binding.settingsReembedHolder.setOnClickListener {
-            if (org.fossify.gallery.faces.ReindexFaces.isRunning) {
-                org.fossify.gallery.faces.ReindexFaces.stop()
+            if (org.fossify.gallery.faces.RefreshFaces.isRunning) {
+                org.fossify.gallery.faces.RefreshFaces.stop()
                 updateReembedSummary()
             } else {
                 org.fossify.commons.dialogs.ConfirmationDialog(this, getString(R.string.reembed_confirm)) {
@@ -1002,7 +1033,7 @@ class SettingsActivity : SimpleActivity() {
 
     private fun updateReembedSummary() {
         if (!isDestroyed) {
-            binding.settingsReembedSummary.text = if (org.fossify.gallery.faces.ReindexFaces.isRunning) {
+            binding.settingsReembedSummary.text = if (org.fossify.gallery.faces.RefreshFaces.isRunning) {
                 getString(R.string.reembed_running)
             } else {
                 getString(R.string.reembed_tap)

@@ -48,6 +48,18 @@
 </div>
 
 <div class="ver">
+  <h2><span class="v">0.47.0</span> <span class="d">tváre: otočenie, vzdialené, automatika</span></h2>
+  <ul>
+    <li><span class="tag t-fix">OPRAVA</span> <b>Tváre nabok sú preč</b> — našla sa príčina: fotky sa pri hľadaní tvárí nečítali otočené podľa EXIF, takže výrezy boli o 90° a na fotkách na výšku detektor tváre <b>vôbec nenašiel</b>. Teraz sa všetko číta správne otočené.</li>
+    <li><span class="tag t-new">NOVÉ</span> <b>„Prepracovať tváre"</b> (Nastavenia) — prejde už naskenované fotky nanovo: opraví otočené a <b>doplní vzdialené tváre, ktoré predtým unikli</b>. Tvoje pomenovania osôb sa zachovajú (tváre sa spárujú podľa polohy).</li>
+    <li><span class="tag t-new">NOVÉ</span> <b>Automatické zaraďovanie tvárí</b> — nastav istotu (Prísne / Vyvážené / Voľné / Vypnuté) a podobné tváre sa v albume osoby objavia samé, bez potvrdzovania. Opraviť sa dá vždy cez „Toto nie je on".</li>
+    <li><span class="tag t-fix">ÚPRAVA</span> Výber najlepšej fotky: ostrosť sa meria po častiach obrazu — portréty s rozmazaným pozadím už neprepadnú.</li>
+    <li><span class="tag t-fix">ÚPRAVA</span> CLIP hľadanie sťahuje <b>menšie modely</b> (~150 MB namiesto ~580 MB), ak sú dostupné.</li>
+  </ul>
+  <div class="test">🔎 <b>Vyskúšaj:</b> Nastavenia → „Prepracovať tváre" (nechaj dobehnúť pri nabíjaní) → Ľudia → skontroluj, či sú výrezy rovno a či pribudli fotky.</div>
+</div>
+
+<div class="ver">
   <h2><span class="v">0.46.0</span> <span class="d">album Dokumenty + Live Text</span></h2>
   <ul>
     <li><span class="tag t-new">NOVÉ</span> <b>Album Dokumenty</b> (Preskúmať → 📄) — automaticky vytiahne doklady, faktúry, preukazy a screenshoty s textom z rozpoznaného textu fotiek. Filter podľa druhu (lievik).</li>

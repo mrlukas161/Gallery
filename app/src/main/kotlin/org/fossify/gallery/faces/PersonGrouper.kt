@@ -31,6 +31,60 @@ object PersonGrouper {
         )
     }
 
+    // Automatické zaradenie do albumu osoby od zvolenej ISTOTY (podobnosť k centroidu).
+    // Zaradené tváre sú „nepotvrdené" (nie sú v manualFaceIds), takže sa dajú kedykoľvek opraviť
+    // cez „Toto nie je on". Rešpektuje cannot-links a každú tvár priradí len NAJLEPŠEJ osobe.
+    fun withAutoMatches(
+        persons: List<Person>,
+        allFaces: List<FaceEntity>,
+        anchorsByPerson: Map<Long, List<FloatArray>>,
+        cannotLinks: List<CannotLinkEntity>,
+        threshold: Float,
+    ): List<Person> {
+        if (threshold <= 0f || persons.isEmpty()) return persons
+        val assigned = HashSet<Long>()
+        persons.forEach { p -> p.faces.forEach { f -> f.id?.let { assigned.add(it) } } }
+        val banned = HashSet<String>()
+        cannotLinks.forEach { banned.add("${it.faceId}|${it.personId}") }
+
+        // centroid osoby z potvrdených tvárí + Picasa vzorov
+        val centroids = HashMap<Long, FloatArray>()
+        for (p in persons) {
+            val pid = p.id ?: continue
+            val embs = ArrayList<FloatArray>()
+            p.faces.forEach { f -> f.embedding?.let { embs.add(FaceEmbedder.toFloats(it)) } }
+            anchorsByPerson[pid]?.let { embs.addAll(it) }
+            centroidOf(embs)?.let { centroids[pid] = it }
+        }
+        if (centroids.isEmpty()) return persons
+
+        val extra = HashMap<Long, ArrayList<FaceEntity>>()
+        for (f in allFaces) {
+            val fid = f.id ?: continue
+            if (assigned.contains(fid)) continue
+            val e = f.embedding ?: continue
+            val v = FaceEmbedder.toFloats(e)
+            var bestPid = -1L
+            var bestSim = 0f
+            for ((pid, c) in centroids) {
+                if (banned.contains("$fid|$pid")) continue
+                val s = cosine(v, c)
+                if (s > bestSim) {
+                    bestSim = s
+                    bestPid = pid
+                }
+            }
+            if (bestPid > 0 && bestSim >= threshold) {
+                extra.getOrPut(bestPid) { ArrayList() }.add(f)
+            }
+        }
+        if (extra.isEmpty()) return persons
+        return persons.map { p ->
+            val add = p.id?.let { extra[it] } ?: return@map p
+            if (add.isEmpty()) p else p.copy(faces = (p.faces + add).sortedByDescending { it.score })
+        }.sortedWith(compareByDescending<Person> { it.faceCount }.thenBy { (it.name ?: "").lowercase() })
+    }
+
     // centroid osoby = priemer (potvrdené tváre ⊕ Picasa anchory), L2-normalizovaný
     fun centroidOf(embs: List<FloatArray>): FloatArray? {
         var acc: FloatArray? = null
