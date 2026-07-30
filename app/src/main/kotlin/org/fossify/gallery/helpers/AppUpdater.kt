@@ -108,51 +108,14 @@ object AppUpdater {
         }
     }
 
-    // Samo-aktualizácia cez PackageInstaller session (beží NA POZADÍ — nikdy na UI vlákne).
-    // Pozn. overené na webe: Xiaomi na MIUI/HyperOS session inštalácie zámerne obmedzuje a vlastnú
-    // bezpečnostnú kontrolu zobrazí tak či tak (dá sa vypnúť len v appke Zabezpečenie). Preto:
-    //  1) ak session cesta na tomto zariadení už raz zlyhala, ideme rovno overenou klasickou cestou,
-    //  2) pri akomkoľvek zlyhaní session sa OKAMŽITE (v tom istom pokuse) otvorí klasický inštalátor
-    //     — žiadne „na druhý pokus to prejde".
+    // Na Xiaomi/HyperOS ideme VŽDY klasickou inštalačnou cestou. Session/„tichá" inštalácia je tam
+    // systémovo obmedzená a v praxi spôsobovala pád pri prvom pokuse — a Mi bezpečnostná kontrola sa
+    // zobrazuje tak či tak, takže session nič nešetrila. Klasická cesta funguje na prvý pokus.
     private fun installApk(activity: Activity, apkFile: File) {
-        val prefs = activity.getSharedPreferences("galeria_faces", android.content.Context.MODE_PRIVATE)
-        if (prefs.getBoolean("updater_session_failed", false)) {
-            activity.runOnUiThread { installViaIntent(activity, apkFile) }
-            return
-        }
-        try {
-            installViaSession(activity, apkFile)
-        } catch (e: Throwable) {
-            prefs.edit().putBoolean("updater_session_failed", true).apply()
-            activity.runOnUiThread { installViaIntent(activity, apkFile) }
-        }
+        activity.runOnUiThread { installViaIntent(activity, apkFile) }
     }
 
-    private fun installViaSession(activity: Activity, apkFile: File) {
-        val installer = activity.packageManager.packageInstaller
-        val params = android.content.pm.PackageInstaller.SessionParams(
-            android.content.pm.PackageInstaller.SessionParams.MODE_FULL_INSTALL
-        ).apply {
-            setAppPackageName(activity.packageName)
-            if (android.os.Build.VERSION.SDK_INT >= 31) {
-                setRequireUserAction(android.content.pm.PackageInstaller.SessionParams.USER_ACTION_NOT_REQUIRED)
-            }
-        }
-        val sessionId = installer.createSession(params)
-        installer.openSession(sessionId).use { session ->
-            session.openWrite("galeria.apk", 0, apkFile.length()).use { out ->
-                apkFile.inputStream().use { it.copyTo(out) }
-                session.fsync(out)
-            }
-            val cbIntent = Intent(activity, org.fossify.gallery.receivers.UpdateResultReceiver::class.java)
-            val flags = android.app.PendingIntent.FLAG_UPDATE_CURRENT or
-                (if (android.os.Build.VERSION.SDK_INT >= 31) android.app.PendingIntent.FLAG_MUTABLE else 0)
-            val pending = android.app.PendingIntent.getBroadcast(activity, sessionId, cbIntent, flags)
-            session.commit(pending.intentSender)
-        }
-    }
-
-    // fallback: klasický inštalačný intent (so systémovými dialógmi)
+    // klasický inštalačný intent (systémový inštalátor)
     private fun installViaIntent(activity: Activity, apkFile: File) {
         val uri = FileProvider.getUriForFile(activity, "${activity.packageName}.provider", apkFile)
         val intent = Intent(Intent.ACTION_VIEW).apply {
