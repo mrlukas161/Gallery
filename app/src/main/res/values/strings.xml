@@ -209,11 +209,6 @@
     <string name="face_auto_normal">Vyvážené — automaticky pridá podobné tváre (odporúčané)</string>
     <string name="face_auto_loose">Voľné — pridá aj menej isté (občas sa pomýli)</string>
     <!-- Automatické zaradenie tvárí -->
-    <string name="face_auto_title">Automatické zaraďovanie tvárí</string>
-    <string name="face_auto_off">Vypnuté — v albume osoby sú len ručne potvrdené tváre</string>
-    <string name="face_auto_strict">Prísne — pridá len tváre, ktorými si je istá</string>
-    <string name="face_auto_normal">Vyvážené — automaticky pridá podobné tváre (odporúčané)</string>
-    <string name="face_auto_loose">Voľné — pridá aj menej isté (občas sa pomýli)</string>
     <string name="pc_server_stop">Zastaviť</string>
     <string name="pc_server_notif_title">PC sync server beží</string>
     <string name="pc_server_notif_text">Otvor na PC: %1$s\nPIN: %2$s\nServer beží len kým ho nezastavíš.</string>
