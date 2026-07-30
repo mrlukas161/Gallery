@@ -92,10 +92,6 @@ class CompareListActivity : SimpleActivity() {
             add(MediaStore.Images.Media.DATE_TAKEN)
             add(MediaStore.Images.Media.DATE_MODIFIED)
             add(MediaStore.Images.Media.DISPLAY_NAME)
-            // GROUP_ID (Android 10+): fotoaparát ním označuje fotky z JEDNEJ série = presné zoskupenie
-            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
-                add(MediaStore.Images.Media.GROUP_ID)
-            }
         }
         contentResolver.query(
             MediaStore.Images.Media.EXTERNAL_CONTENT_URI, proj.toTypedArray(), null, null, null,
@@ -104,11 +100,6 @@ class CompareListActivity : SimpleActivity() {
             val dTaken = c.getColumnIndex(MediaStore.Images.Media.DATE_TAKEN)
             val dMod = c.getColumnIndex(MediaStore.Images.Media.DATE_MODIFIED)
             val dName = c.getColumnIndex(MediaStore.Images.Media.DISPLAY_NAME)
-            val dGroup = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
-                c.getColumnIndex(MediaStore.Images.Media.GROUP_ID)
-            } else {
-                -1
-            }
             while (c.moveToNext()) {
                 val path = c.getString(dData) ?: continue
                 val taken = if (dTaken >= 0) c.getLong(dTaken) else 0L
@@ -116,12 +107,12 @@ class CompareListActivity : SimpleActivity() {
                 paths.add(path)
                 takens.add(if (taken > 0) taken else mod)
                 folders.add(path.substringBeforeLast('/'))
-                // 1) GROUP_ID zo systému, 2) záloha: názov typu IMG_1234.BURST001 / IMG20240101_BURST2
-                var gid = if (dGroup >= 0) c.getString(dGroup).orEmpty() else ""
-                if (gid.isEmpty() && dName >= 0) {
+                // séria podľa názvu súboru: IMG_1234.BURST001 / IMG20240101_BURST2 / ..._COVER
+                var gid = ""
+                if (dName >= 0) {
                     val name = c.getString(dName).orEmpty()
                     val m = BURST_NAME.find(name)
-                    if (m != null) gid = "name:" + m.groupValues[1]
+                    if (m != null) gid = "burst:" + m.groupValues[1]
                 }
                 groupIds.add(gid)
             }
@@ -130,7 +121,7 @@ class CompareListActivity : SimpleActivity() {
         val groups = ArrayList<MutableList<String>>()
         val used = BooleanArray(paths.size)
 
-        // A) presné série podľa GROUP_ID / názvu (bez ohľadu na časové medzery)
+        // A) presné série podľa názvu súboru (bez ohľadu na časové medzery)
         val byGroup = HashMap<String, MutableList<Int>>()
         for (i in paths.indices) {
             val g = groupIds[i]
