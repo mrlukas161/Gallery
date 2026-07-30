@@ -57,6 +57,13 @@ class SettingsActivity : SimpleActivity() {
         super.onResume()
         setupTopAppBar(binding.settingsAppbar, NavigationIcon.Arrow)
         setupSettingItems()
+        binding.settingsIndexOverviewSummary.removeCallbacks(overviewPoll)
+        binding.settingsIndexOverviewSummary.postDelayed(overviewPoll, 1500)
+    }
+
+    override fun onPause() {
+        super.onPause()
+        binding.settingsIndexOverviewSummary.removeCallbacks(overviewPoll)
     }
 
     private fun setupSettingItems() {
@@ -1160,6 +1167,14 @@ class SettingsActivity : SimpleActivity() {
 
     // Prehľad spracovania knižnice: jeden vizuálny ukazovateľ 0–100 % za všetky funkcie
     // + ťuk = dokonči zvyšok (spustí všetko naraz), podržanie = detailný rozpis.
+    private val overviewPoll = object : Runnable {
+        override fun run() {
+            if (isDestroyed || isFinishing) return
+            refreshIndexOverview()
+            binding.settingsIndexOverviewSummary.postDelayed(this, 1500)
+        }
+    }
+
     private fun setupIndexOverview() {
         refreshIndexOverview()
         binding.settingsIndexOverviewHolder.setOnClickListener {
@@ -1182,7 +1197,11 @@ class SettingsActivity : SimpleActivity() {
             runOnUiThread {
                 if (isDestroyed) return@runOnUiThread
                 binding.settingsIndexOverviewBar.setProgressCompat(pct, true)
+                val live = org.fossify.gallery.services.IndexingService.liveProgress
+                val err = org.fossify.gallery.services.IndexingService.lastError
                 binding.settingsIndexOverviewSummary.text = when {
+                    live.isNotEmpty() -> live
+                    err != null -> getString(R.string.index_overview_error, err)
                     running -> getString(R.string.index_overview_running, pct)
                     pct >= 100 -> getString(R.string.index_overview_done)
                     else -> getString(R.string.index_overview_summary, pct)

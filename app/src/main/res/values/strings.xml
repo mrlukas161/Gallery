@@ -141,6 +141,7 @@
     <string name="explore_search">Hľadať čokoľvek</string>
     <string name="explore_search_sub">Predmety, scény, text z dokumentov, mená osôb</string>
     <string name="galeria_plus_section">Galéria+ (inteligentné funkcie)</string>
+    <string name="index_overview_error">Chyba: %1$s — ťuknutím skús znova</string>
     <string name="adv_tools_title">Pokročilé nástroje</string>
     <string name="adv_tools_show">Jednotlivé funkcie skryté — ťuknutím zobrazíš (tváre, OCR, QR, duplikáty, CLIP…)</string>
     <string name="adv_tools_hide">Ťuknutím skryješ jednotlivé funkcie</string>

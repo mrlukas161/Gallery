@@ -33,6 +33,7 @@ class IndexingService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        lastError = null
         ensureChannel()
         startForegroundCompat(buildInitial())
         when (val task = intent?.getStringExtra(EXTRA_TASK)) {
@@ -148,7 +149,7 @@ class IndexingService : Service() {
             applicationContext, notify = false,
             onProgress = { d, t -> prog("faces", "Tváre $d/$t") },
             onDone = { _, _, _ -> clearProg("faces"); next() },
-            onError = { clearProg("faces"); next() },
+            onError = { fail("faces", it); next() },
         )
     }
 
@@ -160,7 +161,7 @@ class IndexingService : Service() {
             applicationContext,
             onProgress = { d, t -> prog("geo", "Poloha $d/$t") },
             onDone = { _, _ -> clearProg("geo"); next() },
-            onError = { clearProg("geo"); next() },
+            onError = { fail("geo", it); next() },
         )
     }
 
@@ -172,7 +173,7 @@ class IndexingService : Service() {
             applicationContext, notify = false,
             onProgress = { d, t -> prog("qr", "QR kódy $d/$t") },
             onDone = { _, _ -> clearProg("qr"); next() },
-            onError = { clearProg("qr"); next() },
+            onError = { fail("qr", it); next() },
         )
     }
 
@@ -184,7 +185,7 @@ class IndexingService : Service() {
             applicationContext, notify = false,
             onProgress = { d, t -> prog("ocr", "OCR text $d/$t") },
             onDone = { _, _ -> clearProg("ocr"); next() },
-            onError = { clearProg("ocr"); next() },
+            onError = { fail("ocr", it); next() },
         )
     }
 
@@ -196,7 +197,7 @@ class IndexingService : Service() {
             applicationContext, notify = false,
             onProgress = { d, t -> prog("phash", "Podobné $d/$t") },
             onDone = { _ -> clearProg("phash"); next() },
-            onError = { clearProg("phash"); next() },
+            onError = { fail("phash", it); next() },
         )
     }
 
@@ -208,7 +209,7 @@ class IndexingService : Service() {
             applicationContext, notify = false,
             onProgress = { phase, d, t -> prog("clip", "$phase $d/$t") },
             onDone = { _ -> ClipSearch.invalidate(); clearProg("clip"); next() },
-            onError = { clearProg("clip"); next() },
+            onError = { fail("clip", it); next() },
         )
     }
 
@@ -220,7 +221,7 @@ class IndexingService : Service() {
             applicationContext,
             onProgress = { phase, d, t -> prog("clipml", "SK model: $phase $d/$t") },
             onDone = { org.fossify.gallery.clip.ClipSearch.releaseMl(); clearProg("clipml"); next() },
-            onError = { clearProg("clipml"); next() },
+            onError = { fail("clipml", it); next() },
         )
     }
 
@@ -234,7 +235,7 @@ class IndexingService : Service() {
             applicationContext,
             onProgress = { d, t -> prog("reembed", "Prepracovanie tvárí $d/$t") },
             onDone = { _, _ -> clearProg("reembed"); next() },
-            onError = { clearProg("reembed"); next() },
+            onError = { fail("reembed", it); next() },
         )
     }
 
@@ -250,12 +251,19 @@ class IndexingService : Service() {
 
     // --- notifikácia s per-task priebehom ---
 
+    private fun fail(key: String, msg: String) {
+        lastError = "$key: ${msg.take(160)}"
+        clearProg(key)
+    }
+
     private fun prog(key: String, text: String) {
+        liveProgress = (progressMap + (key to text)).values.joinToString(" · ")
         progressMap[key] = text
         refreshNotification()
     }
 
     private fun clearProg(key: String) {
+        liveProgress = (progressMap - key).values.joinToString(" · ")
         progressMap.remove(key)
         refreshNotification()
     }
@@ -331,6 +339,13 @@ class IndexingService : Service() {
     }
 
     companion object {
+        // živý text priebehu pre Nastavenia (poll) + posledná chyba (inak boli chyby neviditeľné)
+        @Volatile
+        var liveProgress: String = ""
+
+        @Volatile
+        var lastError: String? = null
+
         const val EXTRA_TASK = "task"
         const val TASK_AUTO = "auto"
         const val TASK_ALL = "all"
