@@ -199,6 +199,17 @@
     <string name="doc_kind_screenshot">Screenshoty s textom</string>
     <string name="doc_kind_id">Preukazy</string>
     <string name="live_text_reading">Čítam text z fotky…</string>
+    <!-- Spomienky -->
+    <string name="memories_title">Spomienky</string>
+    <string name="memories_sub">Pred rokom, výlety a vydarené dni</string>
+    <string name="memories_loading">Skladám spomienky…</string>
+    <string name="memories_empty">Zatiaľ nie sú žiadne spomienky. Pomôže, keď dobehne spracovanie polohy fotiek.</string>
+    <string name="memory_year_ago">Pred rokom</string>
+    <string name="memory_years_ago">Pred %1$d rokmi</string>
+    <string name="memory_photos">%1$d · %2$d fotiek</string>
+    <string name="memory_trip">Výlet</string>
+    <string name="memory_trip_sub">%1$s · %2$d fotiek</string>
+    <string name="memory_day">Vydarený deň</string>
     <!-- Špeciálne fotky -->
     <string name="special_title">Špeciálne fotky</string>
     <string name="special_sub">Panorámy, pohyblivé fotky, HDR a RAW</string>

@@ -15,6 +15,9 @@ class ExploreActivity : SimpleActivity() {
         super.onCreate(savedInstanceState)
         setContentView(binding.root)
 
+        binding.exploreMemories.setOnClickListener {
+            startActivity(Intent(this, MemoriesActivity::class.java))
+        }
         binding.explorePeople.setOnClickListener {
             startActivity(Intent(this, PeopleActivity::class.java))
         }
