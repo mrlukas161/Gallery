@@ -199,6 +199,9 @@
     <string name="doc_kind_screenshot">Screenshoty s textom</string>
     <string name="doc_kind_id">Preukazy</string>
     <string name="live_text_reading">Čítam text z fotky…</string>
+    <string name="motion_play">Prehrať pohyblivú fotku</string>
+    <string name="motion_not_found">Táto fotka nemá vloženú pohyblivú časť</string>
+    <string name="map_gps_suspicious">Poloha vyzerá nepresne (%1$s)</string>
     <!-- Automatické zaradenie tvárí -->
     <string name="face_auto_title">Automatické zaraďovanie tvárí</string>
     <string name="face_auto_off">Vypnuté — v albume osoby sú len ručne potvrdené tváre</string>

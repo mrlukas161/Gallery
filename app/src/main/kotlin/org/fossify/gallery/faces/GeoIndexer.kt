@@ -51,6 +51,9 @@ object GeoIndexer {
                         }
                     } catch (ignored: Throwable) {
                     }
+                    // Zjavne chybné súradnice na mapu nedávame: telefón občas zapíše fix z Wi-Fi/siete
+                    // (býva ďaleko od reality) alebo nulový/„ostrovný" bod pri chýbajúcom N/S/E/W.
+                    if (has && !plausible(lat, lon)) has = false
                     try {
                         dao.insert(GeoEntity(path, lat, lon, has))
                     } catch (ignored: Throwable) {
@@ -69,6 +72,15 @@ object GeoIndexer {
 
     fun stop() {
         isRunning = false
+    }
+
+    // hodnovernosť GPS bodu: mimo rozsahu, presná nula (Null Island) alebo „celé číslo bez desatín"
+    // = takmer vždy chyba zápisu, nie skutočné miesto
+    private fun plausible(lat: Double, lon: Double): Boolean {
+        if (lat.isNaN() || lon.isNaN()) return false
+        if (lat < -90.0 || lat > 90.0 || lon < -180.0 || lon > 180.0) return false
+        if (kotlin.math.abs(lat) < 0.0005 && kotlin.math.abs(lon) < 0.0005) return false
+        return true
     }
 
     private inline fun safe(block: () -> Int): Int = try {

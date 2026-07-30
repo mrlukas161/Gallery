@@ -364,6 +364,7 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
                 R.id.menu_show_on_map -> showFileOnMap(getCurrentPath())
                 R.id.menu_ocr_text -> showOcrText(getCurrentPath())
                 R.id.menu_photo_info -> showPhotoInfo(getCurrentPath())
+                R.id.menu_motion_photo -> playMotionPhoto(getCurrentPath())
                 R.id.menu_rotate_right -> rotateImage(90)
                 R.id.menu_rotate_left -> rotateImage(-90)
                 R.id.menu_rotate_one_eighty -> rotateImage(180)
@@ -1444,6 +1445,49 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
 
     override fun showPhotoInfoRequested() {
         showPhotoInfo(getCurrentPath())
+    }
+
+    // Pohyblivá fotka (Xiaomi/Samsung/Pixel „motion photo"): vytiahne vložené video a prehrá ho
+    private fun playMotionPhoto(path: String) {
+        ensureBackgroundThread {
+            val info = org.fossify.gallery.helpers.MotionPhoto.read(path)
+            if (info == null) {
+                runOnUiThread {
+                    if (!isDestroyed) android.widget.Toast.makeText(this, R.string.motion_not_found, android.widget.Toast.LENGTH_SHORT).show()
+                }
+                return@ensureBackgroundThread
+            }
+            val out = java.io.File(cacheDir, "motion_" + path.substringAfterLast('/').substringBeforeLast('.') + ".mp4")
+            val ok = try {
+                java.io.FileInputStream(path).use { fis ->
+                    java.io.FileOutputStream(out).use { fos ->
+                        fis.channel.transferTo(info.videoOffset, info.videoLength, fos.channel)
+                    }
+                }
+                out.length() > 0
+            } catch (e: Throwable) {
+                false
+            }
+            runOnUiThread {
+                if (isDestroyed || isFinishing) return@runOnUiThread
+                if (!ok) {
+                    android.widget.Toast.makeText(this, R.string.motion_not_found, android.widget.Toast.LENGTH_SHORT).show()
+                    return@runOnUiThread
+                }
+                try {
+                    val uri = androidx.core.content.FileProvider.getUriForFile(this, "${BuildConfig.APPLICATION_ID}.provider", out)
+                    startActivity(
+                        Intent(Intent.ACTION_VIEW).apply {
+                            setDataAndType(uri, "video/mp4")
+                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                            putExtra(IS_FROM_GALLERY, true)
+                        }
+                    )
+                } catch (e: Throwable) {
+                    android.widget.Toast.makeText(this, R.string.action_failed, android.widget.Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
     }
 
     // Live Text: podržanie prsta na fotke → rozpozná text (ak ešte nebol) a ponúkne ho na výber/kopírovanie
