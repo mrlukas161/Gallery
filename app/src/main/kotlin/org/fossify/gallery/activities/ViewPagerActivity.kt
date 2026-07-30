@@ -304,24 +304,6 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
                     isChecked = motionAutoplay()
                 }
                 findItem(R.id.menu_motion_photo)?.isVisible = currentMedium.isImage()
-            }
-            updateMotionBadge()
-        }
-    }
-
-    // označenie „Živá fotka" — vidno hneď, že fotka má vložené video; ťuknutím sa prehrá
-    private fun updateMotionBadge() {
-        val path = getCurrentPath()
-        if (path.isEmpty() || path.isVideoFast()) {
-            binding.motionBadge.visibility = android.view.View.GONE
-            return
-        }
-        ensureBackgroundThread {
-            val has = org.fossify.gallery.helpers.MotionPhoto.readCached(path) != null
-            runOnUiThread {
-                if (isDestroyed || isFinishing || getCurrentPath() != path) return@runOnUiThread
-                binding.motionBadge.visibility = if (has) android.view.View.VISIBLE else android.view.View.GONE
-                if (has) binding.motionBadge.setOnClickListener { playMotionPhoto(path) }
                 findItem(R.id.menu_copy_to).isVisible = visibleBottomActions and BOTTOM_ACTION_COPY == 0
                 findItem(R.id.menu_move_to).isVisible = visibleBottomActions and BOTTOM_ACTION_MOVE == 0
                 findItem(R.id.menu_save_as).isVisible = rotationDegrees != 0
@@ -353,6 +335,24 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
 
             if (visibleBottomActions != 0) {
                 updateBottomActionIcons(currentMedium)
+            }
+            updateMotionBadge()
+        }
+    }
+
+    // označenie „Živá fotka" — vidno hneď, že fotka má vložené video; ťuknutím sa prehrá
+    private fun updateMotionBadge() {
+        val path = getCurrentPath()
+        if (path.isEmpty() || path.isVideoFast()) {
+            binding.motionBadge.visibility = android.view.View.GONE
+            return
+        }
+        ensureBackgroundThread {
+            val has = org.fossify.gallery.helpers.MotionPhoto.readCached(path) != null
+            runOnUiThread {
+                if (isDestroyed || isFinishing || getCurrentPath() != path) return@runOnUiThread
+                binding.motionBadge.visibility = if (has) android.view.View.VISIBLE else android.view.View.GONE
+                if (has) binding.motionBadge.setOnClickListener { playMotionPhoto(path) }
             }
         }
     }
