@@ -24,6 +24,9 @@ class ExploreActivity : SimpleActivity() {
         binding.exploreDocs.setOnClickListener {
             startActivity(Intent(this, DocsActivity::class.java))
         }
+        binding.exploreSpecial.setOnClickListener {
+            startActivity(Intent(this, SpecialActivity::class.java))
+        }
         binding.exploreSimilar.setOnClickListener {
             startActivity(Intent(this, CompareListActivity::class.java))
         }

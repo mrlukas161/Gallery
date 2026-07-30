@@ -86,14 +86,29 @@ class CompareListActivity : SimpleActivity() {
         val paths = ArrayList<String>()
         val takens = ArrayList<Long>()
         val folders = ArrayList<String>()
+        val groupIds = ArrayList<String>()
+        val proj = ArrayList<String>().apply {
+            add(MediaStore.Images.Media.DATA)
+            add(MediaStore.Images.Media.DATE_TAKEN)
+            add(MediaStore.Images.Media.DATE_MODIFIED)
+            add(MediaStore.Images.Media.DISPLAY_NAME)
+            // GROUP_ID (Android 10+): fotoaparát ním označuje fotky z JEDNEJ série = presné zoskupenie
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+                add(MediaStore.Images.Media.GROUP_ID)
+            }
+        }
         contentResolver.query(
-            MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
-            arrayOf(MediaStore.Images.Media.DATA, MediaStore.Images.Media.DATE_TAKEN, MediaStore.Images.Media.DATE_MODIFIED),
-            null, null, null,
+            MediaStore.Images.Media.EXTERNAL_CONTENT_URI, proj.toTypedArray(), null, null, null,
         )?.use { c ->
             val dData = c.getColumnIndexOrThrow(MediaStore.Images.Media.DATA)
             val dTaken = c.getColumnIndex(MediaStore.Images.Media.DATE_TAKEN)
             val dMod = c.getColumnIndex(MediaStore.Images.Media.DATE_MODIFIED)
+            val dName = c.getColumnIndex(MediaStore.Images.Media.DISPLAY_NAME)
+            val dGroup = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+                c.getColumnIndex(MediaStore.Images.Media.GROUP_ID)
+            } else {
+                -1
+            }
             while (c.moveToNext()) {
                 val path = c.getString(dData) ?: continue
                 val taken = if (dTaken >= 0) c.getLong(dTaken) else 0L
@@ -101,11 +116,35 @@ class CompareListActivity : SimpleActivity() {
                 paths.add(path)
                 takens.add(if (taken > 0) taken else mod)
                 folders.add(path.substringBeforeLast('/'))
+                // 1) GROUP_ID zo systému, 2) záloha: názov typu IMG_1234.BURST001 / IMG20240101_BURST2
+                var gid = if (dGroup >= 0) c.getString(dGroup).orEmpty() else ""
+                if (gid.isEmpty() && dName >= 0) {
+                    val name = c.getString(dName).orEmpty()
+                    val m = BURST_NAME.find(name)
+                    if (m != null) gid = "name:" + m.groupValues[1]
+                }
+                groupIds.add(gid)
             }
         }
-        // zoraď podľa času
-        val order = paths.indices.sortedBy { takens[it] }
+
         val groups = ArrayList<MutableList<String>>()
+        val used = BooleanArray(paths.size)
+
+        // A) presné série podľa GROUP_ID / názvu (bez ohľadu na časové medzery)
+        val byGroup = HashMap<String, MutableList<Int>>()
+        for (i in paths.indices) {
+            val g = groupIds[i]
+            if (g.isNotEmpty()) byGroup.getOrPut(g) { ArrayList() }.add(i)
+        }
+        for ((_, idxs) in byGroup) {
+            if (idxs.size < 2) continue
+            val list = idxs.sortedBy { takens[it] }.map { paths[it] }.toMutableList()
+            idxs.forEach { used[it] = true }
+            groups.add(list)
+        }
+
+        // B) zvyšok: fotky z toho istého priečinka nasnímané do ~3 s
+        val order = paths.indices.filter { !used[it] }.sortedBy { takens[it] }
         var cur: MutableList<String>? = null
         var prevTaken = 0L
         var prevFolder = ""
@@ -121,11 +160,15 @@ class CompareListActivity : SimpleActivity() {
             prevTaken = t
             prevFolder = f
         }
-        return groups.filter { it.size >= 2 }.reversed()
+        // najnovšie série hore
+        return groups.filter { it.size >= 2 }.sortedByDescending { g -> g.maxOfOrNull { java.io.File(it).lastModified() } ?: 0L }
     }
 
     companion object {
         private const val COLUMNS = 3
         private const val GROUP_GAP_MS = 3000L
+
+        // názvy typu IMG_1234.BURST001 / IMG_20240101_120000_BURST2 -> spoločný kľúč série
+        private val BURST_NAME = Regex("""^(.*?)[._-]?BURST\d+""", RegexOption.IGNORE_CASE)
     }
 }

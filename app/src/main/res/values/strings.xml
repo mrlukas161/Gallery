@@ -199,6 +199,16 @@
     <string name="doc_kind_screenshot">Screenshoty s textom</string>
     <string name="doc_kind_id">Preukazy</string>
     <string name="live_text_reading">Čítam text z fotky…</string>
+    <!-- Špeciálne fotky -->
+    <string name="special_title">Špeciálne fotky</string>
+    <string name="special_sub">Panorámy, pohyblivé fotky, HDR a RAW</string>
+    <string name="special_scanning">Prehľadávam knižnicu…</string>
+    <string name="special_progress">Špeciálne fotky · %1$d / %2$d</string>
+    <string name="special_none">Nič sa nenašlo</string>
+    <string name="special_panorama">Panorámy</string>
+    <string name="special_motion">Pohyblivé fotky</string>
+    <string name="special_hdr">HDR</string>
+    <string name="special_raw">RAW</string>
     <string name="motion_play">Prehrať pohyblivú fotku</string>
     <string name="motion_not_found">Táto fotka nemá vloženú pohyblivú časť</string>
     <string name="map_gps_suspicious">Poloha vyzerá nepresne (%1$s)</string>
