@@ -429,6 +429,9 @@ open class PhotoVideoActivity : BaseViewerActivity(), ViewPagerFragment.Fragment
         if (mUri?.scheme == "file") showProperties()
     }
 
+    // Live Text je len v hlavnom prehliadači galérie (tu ide o externe otvorený jeden súbor)
+    override fun liveTextRequested() {}
+
     override fun videoEnded() = false
 
     override fun goToPrevItem() {}

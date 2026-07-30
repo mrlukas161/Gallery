@@ -183,6 +183,13 @@
             android:parentActivityName=".activities.SettingsActivity" />
 
         <activity
+            android:name=".activities.DocsActivity"
+            android:configChanges="orientation"
+            android:exported="false"
+            android:label="@string/docs_title"
+            android:parentActivityName=".activities.ExploreActivity" />
+
+        <activity
             android:name=".activities.ExploreActivity"
             android:configChanges="orientation"
             android:exported="false"

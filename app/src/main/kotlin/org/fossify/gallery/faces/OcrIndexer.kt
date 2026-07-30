@@ -90,6 +90,48 @@ object OcrIndexer {
         isRunning = false
     }
 
+    // OCR JEDNEJ fotky na požiadanie (Live Text — podržanie prsta v prehliadači). Ak text už v DB je,
+    // vráti ho okamžite; inak rozpozná teraz a uloží, takže sa zaradí aj do albumu Dokumenty.
+    fun textForPhoto(context: Context, path: String): String {
+        val appCtx = context.applicationContext
+        val dao = try {
+            OcrDatabase.getInstance(appCtx).OcrDao()
+        } catch (e: Throwable) {
+            return ""
+        }
+        try {
+            val cached = dao.getText(path)
+            if (cached != null) return cached
+        } catch (ignored: Throwable) {
+        }
+        var engine: OcrEngine? = null
+        return try {
+            engine = OcrEngine(appCtx)
+            if (!engine.isReady()) return ""
+            val bmp = decodeDownscaled(path) ?: return ""
+            val text = engine.recognize(bmp)
+            bmp.recycle()
+            try {
+                dao.insert(
+                    OcrEntity(
+                        path, text.take(MAX_TEXT),
+                        TextNormalizer.normalize(text, true).take(MAX_TEXT),
+                        System.currentTimeMillis(),
+                    )
+                )
+            } catch (ignored: Throwable) {
+            }
+            text
+        } catch (e: Throwable) {
+            ""
+        } finally {
+            try {
+                engine?.close()
+            } catch (ignored: Throwable) {
+            }
+        }
+    }
+
     private fun describe(t: Throwable): String {
         val chain = ArrayList<Throwable>()
         var cur: Throwable? = t

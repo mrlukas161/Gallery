@@ -1446,6 +1446,49 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
         showPhotoInfo(getCurrentPath())
     }
 
+    // Live Text: podržanie prsta na fotke → rozpozná text (ak ešte nebol) a ponúkne ho na výber/kopírovanie
+    override fun liveTextRequested() {
+        val path = getCurrentPath()
+        if (path.isEmpty() || path.isVideoFast()) return
+        val loading = android.widget.Toast.makeText(this, R.string.live_text_reading, android.widget.Toast.LENGTH_SHORT)
+        loading.show()
+        ensureBackgroundThread {
+            val text = org.fossify.gallery.faces.OcrIndexer.textForPhoto(this, path)
+            runOnUiThread {
+                if (isDestroyed || isFinishing) return@runOnUiThread
+                loading.cancel()
+                if (text.isBlank()) {
+                    android.widget.Toast.makeText(this, R.string.ocr_no_text, android.widget.Toast.LENGTH_SHORT).show()
+                } else {
+                    showSelectableText(text)
+                }
+            }
+        }
+    }
+
+    private fun showSelectableText(text: String) {
+        val pad = (16 * resources.displayMetrics.density).toInt()
+        val tv = android.widget.TextView(this).apply {
+            setText(text)
+            setTextIsSelectable(true)
+            setPadding(pad, pad, pad, pad)
+        }
+        val scroll = android.widget.ScrollView(this).apply { addView(tv) }
+        androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle(R.string.show_ocr_text)
+            .setView(scroll)
+            .setPositiveButton(org.fossify.commons.R.string.copy) { _, _ ->
+                try {
+                    val cm = getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                    cm.setPrimaryClip(android.content.ClipData.newPlainText("OCR", text))
+                    android.widget.Toast.makeText(this, org.fossify.commons.R.string.value_copied_to_clipboard, android.widget.Toast.LENGTH_SHORT).show()
+                } catch (ignored: Throwable) {
+                }
+            }
+            .setNegativeButton(org.fossify.commons.R.string.close, null)
+            .show()
+    }
+
     // scrcpy / hardvérová klávesnica: ←/→ listovanie, I = info panel fotky
     override fun onKeyDown(keyCode: Int, event: android.view.KeyEvent?): Boolean {
         when (keyCode) {

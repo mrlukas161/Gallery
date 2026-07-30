@@ -32,6 +32,9 @@ abstract class ViewPagerFragment : Fragment() {
         // Google Photos štýl: ťah nahor po fotke → info panel (poloha, ľudia, označiť tváre)
         fun showPhotoInfoRequested()
 
+        // Live Text (ako Xiaomi galéria): podržanie prsta na fotke → rozpozná a ponúkne text
+        fun liveTextRequested()
+
         fun videoEnded(): Boolean
 
         fun goToPrevItem()
@@ -161,23 +164,56 @@ abstract class ViewPagerFragment : Fragment() {
         return result.trimStart(',').trim()
     }
 
-    protected fun handleEvent(event: MotionEvent) {
+    // Live Text: podržanie prsta bez posunu (~550 ms) → OCR text fotky
+    private var longPressPosted = false
+    private val longPressHandler = android.os.Handler(android.os.Looper.getMainLooper())
+    private val longPressRunnable = Runnable {
+        longPressPosted = false
+        listener?.liveTextRequested()
+    }
+
+    private fun cancelLongPress() {
+        if (longPressPosted) {
+            longPressHandler.removeCallbacks(longPressRunnable)
+            longPressPosted = false
+        }
+    }
+
+    // gesturesAllowed = fotka nie je priblížená (a je povolené gesto zatvorenia); podržanie na Live Text
+    // funguje vždy, swipe hore/dole len keď sú gestá povolené
+    protected fun handleEvent(event: MotionEvent, gesturesAllowed: Boolean = true) {
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
                 mTouchDownTime = System.currentTimeMillis()
                 mTouchDownX = event.rawX
                 mTouchDownY = event.rawY
+                longPressHandler.removeCallbacks(longPressRunnable)
+                longPressHandler.postDelayed(longPressRunnable, LIVE_TEXT_LONG_PRESS_MS)
+                longPressPosted = true
             }
 
-            MotionEvent.ACTION_POINTER_DOWN -> mIgnoreCloseDown = true
+            MotionEvent.ACTION_MOVE -> {
+                // posun prsta = nejde o podržanie
+                if (longPressPosted &&
+                    (Math.abs(mTouchDownX - event.rawX) > MOVE_TOLERANCE_PX || Math.abs(mTouchDownY - event.rawY) > MOVE_TOLERANCE_PX)
+                ) {
+                    cancelLongPress()
+                }
+            }
+
+            MotionEvent.ACTION_POINTER_DOWN -> {
+                mIgnoreCloseDown = true
+                cancelLongPress()
+            }
             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                cancelLongPress()
                 val diffX = mTouchDownX - event.rawX
                 val diffY = mTouchDownY - event.rawY
 
                 val downGestureDuration = System.currentTimeMillis() - mTouchDownTime
                 val verticalDominant = Math.abs(diffY) > Math.abs(diffX)
                 val quick = downGestureDuration < MAX_CLOSE_DOWN_GESTURE_DURATION
-                if (!mIgnoreCloseDown && verticalDominant && quick && context?.config?.allowDownGesture == true) {
+                if (gesturesAllowed && !mIgnoreCloseDown && verticalDominant && quick && context?.config?.allowDownGesture == true) {
                     if (diffY < -mCloseDownThreshold) {
                         // ťah nadol → zavrieť fotku
                         activity?.finish()
@@ -190,5 +226,10 @@ abstract class ViewPagerFragment : Fragment() {
                 mIgnoreCloseDown = false
             }
         }
+    }
+
+    companion object {
+        private const val LIVE_TEXT_LONG_PRESS_MS = 550L
+        private const val MOVE_TOLERANCE_PX = 24f
     }
 }

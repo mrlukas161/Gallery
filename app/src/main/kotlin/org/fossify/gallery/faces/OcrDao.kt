@@ -26,4 +26,8 @@ interface OcrDao {
     // rozpoznaný text konkrétnej fotky (na zobrazenie/výber v prehliadači)
     @Query("SELECT text FROM ocr_text WHERE path = :path LIMIT 1")
     fun getText(path: String): String?
+
+    // podklad pre album Dokumenty — len fotky s nejakým textom
+    @Query("SELECT * FROM ocr_text WHERE text != ''")
+    fun getAllForDocs(): List<OcrEntity>
 }

@@ -179,6 +179,18 @@
     <string name="pc_marked_deleted">Vymazaných: %1$d</string>
     <string name="map_filter_photos">Fotky</string>
     <string name="map_filter_videos">Videá</string>
+    <!-- Album Dokumenty -->
+    <string name="docs_title">Dokumenty</string>
+    <string name="docs_sub">Doklady, faktúry, preukazy a screenshoty s textom</string>
+    <string name="docs_loading">Hľadám dokumenty…</string>
+    <string name="docs_empty_run_ocr">Zatiaľ žiadne dokumenty. Spusti Nastavenia → Galéria+ → „Rozpoznávanie textu (OCR)" a album sa naplní.</string>
+    <string name="docs_empty_filter">V tomto filtri nič nie je.</string>
+    <string name="docs_filter_all">Všetko</string>
+    <string name="doc_kind_document">Dokumenty</string>
+    <string name="doc_kind_receipt">Doklady a faktúry</string>
+    <string name="doc_kind_screenshot">Screenshoty s textom</string>
+    <string name="doc_kind_id">Preukazy</string>
+    <string name="live_text_reading">Čítam text z fotky…</string>
     <string name="pc_server_stop">Zastaviť</string>
     <string name="pc_server_notif_title">PC sync server beží</string>
     <string name="pc_server_notif_text">Otvor na PC: %1$s\nPIN: %2$s\nServer beží len kým ho nezastavíš.</string>

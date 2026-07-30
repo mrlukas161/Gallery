@@ -176,22 +176,22 @@ class PhotoFragment : ViewPagerFragment() {
                 }
             })
 
+            // handleEvent voláme VŽDY (kvôli Live Text podržaniu); parameter hovorí, či sú povolené
+            // aj swipe gestá (fotka nepriblížená + zapnuté gesto zatvorenia)
             gifView.setOnTouchListener { v, event ->
-                if (context.config.allowDownGesture && gifViewFrame.controller.state.zoom == 1f) handleEvent(event)
+                handleEvent(event, context.config.allowDownGesture && gifViewFrame.controller.state.zoom == 1f)
                 false
             }
 
             setupGesturesViewStateListener()
             gesturesView.setOnTouchListener { v, event ->
                 val allowDownGesture = context.config.allowDownGesture
-                if (allowDownGesture && abs(mCurrentGestureViewZoom - mInitialZoom) < MAX_ZOOM_EQUALITY_TOLERANCE) {
-                    handleEvent(event)
-                }
+                handleEvent(event, allowDownGesture && abs(mCurrentGestureViewZoom - mInitialZoom) < MAX_ZOOM_EQUALITY_TOLERANCE)
                 false
             }
 
             subsamplingView.setOnTouchListener { v, event ->
-                if (subsamplingView.isZoomedOut() && context.config.allowDownGesture) handleEvent(event)
+                handleEvent(event, subsamplingView.isZoomedOut() && context.config.allowDownGesture)
                 false
             }
         }
