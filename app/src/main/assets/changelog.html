@@ -48,6 +48,14 @@
 </div>
 
 <div class="ver">
+  <h2><span class="v">0.45.0</span> <span class="d">„fake version" NAOZAJ preč</span></h2>
+  <ul>
+    <li><span class="tag t-fix">OPRAVA</span> <b>Našla sa skutočná príčina dialógu „You are using a fake version"</b> — nebola to tá kontrola, čo sme riešili predtým („App Corrupt"), ale <b>druhá, skrytá pasca</b> vo Fossify knižnici: pri otvorení <b>ktorejkoľvek obrazovky</b> mala <b>1 zo 51 šancu</b> vyskočiť náhodne (a navyše každé 100. spustenie). Preto to pôsobilo nevyspytateľne. Teraz je zneškodnená — vrátane tej, ktorá po 100 spusteniach blokovala otvorenie „Prispôsobiť farby".</li>
+  </ul>
+  <div class="test">🔎 <b>Vyskúšaj:</b> otvor a zavri albumy 20–30× po sebe — dialóg sa nesmie objaviť ani raz.</div>
+</div>
+
+<div class="ver">
   <h2><span class="v">0.44.0</span> <span class="d">mapa: videá + bez krúžkov</span></h2>
   <ul>
     <li><span class="tag t-fix">ÚPRAVA</span> <b>Zrušené rozkladanie do krúžku</b> — fotky odfotené na tom istom mieste (pár metrov) ostávajú vždy jeden cluster s počtom; ťuk ho otvorí ako galériu. Rozdelia sa len fotky reálne ďalej od seba.</li>

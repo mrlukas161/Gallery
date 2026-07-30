@@ -22,6 +22,41 @@ open class SimpleActivity : BaseSimpleActivity() {
 
     private var dialog: AlertDialog? = null
 
+    // ---- Fossify anti-fork pasca #2 (skutočná príčina „You are using a fake version") ----
+    // BaseSimpleActivity.onCreate obsahuje:
+    //   if (!packageName.startsWith("org.fossify.")) {
+    //       if ((0..50).random() == 10 || appRunCount % 100 == 0) showModdedAppWarning()
+    //   }
+    // -> pri KAŽDOM otvorení ľubovoľnej obrazovky je ~1/51 šanca na dialóg. Preto vyskakoval náhodne
+    // (nie je to ten „App Corrupt" sideloading dialóg, ktorý sme riešili predtým — iný text, iný kód).
+    // Druhá kópia pasce je v startCustomizationActivity() (blokuje aj otvorenie Prispôsobenia).
+    // Sme legitímny fork s vlastným balíkom aj podpisom -> počas týchto volaní vraciame fossify názov.
+    // Spoof je ZÁMERNE úzky (len počas super.onCreate / daného volania), aby sa nerozbili Intenty,
+    // ComponentName ani FileProvider, ktoré potrebujú reálny názov balíka.
+    private var spoofFossifyPackage = false
+
+    override fun getPackageName(): String =
+        if (spoofFossifyPackage) FOSSIFY_PACKAGE else super.getPackageName()
+
+    override fun onCreate(savedInstanceState: android.os.Bundle?) {
+        spoofFossifyPackage = true
+        try {
+            super.onCreate(savedInstanceState)
+        } finally {
+            spoofFossifyPackage = false
+        }
+    }
+
+    // obal na volania commons kódu, ktorý má v sebe anti-fork kontrolu
+    protected fun <T> withoutForkWarning(block: () -> T): T {
+        spoofFossifyPackage = true
+        return try {
+            block()
+        } finally {
+            spoofFossifyPackage = false
+        }
+    }
+
     private val observer = object : ContentObserver(null) {
         override fun onChange(selfChange: Boolean, uri: Uri?) {
             super.onChange(selfChange, uri)
@@ -139,5 +174,9 @@ open class SimpleActivity : BaseSimpleActivity() {
     private fun onPermissionDenied() {
         toast(org.fossify.commons.R.string.no_storage_permissions)
         finish()
+    }
+
+    companion object {
+        private const val FOSSIFY_PACKAGE = "org.fossify.gallery"
     }
 }

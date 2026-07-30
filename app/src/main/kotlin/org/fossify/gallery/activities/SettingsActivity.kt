@@ -170,7 +170,9 @@ class SettingsActivity : SimpleActivity() {
 
     private fun setupCustomizeColors() {
         binding.settingsColorCustomizationHolder.setOnClickListener {
-            startCustomizationActivity()
+            // commons má aj tu anti-fork kontrolu (inak by po 100 spusteniach appky hodila
+            // „fake version" a Prispôsobenie by sa vôbec neotvorilo)
+            withoutForkWarning { startCustomizationActivity() }
         }
     }
 
