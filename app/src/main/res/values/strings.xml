@@ -106,6 +106,14 @@
     <string name="indexing_reembed">Prepracovanie tvárí</string>
     <string name="indexing_qr">QR kódy</string>
     <string name="indexing_phash">Podobné fotky</string>
+    <string name="indexing_clip">Hľadanie predmetov (CLIP)</string>
+    <!-- Prehľad indexovania -->
+    <string name="index_overview_title">Priebeh spracovania knižnice</string>
+    <string name="index_overview_summary">Celkovo %1$d %% · ťuknutím dokončíš zvyšok</string>
+    <string name="index_overview_done">Všetko spracované (100 %%) · ťuknutím prehľadáš nové fotky</string>
+    <string name="index_overview_running">Prebieha spracovanie… %1$d %%</string>
+    <string name="index_detail_line">%1$s — %2$d %% (%3$d / %4$d)</string>
+    <string name="index_detail_title">Čo je spracované</string>
     <string name="phash_title">Duplikáty / podobné fotky (index)</string>
     <string name="phash_tap_to_start">Ťuknutím prehľadám knižnicu a nájdem podobné/duplicitné fotky</string>
     <string name="phash_running">Hľadám podobné fotky…</string>

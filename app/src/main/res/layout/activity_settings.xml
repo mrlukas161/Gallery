@@ -1056,6 +1056,39 @@
                 android:text="@string/galeria_plus_section" />
 
             <RelativeLayout
+                android:id="@+id/settings_index_overview_holder"
+                style="@style/SettingsHolderTextViewStyle"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content">
+
+                <org.fossify.commons.views.MyTextView
+                    android:id="@+id/settings_index_overview_label"
+                    style="@style/SettingsTextLabelStyle"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/index_overview_title" />
+
+                <com.google.android.material.progressindicator.LinearProgressIndicator
+                    android:id="@+id/settings_index_overview_bar"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_below="@+id/settings_index_overview_label"
+                    android:layout_marginTop="6dp"
+                    app:trackCornerRadius="4dp"
+                    app:trackThickness="8dp" />
+
+                <org.fossify.commons.views.MyTextView
+                    android:id="@+id/settings_index_overview_summary"
+                    style="@style/SettingsTextValueStyle"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_below="@+id/settings_index_overview_bar"
+                    android:layout_marginTop="4dp"
+                    tools:text="Celkovo 62 %" />
+
+            </RelativeLayout>
+
+            <RelativeLayout
                 android:id="@+id/settings_changelog_holder"
                 style="@style/SettingsHolderTextViewStyle"
                 android:layout_width="match_parent"

@@ -37,12 +37,27 @@ class IndexingService : Service() {
         startForegroundCompat(buildInitial())
         when (val task = intent?.getStringExtra(EXTRA_TASK)) {
             null, TASK_AUTO -> {
-                val list = ArrayList<String>()
-                list.add(TASK_FACES)
-                list.add(TASK_GEO)
-                list.add(TASK_QR)
-                if (autoOcrEnabled()) list.add(TASK_OCR)
-                launch(list, sequential = !IndexPerf.parallel(this))
+                // Nové fotky sa automaticky zaradia do VŠETKÉHO, čo už používaš: tváre/poloha/QR vždy,
+                // a navyše tie funkcie, ktoré už majú svoj index (OCR, duplikáty, CLIP) — aby nové
+                // fotky nezaostávali za zvyškom knižnice. Rozhodnutie beží mimo hlavného vlákna (Room).
+                org.fossify.commons.helpers.ensureBackgroundThread {
+                    val list = ArrayList<String>()
+                    list.add(TASK_FACES)
+                    list.add(TASK_GEO)
+                    list.add(TASK_QR)
+                    if (autoOcrEnabled() || hasData { org.fossify.gallery.faces.OcrDatabase.getInstance(this).OcrDao().count() }) {
+                        list.add(TASK_OCR)
+                    }
+                    if (hasData { org.fossify.gallery.faces.PhashDatabase.getInstance(this).PhashDao().count() }) {
+                        list.add(TASK_PHASH)
+                    }
+                    if (org.fossify.gallery.clip.ClipModels.bothPresent(this) &&
+                        hasData { org.fossify.gallery.clip.ClipDatabase.getInstance(this).ClipDao().count() }
+                    ) {
+                        list.add(TASK_CLIP)
+                    }
+                    launch(list, sequential = !IndexPerf.parallel(this))
+                }
             }
 
             TASK_ALL -> {
@@ -219,6 +234,13 @@ class IndexingService : Service() {
             onDone = { _, _ -> clearProg("reembed"); next() },
             onError = { clearProg("reembed"); next() },
         )
+    }
+
+    // funkcia je „používaná", ak už má v indexe nejaké záznamy
+    private inline fun hasData(block: () -> Int): Boolean = try {
+        block() > 0
+    } catch (e: Throwable) {
+        false
     }
 
     private fun autoOcrEnabled(): Boolean =

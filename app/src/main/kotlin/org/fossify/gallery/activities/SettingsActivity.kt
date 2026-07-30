@@ -114,6 +114,7 @@ class SettingsActivity : SimpleActivity() {
         setupEmptyRecycleBin()
         updateTextColors(binding.settingsHolder)
         setupClearCache()
+        setupIndexOverview()
         setupChangelog()
         setupPerfMode()
         setupIndexAll()
@@ -1152,6 +1153,57 @@ class SettingsActivity : SimpleActivity() {
                         else -> getString(R.string.phash_tap_to_start)
                     }
                 }
+            }
+        }
+    }
+
+    // Prehľad spracovania knižnice: jeden vizuálny ukazovateľ 0–100 % za všetky funkcie
+    // + ťuk = dokonči zvyšok (spustí všetko naraz), podržanie = detailný rozpis.
+    private fun setupIndexOverview() {
+        refreshIndexOverview()
+        binding.settingsIndexOverviewHolder.setOnClickListener {
+            org.fossify.gallery.services.IndexingService.start(this, org.fossify.gallery.services.IndexingService.TASK_ALL)
+            binding.settingsIndexOverviewSummary.text = getString(R.string.indexing_started_bg)
+            binding.settingsIndexOverviewSummary.postDelayed({ refreshIndexOverview() }, 1200)
+        }
+        binding.settingsIndexOverviewHolder.setOnLongClickListener {
+            showIndexDetail()
+            true
+        }
+    }
+
+    private fun refreshIndexOverview() {
+        ensureBackgroundThread {
+            val total = org.fossify.gallery.helpers.IndexStatus.photoCount(this)
+            val items = org.fossify.gallery.helpers.IndexStatus.all(this, total)
+            val pct = org.fossify.gallery.helpers.IndexStatus.overallPercent(items)
+            val running = items.any { it.running }
+            runOnUiThread {
+                if (isDestroyed) return@runOnUiThread
+                binding.settingsIndexOverviewBar.setProgressCompat(pct, true)
+                binding.settingsIndexOverviewSummary.text = when {
+                    running -> getString(R.string.index_overview_running, pct)
+                    pct >= 100 -> getString(R.string.index_overview_done)
+                    else -> getString(R.string.index_overview_summary, pct)
+                }
+            }
+        }
+    }
+
+    private fun showIndexDetail() {
+        ensureBackgroundThread {
+            val total = org.fossify.gallery.helpers.IndexStatus.photoCount(this)
+            val items = org.fossify.gallery.helpers.IndexStatus.all(this, total)
+            val text = items.joinToString("\n") {
+                getString(R.string.index_detail_line, getString(it.titleRes), it.percent, it.done, it.total)
+            }
+            runOnUiThread {
+                if (isDestroyed || isFinishing) return@runOnUiThread
+                androidx.appcompat.app.AlertDialog.Builder(this)
+                    .setTitle(R.string.index_detail_title)
+                    .setMessage(text)
+                    .setPositiveButton(org.fossify.commons.R.string.ok, null)
+                    .show()
             }
         }
     }
