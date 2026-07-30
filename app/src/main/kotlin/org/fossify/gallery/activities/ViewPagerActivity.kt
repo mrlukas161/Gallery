@@ -299,6 +299,11 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
                 findItem(R.id.menu_rotate).isVisible = currentMedium.isImage() && visibleBottomActions and BOTTOM_ACTION_ROTATE == 0
                 findItem(R.id.menu_set_as).isVisible = visibleBottomActions and BOTTOM_ACTION_SET_AS == 0
                 findItem(R.id.menu_copy_to_clipboard).isVisible = currentMedium.isImage()
+                findItem(R.id.menu_motion_auto)?.apply {
+                    isVisible = currentMedium.isImage()
+                    isChecked = motionAutoplay()
+                }
+                findItem(R.id.menu_motion_photo)?.isVisible = currentMedium.isImage()
                 findItem(R.id.menu_copy_to).isVisible = visibleBottomActions and BOTTOM_ACTION_COPY == 0
                 findItem(R.id.menu_move_to).isVisible = visibleBottomActions and BOTTOM_ACTION_MOVE == 0
                 findItem(R.id.menu_save_as).isVisible = rotationDegrees != 0
@@ -365,6 +370,16 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
                 R.id.menu_ocr_text -> showOcrText(getCurrentPath())
                 R.id.menu_photo_info -> showPhotoInfo(getCurrentPath())
                 R.id.menu_motion_photo -> playMotionPhoto(getCurrentPath())
+                R.id.menu_motion_auto -> {
+                    val now = !motionAutoplay()
+                    getSharedPreferences("galeria_faces", android.content.Context.MODE_PRIVATE)
+                        .edit().putBoolean("motion_autoplay", now).apply()
+                    android.widget.Toast.makeText(
+                        this,
+                        getString(if (now) R.string.motion_autoplay_on else R.string.motion_autoplay_off),
+                        android.widget.Toast.LENGTH_SHORT,
+                    ).show()
+                }
                 R.id.menu_rotate_right -> rotateImage(90)
                 R.id.menu_rotate_left -> rotateImage(-90)
                 R.id.menu_rotate_one_eighty -> rotateImage(180)
@@ -1447,6 +1462,31 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
         showPhotoInfo(getCurrentPath())
     }
 
+    // aby sa tá istá pohyblivá fotka neprehrávala stále dokola
+    private var lastAutoplayedMotion: String? = null
+
+    private fun motionAutoplay(): Boolean =
+        getSharedPreferences("galeria_faces", android.content.Context.MODE_PRIVATE)
+            .getBoolean("motion_autoplay", false)
+
+    // po zobrazení fotky: ak je zapnuté automatické prehrávanie a fotka je pohyblivá, prehraj ju raz
+    private fun maybeAutoplayMotion() {
+        if (!motionAutoplay()) return
+        val path = getCurrentPath()
+        if (path.isEmpty() || path.isVideoFast()) return
+        if (path == lastAutoplayedMotion) return
+        ensureBackgroundThread {
+            val has = org.fossify.gallery.helpers.MotionPhoto.read(path) != null
+            if (!has) return@ensureBackgroundThread
+            runOnUiThread {
+                if (isDestroyed || isFinishing) return@runOnUiThread
+                if (getCurrentPath() != path) return@runOnUiThread
+                lastAutoplayedMotion = path
+                playMotionPhoto(path)
+            }
+        }
+    }
+
     // Pohyblivá fotka (Xiaomi/Samsung/Pixel „motion photo"): vytiahne vložené video a prehrá ho
     private fun playMotionPhoto(path: String) {
         ensureBackgroundThread {
@@ -1773,6 +1813,7 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
             updateActionbarTitle()
             refreshMenuItems()
             scheduleSwipe()
+            maybeAutoplayMotion()
         }
     }
 

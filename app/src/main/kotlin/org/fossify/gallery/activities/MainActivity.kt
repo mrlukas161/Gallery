@@ -282,6 +282,8 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
         // automatické indexovanie tvárí + polohy na pozadí (raz za spustenie), ak je zapnuté
         if (getSharedPreferences("galeria_faces", android.content.Context.MODE_PRIVATE).getBoolean("auto_index", true)) {
             org.fossify.gallery.services.IndexingService.startAutoOnce(this)
+            // jednorazovo vyčisti nezmyselný OCR „text" zo starších verzií (bez re-skenovania)
+            org.fossify.gallery.faces.OcrCleanup.runIfNeeded(this)
         }
 
         binding.directoriesSwitchSearching.setOnClickListener {

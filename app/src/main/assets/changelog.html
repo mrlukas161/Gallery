@@ -52,6 +52,17 @@
 </div>
 
 <div class="ver">
+  <h2><span class="v">0.53.0</span> <span class="d">oprava OCR nezmyslov + tváre v kontexte</span></h2>
+  <ul>
+    <li><span class="tag t-fix">OPRAVA</span> <b>OCR našlo „text" úplne všade</b> — aj na fotkách bez textu (mačky, krajina). Príčina: rozpoznávanie nemalo žiadnu kontrolu spoľahlivosti, tak vyrobilo text zo šumu. Preto boli v <b>Dokumentoch všetky fotky</b> a hľadanie vracalo nezmysly. Teraz sa text uloží, len keď si je rozpoznávanie dosť isté <b>a</b> výsledok naozaj vyzerá ako text. <b>Staré nezmysly sa pri prvom spustení automaticky vyčistia</b> (bez opätovného skenovania).</li>
+    <li><span class="tag t-fix">OPRAVA</span> <b>Výrezy tvárí sedeli inde</b> po oprave otočenia z 0.47 — náhľady sa čítali neotočene. Zjednotené.</li>
+    <li><span class="tag t-new">NOVÉ</span> <b>Celá fotka s rámikom okolo tváre</b> — v návrhoch tvárí menu → „Celé fotky s rámikom tváre". Hneď vidíš, ktorú tvár appka myslí, keď je na fotke ľudí viac.</li>
+    <li><span class="tag t-new">NOVÉ</span> <b>Automatické prehrávanie pohyblivých fotiek</b> — v prehliadači menu → „Pohyblivé fotky prehrávať automaticky". Po prepnutí na takú fotku sa video prehrá raz samo.</li>
+  </ul>
+  <div class="test">🔎 <b>Vyskúšaj:</b> Preskúmať → Dokumenty (má ostať len to, čo naozaj text má); Ľudia → osoba → Návrhy → menu → Celé fotky.</div>
+</div>
+
+<div class="ver">
   <h2><span class="v">0.52.0</span> <span class="d">Spomienky</span></h2>
   <ul>
     <li><span class="tag t-new">NOVÉ</span> <b>🕰️ Spomienky</b> (Preskúmať, prvá karta) — appka sama poskladá <b>„Pred rokom"</b> (rovnaký deň v minulých rokoch), <b>Výlety</b> (súvislé dni s fotkami ďalej od domova podľa GPS) a <b>Vydarené dni</b> (dni s najviac fotkami). Ťuk otvorí celú spomienku ako galériu.</li>

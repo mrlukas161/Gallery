@@ -29,13 +29,22 @@ class OcrEngine(context: Context) {
 
     fun isReady() = ready
 
+    // Vráti text LEN ak je Tesseract dostatočne istý A výsledok vyzerá ako skutočný text.
+    // Bez týchto dvoch kontrol vyrobí OCR „text" úplne z každej fotky (aj z mačky či krajiny).
     fun recognize(bitmap: Bitmap): String {
         if (!ready) return ""
         return try {
             tess.setImage(bitmap)
-            val text = tess.getUTF8Text() ?: ""
+            val raw = tess.getUTF8Text() ?: ""
+            val confidence = try {
+                tess.meanConfidence()
+            } catch (e: Throwable) {
+                0
+            }
             tess.clear()
-            text
+            if (confidence < OcrText.MIN_CONFIDENCE) return ""
+            val cleaned = OcrText.clean(raw)
+            if (!OcrText.isMeaningful(cleaned)) "" else cleaned
         } catch (e: Throwable) {
             ""
         }

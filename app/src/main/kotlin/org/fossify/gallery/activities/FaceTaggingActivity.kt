@@ -47,6 +47,7 @@ class FaceTaggingActivity : SimpleActivity() {
     private var meta: Map<String, FaceMediaMeta.Meta> = emptyMap()
     private var chronological = false
     private var showingIgnored = false
+    private var showContext = false
     private val prefs by lazy { getSharedPreferences(PREFS, Context.MODE_PRIVATE) }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -81,6 +82,9 @@ class FaceTaggingActivity : SimpleActivity() {
             isVisible = mode == MODE_SUGGESTIONS
             isChecked = chronological
         }
+        binding.taggingToolbar.menu.findItem(R.id.show_context)?.apply {
+            isChecked = showContext
+        }
         binding.taggingToolbar.menu.findItem(R.id.show_ignored)?.apply {
             isVisible = mode != MODE_SUGGESTIONS
             isChecked = showingIgnored
@@ -94,6 +98,13 @@ class FaceTaggingActivity : SimpleActivity() {
 
                 R.id.clear_selection -> {
                     adapter?.clearSelection()
+                    true
+                }
+
+                R.id.show_context -> {
+                    showContext = !showContext
+                    item.isChecked = showContext
+                    adapter?.showContext = showContext
                     true
                 }
 

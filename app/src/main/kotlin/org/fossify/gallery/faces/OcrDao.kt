@@ -30,4 +30,8 @@ interface OcrDao {
     // podklad pre album Dokumenty — len fotky s nejakým textom
     @Query("SELECT * FROM ocr_text WHERE text != ''")
     fun getAllForDocs(): List<OcrEntity>
+
+    // vyčistenie nezmyselného „textu" (šum z fotiek bez textu) — bez opätovného rozpoznávania
+    @Query("UPDATE ocr_text SET text = '', norm_text = '' WHERE path IN (:paths)")
+    fun clearTexts(paths: List<String>)
 }

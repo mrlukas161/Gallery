@@ -89,6 +89,7 @@
     <!-- Ignorovanie tvárí + skupiny osôb -->
     <string name="ignore_faces">Ignorovať</string>
     <string name="restore">Vrátiť</string>
+    <string name="show_full_photos">Celé fotky s rámikom tváre</string>
     <string name="show_ignored">Zobraziť ignorované</string>
     <string name="action_groups">Skupiny…</string>
     <string name="new_group">Nová skupina</string>
@@ -221,6 +222,10 @@
     <string name="special_hdr">HDR</string>
     <string name="special_raw">RAW</string>
     <string name="motion_play">Prehrať pohyblivú fotku</string>
+    <string name="motion_autoplay">Pohyblivé fotky prehrávať automaticky</string>
+    <string name="motion_autoplay_on">Pohyblivé fotky sa budú prehrávať automaticky</string>
+    <string name="motion_autoplay_off">Automatické prehrávanie vypnuté</string>
+    <string name="motion_badge">Pohyblivá fotka — ťuknutím prehráš</string>
     <string name="motion_not_found">Táto fotka nemá vloženú pohyblivú časť</string>
     <string name="map_gps_suspicious">Poloha vyzerá nepresne (%1$s)</string>
     <!-- Automatické zaradenie tvárí -->

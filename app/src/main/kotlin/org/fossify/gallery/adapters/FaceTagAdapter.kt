@@ -21,6 +21,13 @@ class FaceTagAdapter(
 
     private val selected = HashSet<Long>()
 
+    // true = zobrazuj CELÚ fotku so zeleným rámikom okolo tváre (aby bolo jasné, ktorú tvár model myslí)
+    var showContext = false
+        set(value) {
+            field = value
+            notifyDataSetChanged()
+        }
+
     fun selectedIds(): List<Long> = selected.toList()
 
     fun selectRange(from: Int, to: Int) {
@@ -65,7 +72,11 @@ class FaceTagAdapter(
 
     inner class ViewHolder(val binding: ItemTagFaceBinding) : RecyclerView.ViewHolder(binding.root) {
         fun bind(face: FaceEntity) {
-            FaceCropLoader.load(face, binding.tagFaceImage)
+            if (showContext) {
+                org.fossify.gallery.faces.FaceContextLoader.load(face, binding.tagFaceImage)
+            } else {
+                FaceCropLoader.load(face, binding.tagFaceImage)
+            }
             val isSel = face.id != null && selected.contains(face.id)
             binding.tagFaceCheck.visibility = if (isSel) View.VISIBLE else View.GONE
             binding.root.setOnClickListener {

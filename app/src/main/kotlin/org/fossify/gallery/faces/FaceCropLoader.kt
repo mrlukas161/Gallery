@@ -45,14 +45,9 @@ object FaceCropLoader {
     private fun decodeCrop(face: FaceEntity): Bitmap? {
         val path = face.mediaFullPath
         if (!File(path).exists()) return null
-        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-        BitmapFactory.decodeFile(path, bounds)
-        val w = bounds.outWidth
-        val h = bounds.outHeight
-        if (w <= 0 || h <= 0) return null
-        var sample = 1
-        while (w / sample > MAX_DECODE_SIZE || h / sample > MAX_DECODE_SIZE) sample *= 2
-        val full = BitmapFactory.decodeFile(path, BitmapFactory.Options().apply { inSampleSize = sample }) ?: return null
+        // MUSÍ to byť rovnaké dekódovanie ako pri indexovaní (upright podľa EXIF), inak by výrez
+        // sedel na iné miesto — presne to spôsobovalo tváre „nabok" pred verziou 0.47.
+        val full = UprightDecoder.decode(path, MAX_DECODE_SIZE)?.bitmap ?: return null
         val pad = ((face.bboxRight - face.bboxLeft) * 0.25f).toInt()
         val l = (face.bboxLeft - pad).coerceIn(0, full.width)
         val t = (face.bboxTop - pad).coerceIn(0, full.height)
