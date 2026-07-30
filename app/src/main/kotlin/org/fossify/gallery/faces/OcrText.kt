@@ -9,7 +9,7 @@ object OcrText {
     private val WORD = Regex("""[\p{L}]{2,}""")
 
     // slovo vyzerá ako slovo: nie je to zhluk súhlások/opakovaní typu „eeee", „xhq"
-    private fun plausibleWord(w: String): Boolean {
+    fun plausibleWord(w: String): Boolean {
         if (w.length < 3) return false
         val lower = w.lowercase()
         val vowels = lower.count { it in "aáäeéiíyýoóôuúrl" }

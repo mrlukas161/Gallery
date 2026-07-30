@@ -17,6 +17,19 @@ object MotionPhoto {
 
     data class Info(val videoOffset: Long, val videoLength: Long)
 
+    // cache výsledkov (aj negatívnych) — pri listovaní sa netreba vracať k súboru
+    private val cache = object : LinkedHashMap<String, Info?>(64, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Info?>): Boolean = size > 500
+    }
+
+    @Synchronized
+    fun readCached(path: String): Info? {
+        if (cache.containsKey(path)) return cache[path]
+        val info = read(path)
+        cache[path] = info
+        return info
+    }
+
     private val MICRO_VIDEO_OFFSET = Regex("""MicroVideoOffset\s*=\s*"(\d+)"""")
     private val MICRO_VIDEO_FLAG = Regex("""MicroVideo\s*=\s*"1"""")
     private val MOTION_PHOTO_FLAG = Regex("""MotionPhoto\s*=\s*"1"""")

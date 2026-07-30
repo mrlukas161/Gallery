@@ -68,7 +68,9 @@ class IndexingService : Service() {
                 list.add(TASK_QR)
                 list.add(TASK_OCR)
                 list.add(TASK_PHASH)
-                if (org.fossify.gallery.clip.ClipModels.bothPresent(this)) list.add(TASK_CLIP)
+                // CLIP vždy — ak model chýba, stiahne sa (inak „hľadanie predmetov" nikdy nefunguje
+                // a používateľ nevie prečo)
+                list.add(TASK_CLIP)
                 launch(list, sequential = !IndexPerf.parallel(this))
             }
 

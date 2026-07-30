@@ -70,8 +70,15 @@ class OcrEngine(context: Context) {
                         val txt = iter.getUTF8Text(level)
                         val conf = iter.confidence(level)
                         val r = iter.getBoundingRect(level)
-                        if (!txt.isNullOrBlank() && conf >= 40f && r != null && r.width() > 1 && r.height() > 1) {
-                            out.add(WordBox(txt.trim(), r.left, r.top, r.right, r.bottom, conf))
+                        if (!txt.isNullOrBlank() && r != null && r.width() > 1 && r.height() > 1) {
+                            val w = txt.trim()
+                            val letters = w.count { it.isLetter() }
+                            val digits = w.count { it.isDigit() }
+                            // slovo berieme len ak: (a) vyzerá ako slovo a istota >= 55, alebo
+                            // (b) je to číslo/suma s vysokou istotou (>= 70) — inak je to šum z textúr
+                            val keep = (conf >= 55f && letters >= 2 && OcrText.plausibleWord(w)) ||
+                                (conf >= 70f && digits >= 2 && letters == 0)
+                            if (keep) out.add(WordBox(w, r.left, r.top, r.right, r.bottom, conf))
                         }
                     } catch (ignored: Throwable) {
                     }
@@ -79,7 +86,8 @@ class OcrEngine(context: Context) {
                 iter.delete()
             }
             tess.clear()
-            out
+            // fotka bez skutočného textu (bazén, krajina…): pár náhodných „slov" zo šumu nezobrazuj
+            if (out.count { it.text.count { c -> c.isLetter() } >= 3 } < 2 && out.size < 4) emptyList() else out
         } catch (e: Throwable) {
             emptyList()
         }

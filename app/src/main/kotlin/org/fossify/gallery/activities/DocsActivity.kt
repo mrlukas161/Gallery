@@ -23,12 +23,24 @@ class DocsActivity : SimpleActivity() {
     private var all: List<DocClassifier.Doc> = emptyList()
     private var shown = ArrayList<String>()
     private var filter: DocClassifier.Kind? = null
+    private var query = ""
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(binding.root)
         binding.docsGrid.layoutManager = GridLayoutManager(this, 3)
         binding.docsFastscroller.updateColors(getProperPrimaryColor())
+        // vyhľadávanie v texte dokumentov (OCR) priamo v albume
+        binding.docsSearch.visibility = android.view.View.VISIBLE
+        binding.docsSearch.addTextChangedListener(object : android.text.TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+            override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+            override fun afterTextChanged(s: android.text.Editable?) {
+                query = s?.toString()?.trim().orEmpty()
+                org.fossify.gallery.helpers.SmartSearch.lastQuery = query
+                applyFilter()
+            }
+        })
         load()
     }
 
@@ -63,7 +75,14 @@ class DocsActivity : SimpleActivity() {
 
     private fun applyFilter() {
         val f = filter
-        shown = ArrayList(all.filter { f == null || it.kind == f }.map { it.path })
+        val qTokens = query.split(Regex("""\s+"""))
+            .map { org.fossify.gallery.helpers.TextNormalizer.normalize(it, true) }
+            .filter { it.length >= 2 }
+        shown = ArrayList(
+            all.filter { d ->
+                (f == null || d.kind == f) && (qTokens.isEmpty() || qTokens.all { d.norm.contains(it) })
+            }.map { it.path }
+        )
         binding.docsGrid.adapter = PersonPhotosAdapter(this, shown, onClick = { path -> openPhoto(path) })
         val title = if (f == null) getString(R.string.docs_title) else DocClassifier.label(this, f)
         binding.docsToolbar.title = "$title (${shown.size})"

@@ -20,6 +20,19 @@
 
     </org.fossify.commons.views.MyAppBarLayout>
 
+    <org.fossify.commons.views.MyEditText
+        android:id="@+id/docs_search"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="@dimen/normal_margin"
+        android:layout_marginEnd="@dimen/normal_margin"
+        android:hint="@string/docs_search_hint"
+        android:imeOptions="actionSearch"
+        android:inputType="text"
+        android:maxLines="1"
+        android:visibility="gone"
+        app:layout_behavior="@string/appbar_scrolling_view_behavior" />
+
     <com.qtalk.recyclerviewfastscroller.RecyclerViewFastScroller
         android:id="@+id/docs_fastscroller"
         android:layout_width="match_parent"

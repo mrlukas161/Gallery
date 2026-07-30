@@ -10,7 +10,7 @@ object DocClassifier {
 
     enum class Kind { DOCUMENT, RECEIPT, SCREENSHOT, ID_CARD, NONE }
 
-    data class Doc(val path: String, val kind: Kind, val chars: Int)
+    data class Doc(val path: String, val kind: Kind, val chars: Int, val norm: String)
 
     private const val MIN_CHARS = 100      // overený prah (precision ~93 %)
     private const val MIN_LINES = 8
@@ -53,7 +53,7 @@ object DocClassifier {
         val out = ArrayList<Doc>(rows.size / 4 + 8)
         for (r in rows) {
             val kind = classify(r.path, r.text, r.normText)
-            if (kind != Kind.NONE) out.add(Doc(r.path, kind, r.text.length))
+            if (kind != Kind.NONE) out.add(Doc(r.path, kind, r.text.length, r.normText))
         }
         return out
     }

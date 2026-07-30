@@ -304,6 +304,24 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
                     isChecked = motionAutoplay()
                 }
                 findItem(R.id.menu_motion_photo)?.isVisible = currentMedium.isImage()
+            }
+            updateMotionBadge()
+        }
+    }
+
+    // označenie „Živá fotka" — vidno hneď, že fotka má vložené video; ťuknutím sa prehrá
+    private fun updateMotionBadge() {
+        val path = getCurrentPath()
+        if (path.isEmpty() || path.isVideoFast()) {
+            binding.motionBadge.visibility = android.view.View.GONE
+            return
+        }
+        ensureBackgroundThread {
+            val has = org.fossify.gallery.helpers.MotionPhoto.readCached(path) != null
+            runOnUiThread {
+                if (isDestroyed || isFinishing || getCurrentPath() != path) return@runOnUiThread
+                binding.motionBadge.visibility = if (has) android.view.View.VISIBLE else android.view.View.GONE
+                if (has) binding.motionBadge.setOnClickListener { playMotionPhoto(path) }
                 findItem(R.id.menu_copy_to).isVisible = visibleBottomActions and BOTTOM_ACTION_COPY == 0
                 findItem(R.id.menu_move_to).isVisible = visibleBottomActions and BOTTOM_ACTION_MOVE == 0
                 findItem(R.id.menu_save_as).isVisible = rotationDegrees != 0
@@ -1476,7 +1494,7 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
         if (path.isEmpty() || path.isVideoFast()) return
         if (path == lastAutoplayedMotion) return
         ensureBackgroundThread {
-            val has = org.fossify.gallery.helpers.MotionPhoto.read(path) != null
+            val has = org.fossify.gallery.helpers.MotionPhoto.readCached(path) != null
             if (!has) return@ensureBackgroundThread
             runOnUiThread {
                 if (isDestroyed || isFinishing) return@runOnUiThread
@@ -1548,20 +1566,30 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
         binding.motionOverlay.visibility = android.view.View.GONE
     }
 
-    // Live Text: podržanie prsta → VÝBER TEXTU PRIAMO NA FOTKE (žiadny automatický prepis).
-    // Slová z posledného hľadania sú predznačené, takže hneď vidno, kde sa výraz nachádza.
+    // Podržanie prsta = ako v Xiaomi galérii: ŽIVÁ FOTKA sa prehrá, inak sa otvorí výber textu
+    // priamo na fotke (slová z posledného hľadania predznačené).
     override fun liveTextRequested() {
         // poistka proti falošnému spusteniu počas listovania medzi fotkami
         if (mPagerScrollState != androidx.viewpager.widget.ViewPager.SCROLL_STATE_IDLE) return
         if (binding.motionOverlay.visibility == android.view.View.VISIBLE) return
         val path = getCurrentPath()
         if (path.isEmpty() || path.isVideoFast()) return
-        startActivity(
-            Intent(this, TextSelectActivity::class.java).apply {
-                putExtra(TextSelectActivity.EXTRA_PATH, path)
-                putExtra(TextSelectActivity.EXTRA_QUERY, org.fossify.gallery.helpers.SmartSearch.lastQuery)
+        ensureBackgroundThread {
+            val motion = org.fossify.gallery.helpers.MotionPhoto.readCached(path) != null
+            runOnUiThread {
+                if (isDestroyed || isFinishing || getCurrentPath() != path) return@runOnUiThread
+                if (motion) {
+                    playMotionPhoto(path)
+                } else {
+                    startActivity(
+                        Intent(this, TextSelectActivity::class.java).apply {
+                            putExtra(TextSelectActivity.EXTRA_PATH, path)
+                            putExtra(TextSelectActivity.EXTRA_QUERY, org.fossify.gallery.helpers.SmartSearch.lastQuery)
+                        }
+                    )
+                }
             }
-        )
+        }
     }
 
     private fun showSelectableText(text: String) {

@@ -9,7 +9,7 @@ import org.fossify.commons.helpers.ensureBackgroundThread
 // Beží automaticky raz po aktualizácii appky.
 object OcrCleanup {
     private const val PREFS = "galeria_faces"
-    private const val KEY_DONE = "ocr_cleanup_v1"
+    private const val KEY_DONE = "ocr_cleanup_v2"
 
     @Volatile
     var isRunning = false

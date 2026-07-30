@@ -58,15 +58,18 @@ object IndexStatus {
                 totalPhotos, org.fossify.gallery.faces.PhashIndexer.isRunning,
             )
         )
-        if (org.fossify.gallery.clip.ClipModels.bothPresent(context)) {
-            list.add(
-                Item(
-                    "clip", org.fossify.gallery.R.string.indexing_clip,
-                    safe { org.fossify.gallery.clip.ClipDatabase.getInstance(context).ClipDao().count() },
-                    totalPhotos, org.fossify.gallery.clip.ClipIndexer.isRunning,
-                )
-            )
+        // CLIP počítame VŽDY: keď model nie je stiahnutý, ukazuje 0 % (a ťuk na prehľad ho stiahne)
+        val clipDone = if (org.fossify.gallery.clip.ClipModels.bothPresent(context)) {
+            safe { org.fossify.gallery.clip.ClipDatabase.getInstance(context).ClipDao().count() }
+        } else {
+            0
         }
+        list.add(
+            Item(
+                "clip", org.fossify.gallery.R.string.indexing_clip,
+                clipDone, totalPhotos, org.fossify.gallery.clip.ClipIndexer.isRunning,
+            )
+        )
         return list
     }
 

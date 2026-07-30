@@ -198,6 +198,7 @@
     <string name="docs_empty_run_ocr">Zatiaľ žiadne dokumenty. Spusti Nastavenia → Galéria+ → „Rozpoznávanie textu (OCR)" a album sa naplní.</string>
     <string name="docs_empty_filter">V tomto filtri nič nie je.</string>
     <string name="docs_filter_all">Všetko</string>
+    <string name="docs_search_hint">Hľadať v texte dokumentov…</string>
     <string name="doc_kind_document">Dokumenty</string>
     <string name="doc_kind_receipt">Doklady a faktúry</string>
     <string name="doc_kind_screenshot">Screenshoty s textom</string>
