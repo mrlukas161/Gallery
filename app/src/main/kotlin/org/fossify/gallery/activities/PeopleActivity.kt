@@ -16,6 +16,7 @@ import org.fossify.gallery.adapters.PeopleAdapter
 import org.fossify.gallery.databinding.ActivityPeopleBinding
 import org.fossify.gallery.faces.ExtrasDatabase
 import org.fossify.gallery.faces.FaceAssignmentEntity
+import org.fossify.gallery.faces.FaceEmbedder
 import org.fossify.gallery.faces.FaceFilter
 import org.fossify.gallery.faces.GroupMemberEntity
 import org.fossify.gallery.faces.FacesDatabase
