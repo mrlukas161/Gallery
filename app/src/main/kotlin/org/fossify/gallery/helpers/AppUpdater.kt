@@ -99,22 +99,32 @@ object AppUpdater {
                         input.copyTo(output)
                     }
                 }
-                activity.runOnUiThread { installApk(activity, apkFile) }
+                // inštalácia MUSÍ bežať mimo hlavného vlákna — kopírovanie ~58 MB APK do session
+                // na UI vlákne spôsobovalo zamrznutie/pád pri prvom pokuse o aktualizáciu
+                installApk(activity, apkFile)
             } catch (e: Exception) {
                 activity.runOnUiThread { onError(e.message ?: "error") }
             }
         }
     }
 
-    // Tichá samo-aktualizácia cez PackageInstaller session. Pri PRVEJ inštalácii touto cestou si
-    // systém vyžiada potvrdenie (a jednorazovo povolenie „inštalovať neznáme aplikácie" pre Galéria+);
-    // od ďalšej aktualizácie je appka vlastným installerom -> USER_ACTION_NOT_REQUIRED = žiadne dialógy
-    // (obchádza aj Mi installer/Play Protect obrazovky, ktoré visia na ACTION_VIEW ceste).
+    // Samo-aktualizácia cez PackageInstaller session (beží NA POZADÍ — nikdy na UI vlákne).
+    // Pozn. overené na webe: Xiaomi na MIUI/HyperOS session inštalácie zámerne obmedzuje a vlastnú
+    // bezpečnostnú kontrolu zobrazí tak či tak (dá sa vypnúť len v appke Zabezpečenie). Preto:
+    //  1) ak session cesta na tomto zariadení už raz zlyhala, ideme rovno overenou klasickou cestou,
+    //  2) pri akomkoľvek zlyhaní session sa OKAMŽITE (v tom istom pokuse) otvorí klasický inštalátor
+    //     — žiadne „na druhý pokus to prejde".
     private fun installApk(activity: Activity, apkFile: File) {
+        val prefs = activity.getSharedPreferences("galeria_faces", android.content.Context.MODE_PRIVATE)
+        if (prefs.getBoolean("updater_session_failed", false)) {
+            activity.runOnUiThread { installViaIntent(activity, apkFile) }
+            return
+        }
         try {
             installViaSession(activity, apkFile)
         } catch (e: Throwable) {
-            installViaIntent(activity, apkFile)
+            prefs.edit().putBoolean("updater_session_failed", true).apply()
+            activity.runOnUiThread { installViaIntent(activity, apkFile) }
         }
     }
 

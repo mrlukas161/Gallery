@@ -52,6 +52,15 @@
 </div>
 
 <div class="ver">
+  <h2><span class="v">0.54.0</span> <span class="d">oprava aktualizácií</span></h2>
+  <ul>
+    <li><span class="tag t-fix">OPRAVA</span> <b>Aktualizácia už nepadá na prvý pokus</b> — kopírovanie inštalačného balíka bežalo na hlavnom vlákne a appku zmrazilo. Ak tichá inštalačná cesta na Xiaomi zlyhá, okamžite sa otvorí klasický inštalátor (žiadne „na druhýkrát to prejde").</li>
+    <li><span class="tag t-fix">POZNÁMKA</span> <b>Xiaomi bezpečnostná kontrola pri inštalácii je systémová</b> — overené: HyperOS ju zobrazuje bez ohľadu na spôsob inštalácie a tiché inštalácie Xiaomi zámerne obmedzuje. Ak ťa otravuje, vypne sa v appke <b>Zabezpečenie → Nastavenia → Kontrola pred inštaláciou</b>.</li>
+  </ul>
+  <div class="test">🔎 <b>Vyskúšaj:</b> ďalšia aktualizácia cez Nastavenia → Skontrolovať aktualizácie by mala prebehnúť na prvý pokus.</div>
+</div>
+
+<div class="ver">
   <h2><span class="v">0.53.0</span> <span class="d">oprava OCR nezmyslov + tváre v kontexte</span></h2>
   <ul>
     <li><span class="tag t-fix">OPRAVA</span> <b>OCR našlo „text" úplne všade</b> — aj na fotkách bez textu (mačky, krajina). Príčina: rozpoznávanie nemalo žiadnu kontrolu spoľahlivosti, tak vyrobilo text zo šumu. Preto boli v <b>Dokumentoch všetky fotky</b> a hľadanie vracalo nezmysly. Teraz sa text uloží, len keď si je rozpoznávanie dosť isté <b>a</b> výsledok naozaj vyzerá ako text. <b>Staré nezmysly sa pri prvom spustení automaticky vyčistia</b> (bez opätovného skenovania).</li>
