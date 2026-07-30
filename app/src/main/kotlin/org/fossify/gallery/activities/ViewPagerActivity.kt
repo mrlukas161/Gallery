@@ -1514,40 +1514,54 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
                     android.widget.Toast.makeText(this, R.string.motion_not_found, android.widget.Toast.LENGTH_SHORT).show()
                     return@runOnUiThread
                 }
-                try {
-                    val uri = androidx.core.content.FileProvider.getUriForFile(this, "${BuildConfig.APPLICATION_ID}.provider", out)
-                    startActivity(
-                        Intent(Intent.ACTION_VIEW).apply {
-                            setDataAndType(uri, "video/mp4")
-                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                            putExtra(IS_FROM_GALLERY, true)
-                        }
-                    )
-                } catch (e: Throwable) {
-                    android.widget.Toast.makeText(this, R.string.action_failed, android.widget.Toast.LENGTH_SHORT).show()
-                }
+                playMotionInline(out)
             }
         }
     }
 
-    // Live Text: podržanie prsta na fotke → rozpozná text (ak ešte nebol) a ponúkne ho na výber/kopírovanie
+    // prehratie PRIAMO v prehliadači (overlay nad fotkou) — po dohratí/ťuknutí sa vráti fotka,
+    // žiadne prepínanie do videoprehrávača, z ktorého sa treba vracať
+    private fun playMotionInline(file: java.io.File) {
+        val overlay = binding.motionOverlay
+        val video = binding.motionVideo
+        overlay.visibility = android.view.View.VISIBLE
+        binding.motionClose.setOnClickListener { stopMotionInline() }
+        overlay.setOnClickListener { stopMotionInline() }
+        try {
+            video.setOnCompletionListener { stopMotionInline() }
+            video.setOnErrorListener { _, _, _ ->
+                stopMotionInline()
+                true
+            }
+            video.setVideoPath(file.absolutePath)
+            video.start()
+        } catch (e: Throwable) {
+            stopMotionInline()
+        }
+    }
+
+    private fun stopMotionInline() {
+        try {
+            binding.motionVideo.stopPlayback()
+        } catch (ignored: Throwable) {
+        }
+        binding.motionOverlay.visibility = android.view.View.GONE
+    }
+
+    // Live Text: podržanie prsta → VÝBER TEXTU PRIAMO NA FOTKE (žiadny automatický prepis).
+    // Slová z posledného hľadania sú predznačené, takže hneď vidno, kde sa výraz nachádza.
     override fun liveTextRequested() {
+        // poistka proti falošnému spusteniu počas listovania medzi fotkami
+        if (mPagerScrollState != androidx.viewpager.widget.ViewPager.SCROLL_STATE_IDLE) return
+        if (binding.motionOverlay.visibility == android.view.View.VISIBLE) return
         val path = getCurrentPath()
         if (path.isEmpty() || path.isVideoFast()) return
-        val loading = android.widget.Toast.makeText(this, R.string.live_text_reading, android.widget.Toast.LENGTH_SHORT)
-        loading.show()
-        ensureBackgroundThread {
-            val text = org.fossify.gallery.faces.OcrIndexer.textForPhoto(this, path)
-            runOnUiThread {
-                if (isDestroyed || isFinishing) return@runOnUiThread
-                loading.cancel()
-                if (text.isBlank()) {
-                    android.widget.Toast.makeText(this, R.string.ocr_no_text, android.widget.Toast.LENGTH_SHORT).show()
-                } else {
-                    showSelectableText(text)
-                }
+        startActivity(
+            Intent(this, TextSelectActivity::class.java).apply {
+                putExtra(TextSelectActivity.EXTRA_PATH, path)
+                putExtra(TextSelectActivity.EXTRA_QUERY, org.fossify.gallery.helpers.SmartSearch.lastQuery)
             }
-        }
+        )
     }
 
     private fun showSelectableText(text: String) {
@@ -1817,7 +1831,10 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
         }
     }
 
+    private var mPagerScrollState = androidx.viewpager.widget.ViewPager.SCROLL_STATE_IDLE
+
     override fun onPageScrollStateChanged(state: Int) {
+        mPagerScrollState = state
         if (state == ViewPager.SCROLL_STATE_IDLE && getCurrentMedium() != null) {
             checkOrientation()
         }

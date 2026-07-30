@@ -207,6 +207,7 @@ class ComparatorActivity : SimpleActivity() {
                 recomputeScores()
                 adapter?.bestIndex = bestIndex
                 adapter?.warns = paths.indices.filter { (quality[paths[it]]?.closedEyes ?: 0) > 0 }.toSet()
+                adapter?.scores = paths.indices.associateWith { ((totalScore[paths[it]] ?: 0.0) * 100).toInt() }
                 adapter?.notifyDataSetChanged()
                 loadPane(true)
                 loadPane(false)
@@ -421,6 +422,7 @@ class ComparatorActivity : SimpleActivity() {
         recomputeScores()
         rebuildAdapter()
         adapter?.warns = paths.indices.filter { (quality[paths[it]]?.closedEyes ?: 0) > 0 }.toSet()
+        adapter?.scores = paths.indices.associateWith { ((totalScore[paths[it]] ?: 0.0) * 100).toInt() }
         loadPane(true)
         loadPane(false)
         updateActive()

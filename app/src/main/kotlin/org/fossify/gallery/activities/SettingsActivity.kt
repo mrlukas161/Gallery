@@ -115,6 +115,7 @@ class SettingsActivity : SimpleActivity() {
         updateTextColors(binding.settingsHolder)
         setupClearCache()
         setupIndexOverview()
+        setupAdvancedToggle()
         setupChangelog()
         setupPerfMode()
         setupIndexAll()
@@ -1205,6 +1206,33 @@ class SettingsActivity : SimpleActivity() {
                     .setPositiveButton(org.fossify.commons.R.string.ok, null)
                     .show()
             }
+        }
+    }
+
+    // Menej preplnené Nastavenia: jednotlivé funkcie (tváre, OCR, QR, duplikáty, CLIP…) sú
+    // predvolene SKRYTÉ pod „Pokročilé nástroje" — bežne stačí prehľad + „Indexovať všetko naraz".
+    private fun advancedHolders(): List<android.view.View> = listOf(
+        binding.settingsFaceIndexingHolder,
+        binding.settingsPicasaImportHolder,
+        binding.settingsOcrHolder,
+        binding.settingsAutoOcrHolder,
+        binding.settingsQrHolder,
+        binding.settingsPhashHolder,
+        binding.settingsClipHolder,
+        binding.settingsClipMlHolder,
+    )
+
+    private fun setupAdvancedToggle() {
+        val prefs = getSharedPreferences("galeria_faces", android.content.Context.MODE_PRIVATE)
+        fun apply(open: Boolean) {
+            advancedHolders().forEach { it.visibility = if (open) android.view.View.VISIBLE else android.view.View.GONE }
+            binding.settingsAdvToggleSummary.text = getString(if (open) R.string.adv_tools_hide else R.string.adv_tools_show)
+        }
+        apply(prefs.getBoolean("adv_tools_open", false))
+        binding.settingsAdvToggleHolder.setOnClickListener {
+            val now = !prefs.getBoolean("adv_tools_open", false)
+            prefs.edit().putBoolean("adv_tools_open", now).apply()
+            apply(now)
         }
     }
 

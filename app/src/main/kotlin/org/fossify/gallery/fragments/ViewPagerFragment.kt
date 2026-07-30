@@ -229,7 +229,7 @@ abstract class ViewPagerFragment : Fragment() {
     }
 
     companion object {
-        private const val LIVE_TEXT_LONG_PRESS_MS = 550L
+        private const val LIVE_TEXT_LONG_PRESS_MS = 750L
         private const val MOVE_TOLERANCE_PX = 24f
     }
 }

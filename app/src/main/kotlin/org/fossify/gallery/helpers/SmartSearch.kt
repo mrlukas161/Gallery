@@ -16,7 +16,12 @@ import org.fossify.gallery.faces.QrDatabase
 // a to s prísnejším prahom.
 object SmartSearch {
 
-    private const val CLIP_MIN_COS = 0.26f
+    // posledný hľadaný výraz — TextSelectActivity ním predznačí nájdené slová priamo na fotke
+    @Volatile
+    var lastQuery: String = ""
+
+
+    private const val CLIP_MIN_COS = 0.23f
     private const val CLIP_TOP_N = 40
 
     fun extraPaths(context: Context, query: String): Set<String> {
