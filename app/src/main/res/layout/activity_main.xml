@@ -10,71 +10,99 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content" />
 
-    <RelativeLayout
-        android:id="@+id/directories_holder"
+    <!-- stránkovač so 4 stránkami: Domov · Priečinky · Posledné · Preskúmať -->
+    <org.fossify.commons.views.MyViewPager
+        android:id="@+id/main_pager"
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
+        android:layout_height="match_parent"
         app:layout_behavior="@string/appbar_scrolling_view_behavior">
 
-        <org.fossify.commons.views.MyTextView
-            android:id="@+id/directories_switch_searching"
+        <include
+            android:id="@+id/page_home"
+            layout="@layout/page_home" />
+
+        <RelativeLayout
+            android:id="@+id/directories_holder"
             android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:background="?attr/selectableItemBackground"
-            android:gravity="center"
-            android:padding="@dimen/activity_margin"
-            android:text="@string/switch_to_file_search"
-            android:visibility="gone" />
+            android:layout_height="match_parent">
 
-        <org.fossify.commons.views.MyTextView
-            android:id="@+id/directories_empty_placeholder"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_below="@+id/directories_switch_searching"
-            android:alpha="0.8"
-            android:gravity="center_horizontal"
-            android:paddingStart="@dimen/activity_margin"
-            android:paddingTop="@dimen/activity_margin"
-            android:paddingEnd="@dimen/activity_margin"
-            android:text="@string/no_media_with_filters"
-            android:textSize="@dimen/bigger_text_size"
-            android:textStyle="italic"
-            android:visibility="gone" />
-
-        <org.fossify.commons.views.MyTextView
-            android:id="@+id/directories_empty_placeholder_2"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_below="@+id/directories_empty_placeholder"
-            android:layout_centerHorizontal="true"
-            android:background="@drawable/ripple_all_corners"
-            android:padding="@dimen/activity_margin"
-            android:text="@string/change_filters_underlined"
-            android:textSize="@dimen/bigger_text_size"
-            android:visibility="gone" />
-
-        <androidx.swiperefreshlayout.widget.SwipeRefreshLayout
-            android:id="@+id/directories_refresh_layout"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_below="@+id/directories_switch_searching">
-
-            <com.qtalk.recyclerviewfastscroller.RecyclerViewFastScroller
-                android:id="@+id/directories_fastscroller"
+            <org.fossify.commons.views.MyTextView
+                android:id="@+id/directories_switch_searching"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                app:supportSwipeToRefresh="true">
+                android:background="?attr/selectableItemBackground"
+                android:gravity="center"
+                android:padding="@dimen/activity_margin"
+                android:text="@string/switch_to_file_search"
+                android:visibility="gone" />
 
-                <org.fossify.commons.views.MyRecyclerView
-                    android:id="@+id/directories_grid"
+            <org.fossify.commons.views.MyTextView
+                android:id="@+id/directories_empty_placeholder"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_below="@+id/directories_switch_searching"
+                android:alpha="0.8"
+                android:gravity="center_horizontal"
+                android:paddingStart="@dimen/activity_margin"
+                android:paddingTop="@dimen/activity_margin"
+                android:paddingEnd="@dimen/activity_margin"
+                android:text="@string/no_media_with_filters"
+                android:textSize="@dimen/bigger_text_size"
+                android:textStyle="italic"
+                android:visibility="gone" />
+
+            <org.fossify.commons.views.MyTextView
+                android:id="@+id/directories_empty_placeholder_2"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_below="@+id/directories_empty_placeholder"
+                android:layout_centerHorizontal="true"
+                android:background="@drawable/ripple_all_corners"
+                android:padding="@dimen/activity_margin"
+                android:text="@string/change_filters_underlined"
+                android:textSize="@dimen/bigger_text_size"
+                android:visibility="gone" />
+
+            <androidx.swiperefreshlayout.widget.SwipeRefreshLayout
+                android:id="@+id/directories_refresh_layout"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_below="@+id/directories_switch_searching">
+
+                <com.qtalk.recyclerviewfastscroller.RecyclerViewFastScroller
+                    android:id="@+id/directories_fastscroller"
                     android:layout_width="match_parent"
-                    android:layout_height="match_parent"
-                    android:layoutAnimation="@anim/layout_animation"
-                    android:scrollbars="none"
-                    app:layoutManager="org.fossify.commons.views.MyGridLayoutManager"
-                    app:spanCount="@integer/directory_columns_vertical_scroll" />
+                    android:layout_height="wrap_content"
+                    app:supportSwipeToRefresh="true">
 
-            </com.qtalk.recyclerviewfastscroller.RecyclerViewFastScroller>
-        </androidx.swiperefreshlayout.widget.SwipeRefreshLayout>
-    </RelativeLayout>
+                    <org.fossify.commons.views.MyRecyclerView
+                        android:id="@+id/directories_grid"
+                        android:layout_width="match_parent"
+                        android:layout_height="match_parent"
+                        android:layoutAnimation="@anim/layout_animation"
+                        android:scrollbars="none"
+                        app:layoutManager="org.fossify.commons.views.MyGridLayoutManager"
+                        app:spanCount="@integer/directory_columns_vertical_scroll" />
+
+                </com.qtalk.recyclerviewfastscroller.RecyclerViewFastScroller>
+            </androidx.swiperefreshlayout.widget.SwipeRefreshLayout>
+        </RelativeLayout>
+
+        <include
+            android:id="@+id/page_recent"
+            layout="@layout/page_recent" />
+
+        <include
+            android:id="@+id/page_explore"
+            layout="@layout/page_explore" />
+
+    </org.fossify.commons.views.MyViewPager>
+
+    <com.google.android.material.bottomnavigation.BottomNavigationView
+        android:id="@+id/main_bottom_nav"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom"
+        app:menu="@menu/menu_bottom_nav" />
+
 </androidx.coordinatorlayout.widget.CoordinatorLayout>

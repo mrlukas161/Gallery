@@ -81,6 +81,7 @@ import org.fossify.commons.views.MyRecyclerView
 import org.fossify.gallery.BuildConfig
 import org.fossify.gallery.R
 import org.fossify.gallery.adapters.DirectoryAdapter
+import org.fossify.gallery.adapters.MainPagesAdapter
 import org.fossify.gallery.databases.GalleryDatabase
 import org.fossify.gallery.databinding.ActivityMainBinding
 import org.fossify.gallery.dialogs.ChangeSortingDialog
@@ -238,6 +239,8 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
                 || mIsGetAnyContentIntent
                 || mIsSetWallpaperIntent
 
+        setupPages()
+
         setupOptionsMenu()
         refreshMenuItems()
 
@@ -292,6 +295,58 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
 
         // just request the permission, tryLoadGallery will then trigger in onResume
         handleMediaPermissions()
+    }
+
+    // stránkovač hlavnej obrazovky: Domov · Priečinky · Posledné · Preskúmať
+    @android.annotation.SuppressLint("ClickableViewAccessibility")
+    private fun setupPages() {
+        val pages = listOf<android.view.View>(
+            binding.pageHome.root,
+            binding.directoriesHolder,
+            binding.pageRecent.root,
+            binding.pageExplore.root,
+        )
+        binding.mainPager.adapter = MainPagesAdapter(pages)
+        binding.mainPager.offscreenPageLimit = 3
+
+        binding.mainBottomNav.setOnItemSelectedListener { item ->
+            val target = when (item.itemId) {
+                R.id.nav_home -> MainPagesAdapter.PAGE_HOME
+                R.id.nav_recent -> MainPagesAdapter.PAGE_RECENT
+                R.id.nav_explore -> MainPagesAdapter.PAGE_EXPLORE
+                else -> MainPagesAdapter.PAGE_FOLDERS
+            }
+            binding.mainPager.setCurrentItem(target, true)
+            true
+        }
+
+        binding.mainPager.addOnPageChangeListener(object : androidx.viewpager.widget.ViewPager.OnPageChangeListener {
+            override fun onPageScrolled(position: Int, offset: Float, offsetPx: Int) {}
+
+            override fun onPageSelected(position: Int) {
+                val id = when (position) {
+                    MainPagesAdapter.PAGE_HOME -> R.id.nav_home
+                    MainPagesAdapter.PAGE_RECENT -> R.id.nav_recent
+                    MainPagesAdapter.PAGE_EXPLORE -> R.id.nav_explore
+                    else -> R.id.nav_folders
+                }
+                if (binding.mainBottomNav.selectedItemId != id) {
+                    binding.mainBottomNav.selectedItemId = id
+                }
+            }
+
+            override fun onPageScrollStateChanged(state: Int) {}
+        })
+
+        // pri výbere súboru pre inú aplikáciu ostávajú len priečinky (bez lišty a prepínania)
+        if (mIsThirdPartyIntent) {
+            binding.mainBottomNav.beGone()
+            binding.mainPager.setCurrentItem(MainPagesAdapter.PAGE_FOLDERS, false)
+            binding.mainPager.setOnTouchListener { _, _ -> true } // žiadne swipovanie
+        } else {
+            binding.mainPager.setCurrentItem(MainPagesAdapter.PAGE_FOLDERS, false)
+            binding.mainBottomNav.selectedItemId = R.id.nav_folders
+        }
     }
 
     private fun handleMediaPermissions(callback: (() -> Unit)? = null) {
