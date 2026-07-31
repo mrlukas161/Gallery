@@ -39,6 +39,7 @@ import org.fossify.commons.extensions.getProperBackgroundColor
 import org.fossify.commons.extensions.getProperPrimaryColor
 import org.fossify.commons.extensions.getProperSize
 import org.fossify.commons.extensions.getProperTextColor
+import org.fossify.commons.extensions.formatSize
 import org.fossify.commons.extensions.getStorageDirectories
 import org.fossify.commons.extensions.getTimeFormat
 import org.fossify.commons.extensions.handleHiddenFolderPasswordProtection
@@ -84,6 +85,7 @@ import org.fossify.commons.models.RadioItem
 import org.fossify.commons.models.Release
 import org.fossify.commons.views.MyGridLayoutManager
 import org.fossify.commons.views.MyRecyclerView
+import org.fossify.commons.views.MyTextView
 import org.fossify.gallery.BuildConfig
 import org.fossify.gallery.R
 import org.fossify.gallery.adapters.DirectoryAdapter
@@ -124,6 +126,7 @@ import org.fossify.gallery.extensions.tryDeleteFileDirItem
 import org.fossify.gallery.extensions.updateDBDirectory
 import org.fossify.gallery.extensions.updateWidgets
 import org.fossify.gallery.helpers.DIRECTORY
+import org.fossify.gallery.helpers.FolderSort
 import org.fossify.gallery.helpers.GET_ANY_INTENT
 import org.fossify.gallery.helpers.GET_IMAGE_INTENT
 import org.fossify.gallery.helpers.GET_VIDEO_INTENT
@@ -132,6 +135,8 @@ import org.fossify.gallery.helpers.GROUP_BY_DATE_TAKEN_MONTHLY
 import org.fossify.gallery.helpers.GROUP_BY_LAST_MODIFIED_DAILY
 import org.fossify.gallery.helpers.GROUP_BY_LAST_MODIFIED_MONTHLY
 import org.fossify.gallery.helpers.GROUP_DESCENDING
+import org.fossify.gallery.helpers.HomeStats
+import org.fossify.gallery.helpers.IndexStatus
 import org.fossify.gallery.helpers.LOCATION_INTERNAL
 import org.fossify.gallery.helpers.MAX_COLUMN_COUNT
 import org.fossify.gallery.helpers.MONTH_MILLISECONDS
@@ -172,6 +177,12 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
         private const val PICK_WALLPAPER = 3
         private const val LAST_MEDIA_CHECK_PERIOD = 3000L
         private const val REQ_PC_DELETE = 7021
+
+        // koľko priečinkov ukázať na Domove (zvyšok je na stránke Priečinky)
+        private const val HOME_FOLDERS_COUNT = 6
+
+        // „Na upratanie" prechádza celý pHash index — neprepočítavame ho častejšie ako raz za pol minúty
+        private const val HOME_CLEANUP_MIN_INTERVAL = 30_000L
 
         // aby dialóg „označené z PC" neotravoval pri každom onResume, pýtame sa len keď sa počet zmení
         @Volatile
@@ -218,6 +229,10 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
     // spodné odsadenie mriežok o výšku spodnej lišty sa nastavuje len raz
     private var mBottomNavPaddingApplied = false
 
+    // stránka Domov — pamäť posledného (ťažkého) výpočtu „Na upratanie"
+    private var mHomeCleanupComputedAt = 0L
+    private var mHomeCleanupRunning = false
+
     private var mStoredAnimateGifs = true
     private var mStoredCropThumbnails = true
     private var mStoredScrollHorizontally = true
@@ -257,6 +272,7 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
 
         setupPages()
         setupExplorePage()
+        setupHomePage()
 
         setupOptionsMenu()
         refreshMenuItems()
@@ -356,6 +372,11 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
                 if (position == MainPagesAdapter.PAGE_RECENT) {
                     loadRecentPage()
                 }
+
+                // pri návrate na Domov premietneme aktuálny stav (výpočet má vlastnú brzdu)
+                if (position == MainPagesAdapter.PAGE_HOME) {
+                    refreshHome()
+                }
             }
 
             override fun onPageScrollStateChanged(state: Int) {}
@@ -397,6 +418,161 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
             // otvor hlavné hľadanie galérie
             startActivity(Intent(this, SearchActivity::class.java))
         }
+    }
+
+    // Stránka Domov: hľadanie, karta „Na upratanie", štyri skratky, stav spracovania a priečinky.
+    private fun setupHomePage() {
+        if (mIsThirdPartyIntent) {
+            return // pri výbere súboru pre inú appku sa Domov vôbec nezobrazuje
+        }
+
+        val page = binding.pageHome
+        page.homeSearch.setOnClickListener {
+            startActivity(Intent(this, SearchActivity::class.java))
+        }
+        page.homeTilePeople.setOnClickListener {
+            startActivity(Intent(this, PeopleActivity::class.java))
+        }
+        page.homeTileDocs.setOnClickListener {
+            startActivity(Intent(this, DocsActivity::class.java))
+        }
+        page.homeTilePlaces.setOnClickListener {
+            startActivity(Intent(this, MapActivity::class.java))
+        }
+        page.homeTileMemories.setOnClickListener {
+            startActivity(Intent(this, MemoriesActivity::class.java))
+        }
+        page.homeStatus.setOnClickListener {
+            org.fossify.gallery.services.IndexingService.start(
+                this, org.fossify.gallery.services.IndexingService.TASK_ALL,
+            )
+            refreshHomeStatus()
+        }
+        page.homeFoldersHeader.setOnClickListener {
+            FolderSort.showDialog(this) { refreshHomeFolders() }
+        }
+
+        refreshHome(force = true)
+    }
+
+    // `force` obíde pamäť posledného výpočtu (pri prvom zobrazení Domova ju chceme naplniť hneď)
+    private fun refreshHome(force: Boolean = false) {
+        if (mIsThirdPartyIntent) {
+            return
+        }
+
+        refreshHomeCleanup(force)
+        refreshHomeStatus()
+        refreshHomeFolders()
+    }
+
+    // „Na upratanie" — HomeStats.compute() prechádza celý pHash index a siaha na disk, preto beží
+    // výhradne na pozadí a neopakuje sa častejšie ako HOME_CLEANUP_MIN_INTERVAL.
+    private fun refreshHomeCleanup(force: Boolean) {
+        if (mHomeCleanupRunning) {
+            return
+        }
+
+        val now = System.currentTimeMillis()
+        if (!force && mHomeCleanupComputedAt > 0 && now - mHomeCleanupComputedAt < HOME_CLEANUP_MIN_INTERVAL) {
+            return
+        }
+
+        mHomeCleanupRunning = true
+        ensureBackgroundThread {
+            val stats = HomeStats.compute(this)
+            runOnUiThread {
+                mHomeCleanupRunning = false
+                mHomeCleanupComputedAt = System.currentTimeMillis()
+                if (isDestroyed || isFinishing) {
+                    return@runOnUiThread
+                }
+
+                binding.pageHome.homeCleanupSummary.text = when {
+                    !stats.hasPhashIndex -> getString(R.string.home_cleanup_no_index)
+                    stats.duplicates == 0 -> getString(R.string.home_cleanup_none)
+                    else -> getString(
+                        R.string.home_cleanup_summary,
+                        stats.bursts, stats.duplicates, stats.wastedBytes.formatSize(),
+                    )
+                }
+
+                binding.pageHome.homeCleanup.setOnClickListener {
+                    if (stats.hasPhashIndex) {
+                        startActivity(Intent(this, CompareListActivity::class.java))
+                    } else {
+                        // bez indexu niet čo porovnávať — najprv ho dáme spočítať
+                        org.fossify.gallery.services.IndexingService.start(
+                            this, org.fossify.gallery.services.IndexingService.TASK_PHASH,
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    // rovnaký údaj ako prehľad spracovania v Nastaveniach, len v jednom riadku
+    private fun refreshHomeStatus() {
+        ensureBackgroundThread {
+            val total = IndexStatus.photoCount(this)
+            val items = IndexStatus.all(this, total)
+            val percent = IndexStatus.overallPercent(items)
+            val live = org.fossify.gallery.services.IndexingService.liveProgress
+            val error = org.fossify.gallery.services.IndexingService.lastError
+            runOnUiThread {
+                if (isDestroyed || isFinishing) {
+                    return@runOnUiThread
+                }
+
+                binding.pageHome.homeStatus.text = when {
+                    live.isNotEmpty() -> live
+                    error != null -> getString(R.string.index_overview_error, error)
+                    percent >= 100 -> getString(R.string.index_overview_done)
+                    else -> getString(R.string.index_overview_summary, percent)
+                }
+            }
+        }
+    }
+
+    // krátky zoznam priečinkov; hlavička zároveň prepína zoradenie (abeceda / posledná zmena)
+    private fun refreshHomeFolders() {
+        if (mIsThirdPartyIntent || isDestroyed || isFinishing) {
+            return
+        }
+
+        val page = binding.pageHome
+        val mode = FolderSort.mode(this)
+        page.homeFoldersHeader.text = getString(
+            R.string.home_folders_header,
+            getString(FolderSort.labelRes(mode)),
+        )
+
+        page.homeFoldersList.removeAllViews()
+        val dirs = mDirs.toList()
+        val sorted = if (mode == FolderSort.BY_NAME) {
+            dirs.sortedBy { it.name.lowercase() }
+        } else {
+            dirs.sortedByDescending { it.modified }
+        }
+
+        sorted.take(HOME_FOLDERS_COUNT).forEach { dir ->
+            val item = layoutInflater.inflate(
+                R.layout.item_home_folder, page.homeFoldersList, false,
+            ) as MyTextView
+            item.text = "${dir.name}  ·  ${dir.mediaCnt}"
+            // itemClicked(path) je existujúca metóda MainActivity, ktorá otvorí priečinok
+            item.setOnClickListener { itemClicked(dir.path) }
+            page.homeFoldersList.addView(item)
+        }
+
+        val all = layoutInflater.inflate(
+            R.layout.item_home_folder, page.homeFoldersList, false,
+        ) as MyTextView
+        all.text = getString(R.string.home_folders_all)
+        all.setOnClickListener {
+            binding.mainPager.setCurrentItem(MainPagesAdapter.PAGE_FOLDERS, true)
+        }
+        page.homeFoldersList.addView(all)
     }
 
     // Spodná lišta leží nad stránkovačom a prekrývala by posledný riadok mriežok, preto im
@@ -445,10 +621,11 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
             ?.getInsets(WindowInsetsCompat.Type.ime() or WindowInsetsCompat.Type.systemBars())
             ?.bottom ?: 0
 
-        // mriežky aj rolovací rozcestník Preskúmať musia mať pod obsahom miesto na lištu
+        // mriežky aj rolovacie stránky (Domov, Preskúmať) musia mať pod obsahom miesto na lištu
         listOf<ViewGroup>(
             binding.directoriesGrid,
             binding.pageRecent.recentGrid,
+            binding.pageHome.root,
             binding.pageExplore.root,
         ).forEach { view ->
             view.clipToPadding = false
@@ -587,6 +764,11 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
             binding.mainMenu.updateHintText(getString(org.fossify.commons.R.string.search_files))
         } else {
             binding.mainMenu.updateHintText(getString(org.fossify.commons.R.string.search_folders))
+        }
+
+        // čísla na Domove obnovíme len keď je Domov naozaj na obrazovke (napr. návrat z porovnávača)
+        if (binding.mainPager.currentItem == MainPagesAdapter.PAGE_HOME) {
+            refreshHome()
         }
     }
 
@@ -1736,6 +1918,9 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
         }
 
         mDirs = dirs.clone() as ArrayList<Directory>
+
+        // priečinky sú načítané — premietneme ich aj do krátkeho zoznamu na Domove
+        runOnUiThread { refreshHomeFolders() }
     }
 
     private fun setAsDefaultFolder() {

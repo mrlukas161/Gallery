@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- jeden riadok v zozname priečinkov na Domove -->
+<org.fossify.commons.views.MyTextView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:background="@drawable/ripple_all_corners"
+    android:clickable="true"
+    android:focusable="true"
+    android:ellipsize="middle"
+    android:paddingStart="@dimen/activity_margin"
+    android:paddingTop="@dimen/normal_margin"
+    android:paddingEnd="@dimen/activity_margin"
+    android:paddingBottom="@dimen/normal_margin"
+    android:singleLine="true" />

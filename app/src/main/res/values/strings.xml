@@ -596,6 +596,15 @@
     <string name="folder_sort_name">Podľa abecedy</string>
     <string name="folder_sort_modified">Podľa poslednej zmeny</string>
 
+    <!-- Stránka Domov -->
+    <string name="home_search_hint">🔍  Hľadať osobu, text, miesto alebo vec…</string>
+    <string name="home_cleanup_title">Na upratanie</string>
+    <string name="home_cleanup_summary">%1$d sérií · %2$d duplikátov · %3$s</string>
+    <string name="home_cleanup_none">Nič na upratanie ✓</string>
+    <string name="home_cleanup_no_index">Ťuknutím prehľadám knižnicu a nájdem duplikáty</string>
+    <string name="home_folders_header">Priečinky · %1$s (ťuknutím zmeníš)</string>
+    <string name="home_folders_all">Zobraziť všetky priečinky</string>
+
     <!--
         Haven't found some strings? There's more at
         https://github.com/FossifyOrg/Commons/tree/master/commons/src/main/res
