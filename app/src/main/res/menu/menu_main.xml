@@ -24,11 +24,6 @@
         android:title="@string/filter_media"
         app:showAsAction="ifRoom" />
     <item
-        android:id="@+id/explore"
-        android:icon="@android:drawable/ic_menu_gallery"
-        android:title="@string/explore_title"
-        app:showAsAction="never" />
-    <item
         android:id="@+id/change_view_type"
         android:showAsAction="never"
         android:title="@string/change_view_type"

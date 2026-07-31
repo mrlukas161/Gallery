@@ -256,6 +256,7 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
                 || mIsSetWallpaperIntent
 
         setupPages()
+        setupExplorePage()
 
         setupOptionsMenu()
         refreshMenuItems()
@@ -371,6 +372,33 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
         }
     }
 
+    // Stránka Preskúmať: rozcestník na ostatné obrazovky (rovnaké karty ako v ExploreActivity).
+    private fun setupExplorePage() {
+        val page = binding.pageExplore
+        page.exploreMemories.setOnClickListener {
+            startActivity(Intent(this, MemoriesActivity::class.java))
+        }
+        page.explorePeople.setOnClickListener {
+            startActivity(Intent(this, PeopleActivity::class.java))
+        }
+        page.explorePlaces.setOnClickListener {
+            startActivity(Intent(this, MapActivity::class.java))
+        }
+        page.exploreDocs.setOnClickListener {
+            startActivity(Intent(this, DocsActivity::class.java))
+        }
+        page.exploreSpecial.setOnClickListener {
+            startActivity(Intent(this, SpecialActivity::class.java))
+        }
+        page.exploreSimilar.setOnClickListener {
+            startActivity(Intent(this, CompareListActivity::class.java))
+        }
+        page.exploreSearch.setOnClickListener {
+            // otvor hlavné hľadanie galérie
+            startActivity(Intent(this, SearchActivity::class.java))
+        }
+    }
+
     // Spodná lišta leží nad stránkovačom a prekrývala by posledný riadok mriežok, preto im
     // doplníme spodné odsadenie o jej výšku. Odsadenie sa pripočíta do „základu" (commons od
     // neho pri zmene systémových okrajov prepočítava odsadenie), takže ostane platné aj po
@@ -417,11 +445,16 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
             ?.getInsets(WindowInsetsCompat.Type.ime() or WindowInsetsCompat.Type.systemBars())
             ?.bottom ?: 0
 
-        listOf(binding.directoriesGrid, binding.pageRecent.recentGrid).forEach { grid ->
-            grid.clipToPadding = false
-            val base = grid.ensureBasePadding()
+        // mriežky aj rolovací rozcestník Preskúmať musia mať pod obsahom miesto na lištu
+        listOf<ViewGroup>(
+            binding.directoriesGrid,
+            binding.pageRecent.recentGrid,
+            binding.pageExplore.root,
+        ).forEach { view ->
+            view.clipToPadding = false
+            val base = view.ensureBasePadding()
             base[3] = base[3] + extra
-            grid.updatePaddingWithBase(bottom = insetBottom)
+            view.updatePaddingWithBase(bottom = insetBottom)
         }
     }
 
@@ -800,7 +833,6 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
                 R.id.create_new_folder -> createNewFolder()
                 R.id.open_recycle_bin -> openRecycleBin()
                 R.id.column_count -> changeColumnCount()
-                R.id.explore -> startActivity(Intent(this, ExploreActivity::class.java))
                 R.id.set_as_default_folder -> setAsDefaultFolder()
                 R.id.more_apps_from_us -> launchMoreAppsFromUsIntent()
                 R.id.settings -> launchSettings()
