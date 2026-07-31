@@ -591,6 +591,11 @@
     <string name="nav_recent">Posledné</string>
     <string name="nav_explore">Preskúmať</string>
 
+    <!-- Zoradenie priečinkov -->
+    <string name="folder_sort_title">Zoradiť priečinky</string>
+    <string name="folder_sort_name">Podľa abecedy</string>
+    <string name="folder_sort_modified">Podľa poslednej zmeny</string>
+
     <!--
         Haven't found some strings? There's more at
         https://github.com/FossifyOrg/Commons/tree/master/commons/src/main/res
