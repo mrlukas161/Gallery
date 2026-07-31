@@ -121,6 +121,7 @@ class SettingsActivity : SimpleActivity() {
         setupEmptyRecycleBin()
         updateTextColors(binding.settingsHolder)
         setupClearCache()
+        setupStartPage()
         setupIndexOverview()
         setupAdvancedToggle()
         setupChangelog()
@@ -1173,6 +1174,44 @@ class SettingsActivity : SimpleActivity() {
             refreshIndexOverview()
             binding.settingsIndexOverviewSummary.postDelayed(this, 1500)
         }
+    }
+
+    // Ktorá zo štyroch stránok sa otvorí po spustení appky (predvolene Priečinky = ako doteraz).
+    private fun setupStartPage() {
+        updateStartPageSummary()
+        binding.settingsStartPageHolder.setOnClickListener {
+            val labels = arrayOf(
+                getString(R.string.nav_home),
+                getString(R.string.nav_folders),
+                getString(R.string.nav_recent),
+                getString(R.string.nav_explore),
+            )
+            val prefs = getSharedPreferences("galeria_faces", android.content.Context.MODE_PRIVATE)
+            val cur = prefs.getInt("start_page", 1).coerceIn(0, 3)
+            androidx.appcompat.app.AlertDialog.Builder(this)
+                .setTitle(R.string.start_page_title)
+                .setSingleChoiceItems(labels, cur) { dlg, which ->
+                    prefs.edit().putInt("start_page", which).apply()
+                    updateStartPageSummary()
+                    dlg.dismiss()
+                }
+                .setNegativeButton(org.fossify.commons.R.string.cancel, null)
+                .show()
+        }
+    }
+
+    private fun updateStartPageSummary() {
+        if (isDestroyed) return
+        val cur = getSharedPreferences("galeria_faces", android.content.Context.MODE_PRIVATE)
+            .getInt("start_page", 1)
+        binding.settingsStartPageSummary.text = getString(
+            when (cur) {
+                0 -> R.string.nav_home
+                2 -> R.string.nav_recent
+                3 -> R.string.nav_explore
+                else -> R.string.nav_folders
+            }
+        )
     }
 
     private fun setupIndexOverview() {

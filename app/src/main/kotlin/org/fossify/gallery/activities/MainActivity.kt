@@ -323,6 +323,9 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
             org.fossify.gallery.faces.OcrCleanup.runIfNeeded(this)
         }
 
+        // na tomto mieste sú už udelené oprávnenia — až tu má zmysel ponúknuť uvítanie
+        maybeShowIntro()
+
         binding.directoriesSwitchSearching.setOnClickListener {
             launchSearchActivity()
         }
@@ -388,9 +391,43 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
             binding.mainPager.setCurrentItem(MainPagesAdapter.PAGE_FOLDERS, false)
             binding.mainPager.setOnTouchListener { _, _ -> true } // žiadne swipovanie
         } else {
-            binding.mainPager.setCurrentItem(MainPagesAdapter.PAGE_FOLDERS, false)
-            binding.mainBottomNav.selectedItemId = R.id.nav_folders
+            // obrazovka po spustení podľa Nastavení (predvolene Priečinky = rovnaký pohľad ako doteraz)
+            val start = getSharedPreferences("galeria_faces", android.content.Context.MODE_PRIVATE)
+                .getInt("start_page", MainPagesAdapter.PAGE_FOLDERS)
+                .coerceIn(0, MainPagesAdapter.PAGE_EXPLORE)
+            binding.mainPager.setCurrentItem(start, false)
+            binding.mainBottomNav.selectedItemId = when (start) {
+                MainPagesAdapter.PAGE_HOME -> R.id.nav_home
+                MainPagesAdapter.PAGE_RECENT -> R.id.nav_recent
+                MainPagesAdapter.PAGE_EXPLORE -> R.id.nav_explore
+                else -> R.id.nav_folders
+            }
+            // stránky sa načítavajú lenivo pri prepnutí — pri štarte na nich to treba spustiť ručne
+            when (start) {
+                MainPagesAdapter.PAGE_RECENT -> loadRecentPage()
+                MainPagesAdapter.PAGE_HOME -> refreshHome(force = true)
+                else -> {}
+            }
         }
+    }
+
+    // Uvítanie pri prvom spustení: appka povie, čo vie, a ponúkne spustiť spracovanie knižnice.
+    // Volá sa až tam, kde sú isto udelené oprávnenia, aby dialóg nevyskočil nad systémovým.
+    private fun maybeShowIntro() {
+        if (mIsThirdPartyIntent) return
+        val prefs = getSharedPreferences("galeria_faces", android.content.Context.MODE_PRIVATE)
+        if (prefs.getBoolean("intro_shown", false)) return
+        prefs.edit().putBoolean("intro_shown", true).apply()
+        androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle(R.string.intro_title)
+            .setMessage(R.string.intro_message)
+            .setPositiveButton(R.string.intro_start) { _, _ ->
+                org.fossify.gallery.services.IndexingService.start(
+                    this, org.fossify.gallery.services.IndexingService.TASK_ALL,
+                )
+            }
+            .setNegativeButton(R.string.intro_later, null)
+            .show()
     }
 
     // Stránka Preskúmať: rozcestník na ostatné obrazovky (rovnaké karty ako v ExploreActivity).
