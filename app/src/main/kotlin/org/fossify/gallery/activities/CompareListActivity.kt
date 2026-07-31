@@ -25,25 +25,24 @@ class CompareListActivity : SimpleActivity() {
         super.onCreate(savedInstanceState)
         setContentView(binding.root)
         binding.compareListGrid.layoutManager = GridLayoutManager(this, COLUMNS)
+        val tabs = binding.compareListTabs
+        tabs.addTab(tabs.newTab().setText(R.string.tab_bursts))
+        tabs.addTab(tabs.newTab().setText(R.string.tab_duplicates))
+        tabs.addOnTabSelectedListener(object : com.google.android.material.tabs.TabLayout.OnTabSelectedListener {
+            override fun onTabSelected(tab: com.google.android.material.tabs.TabLayout.Tab) {
+                duplicatesMode = tab.position == 1
+                updateTitle()
+                loadGroups()
+            }
+
+            override fun onTabUnselected(tab: com.google.android.material.tabs.TabLayout.Tab) {}
+            override fun onTabReselected(tab: com.google.android.material.tabs.TabLayout.Tab) {}
+        })
     }
 
     override fun onResume() {
         super.onResume()
         setupTopAppBar(binding.compareListAppbar, NavigationIcon.Arrow)
-        binding.compareListToolbar.menu.clear()
-        binding.compareListToolbar.inflateMenu(R.menu.menu_compare_list)
-        binding.compareListToolbar.menu.findItem(R.id.toggle_duplicates)?.isChecked = duplicatesMode
-        binding.compareListToolbar.setOnMenuItemClickListener { item ->
-            if (item.itemId == R.id.toggle_duplicates) {
-                duplicatesMode = !duplicatesMode
-                item.isChecked = duplicatesMode
-                updateTitle()
-                loadGroups()
-                true
-            } else {
-                false
-            }
-        }
         updateTitle()
         loadGroups()
     }

@@ -18,6 +18,16 @@
             app:title="@string/compare_title"
             app:titleTextAppearance="@style/AppTheme.ActionBar.TitleTextStyle" />
 
+        <!-- záložky namiesto skrytého prepínača v menu — prepínanie bez vracania sa -->
+        <com.google.android.material.tabs.TabLayout
+            android:id="@+id/compare_list_tabs"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:background="@color/color_primary"
+            app:tabIndicatorColor="#FFFFFFFF"
+            app:tabSelectedTextColor="#FFFFFFFF"
+            app:tabTextColor="#B3FFFFFF" />
+
     </org.fossify.commons.views.MyAppBarLayout>
 
     <org.fossify.commons.views.MyRecyclerView
