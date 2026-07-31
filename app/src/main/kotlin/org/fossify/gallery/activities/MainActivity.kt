@@ -8,9 +8,13 @@ import android.os.Handler
 import android.provider.MediaStore
 import android.provider.MediaStore.Images
 import android.provider.MediaStore.Video
+import android.view.View
 import android.view.ViewGroup
 import android.widget.RelativeLayout
 import android.widget.Toast
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import org.fossify.commons.dialogs.CreateNewFolderDialog
 import org.fossify.commons.dialogs.FilePickerDialog
@@ -23,6 +27,7 @@ import org.fossify.commons.extensions.beVisible
 import org.fossify.commons.extensions.beVisibleIf
 import org.fossify.commons.extensions.checkWhatsNew
 import org.fossify.commons.extensions.deleteFiles
+import org.fossify.commons.extensions.ensureBasePadding
 import org.fossify.commons.extensions.getDoesFilePathExist
 import org.fossify.commons.extensions.getFileCount
 import org.fossify.commons.extensions.getFilePublicUri
@@ -61,6 +66,7 @@ import org.fossify.commons.dialogs.ConfirmationDialog
 import org.fossify.commons.extensions.toast
 import org.fossify.gallery.helpers.AppUpdater
 import org.fossify.commons.extensions.underlineText
+import org.fossify.commons.extensions.updatePaddingWithBase
 import org.fossify.commons.extensions.viewBinding
 import org.fossify.commons.helpers.DAY_SECONDS
 import org.fossify.commons.helpers.FAVORITES
@@ -82,6 +88,7 @@ import org.fossify.gallery.BuildConfig
 import org.fossify.gallery.R
 import org.fossify.gallery.adapters.DirectoryAdapter
 import org.fossify.gallery.adapters.MainPagesAdapter
+import org.fossify.gallery.adapters.PersonPhotosAdapter
 import org.fossify.gallery.databases.GalleryDatabase
 import org.fossify.gallery.databinding.ActivityMainBinding
 import org.fossify.gallery.dialogs.ChangeSortingDialog
@@ -129,7 +136,9 @@ import org.fossify.gallery.helpers.LOCATION_INTERNAL
 import org.fossify.gallery.helpers.MAX_COLUMN_COUNT
 import org.fossify.gallery.helpers.MONTH_MILLISECONDS
 import org.fossify.gallery.helpers.MediaFetcher
+import org.fossify.gallery.helpers.PATH
 import org.fossify.gallery.helpers.PICKED_PATHS
+import org.fossify.gallery.helpers.PathTransfer
 import org.fossify.gallery.helpers.RECYCLE_BIN
 import org.fossify.gallery.helpers.SET_WALLPAPER_INTENT
 import org.fossify.gallery.helpers.SMART_ALBUM_PATHS
@@ -202,6 +211,13 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
     private var mDirs = ArrayList<Directory>()
     private var mDirsIgnoringSearch = ArrayList<Directory>()
 
+    // stránka Posledné — najnovšie fotky knižnice (načítajú sa raz, pri prvom zobrazení)
+    private var mRecentPaths = ArrayList<String>()
+    private var mRecentLoading = false
+
+    // spodné odsadenie mriežok o výšku spodnej lišty sa nastavuje len raz
+    private var mBottomNavPaddingApplied = false
+
     private var mStoredAnimateGifs = true
     private var mStoredCropThumbnails = true
     private var mStoredScrollHorizontally = true
@@ -245,8 +261,9 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
         refreshMenuItems()
 
         setupEdgeToEdge(
-            padBottomImeAndSystem = listOf(binding.directoriesGrid)
+            padBottomImeAndSystem = listOf(binding.directoriesGrid, binding.pageRecent.recentGrid)
         )
+        setupBottomNavPadding()
 
         binding.directoriesRefreshLayout.setOnRefreshListener { getDirectories() }
         storeStateVariables()
@@ -333,6 +350,11 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
                 if (binding.mainBottomNav.selectedItemId != id) {
                     binding.mainBottomNav.selectedItemId = id
                 }
+
+                // Posledné sa načítajú až pri prvom zobrazení stránky
+                if (position == MainPagesAdapter.PAGE_RECENT) {
+                    loadRecentPage()
+                }
             }
 
             override fun onPageScrollStateChanged(state: Int) {}
@@ -346,6 +368,113 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
         } else {
             binding.mainPager.setCurrentItem(MainPagesAdapter.PAGE_FOLDERS, false)
             binding.mainBottomNav.selectedItemId = R.id.nav_folders
+        }
+    }
+
+    // Spodná lišta leží nad stránkovačom a prekrývala by posledný riadok mriežok, preto im
+    // doplníme spodné odsadenie o jej výšku. Odsadenie sa pripočíta do „základu" (commons od
+    // neho pri zmene systémových okrajov prepočítava odsadenie), takže ostane platné aj po
+    // zobrazení klávesnice alebo otočení obrazovky.
+    private fun setupBottomNavPadding() {
+        if (mIsThirdPartyIntent) {
+            return // lišta je skrytá, mriežku nič neprekrýva
+        }
+
+        val nav = binding.mainBottomNav
+        if (nav.isLaidOut && nav.height > 0) {
+            applyBottomNavPadding(nav)
+        } else {
+            // výšku lišty poznáme až po jej rozmiestnení
+            nav.addOnLayoutChangeListener(object : View.OnLayoutChangeListener {
+                override fun onLayoutChange(
+                    v: View, left: Int, top: Int, right: Int, bottom: Int,
+                    oldLeft: Int, oldTop: Int, oldRight: Int, oldBottom: Int,
+                ) {
+                    if (v.height <= 0) {
+                        return
+                    }
+
+                    v.removeOnLayoutChangeListener(this)
+                    applyBottomNavPadding(nav)
+                }
+            })
+        }
+    }
+
+    private fun applyBottomNavPadding(nav: View) {
+        if (mBottomNavPaddingApplied || isDestroyed || isFinishing) {
+            return
+        }
+
+        // výška lišty bez systémového pruhu (ten si lišta pridáva ako vlastné odsadenie)
+        val extra = nav.height - nav.paddingBottom
+        if (extra <= 0) {
+            return
+        }
+
+        mBottomNavPaddingApplied = true
+        val insetBottom = ViewCompat.getRootWindowInsets(nav)
+            ?.getInsets(WindowInsetsCompat.Type.ime() or WindowInsetsCompat.Type.systemBars())
+            ?.bottom ?: 0
+
+        listOf(binding.directoriesGrid, binding.pageRecent.recentGrid).forEach { grid ->
+            grid.clipToPadding = false
+            val base = grid.ensureBasePadding()
+            base[3] = base[3] + extra
+            grid.updatePaddingWithBase(bottom = insetBottom)
+        }
+    }
+
+    // Stránka Posledné: chronologická mriežka najnovších fotiek naprieč celou knižnicou.
+    private fun loadRecentPage() {
+        if (mRecentPaths.isNotEmpty() || mRecentLoading) {
+            return
+        }
+
+        mRecentLoading = true
+        binding.pageRecent.recentGrid.layoutManager = GridLayoutManager(this, 3)
+        binding.pageRecent.recentFastscroller.updateColors(getProperPrimaryColor())
+        ensureBackgroundThread {
+            val list = ArrayList<String>()
+            try {
+                contentResolver.query(
+                    MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+                    arrayOf(MediaStore.Images.Media.DATA),
+                    null, null, "${MediaStore.Images.Media.DATE_MODIFIED} DESC",
+                )?.use { c ->
+                    val d = c.getColumnIndexOrThrow(MediaStore.Images.Media.DATA)
+                    // pri veľkých knižniciach stačí najnovších 3000 položiek
+                    while (c.moveToNext() && list.size < 3000) {
+                        c.getString(d)?.let { list.add(it) }
+                    }
+                }
+            } catch (ignored: Throwable) {
+            }
+
+            runOnUiThread {
+                mRecentLoading = false
+                if (isDestroyed || isFinishing) {
+                    return@runOnUiThread
+                }
+
+                mRecentPaths = list
+                binding.pageRecent.recentGrid.adapter = PersonPhotosAdapter(
+                    activity = this@MainActivity,
+                    paths = mRecentPaths,
+                    onClick = { path -> openRecentPhoto(path) },
+                )
+            }
+        }
+    }
+
+    // listovanie v prehliadači ostane uzavreté v zozname Posledné
+    private fun openRecentPhoto(path: String) {
+        PathTransfer.forViewer = mRecentPaths
+        Intent(this, ViewPagerActivity::class.java).apply {
+            putExtra(PATH, path)
+            putExtra(SKIP_AUTHENTICATION, true)
+            putExtra(SHOW_ALL, false)
+            startActivity(this)
         }
     }
 
