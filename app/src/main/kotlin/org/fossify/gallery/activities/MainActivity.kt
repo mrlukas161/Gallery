@@ -199,6 +199,9 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
     private var mIsSetWallpaperIntent = false
     private var mAllowPickingMultiple = false
     private var mIsThirdPartyIntent = false
+
+    // chyba pri nastavovaní novej navigácie — zobrazí sa používateľovi, nech vieme čo opraviť
+    private var mStartupError: String? = null
     private var mIsGettingDirs = false
     private var mLoadedInitialPhotos = false
     private var mShouldStopFetching = false
@@ -270,9 +273,22 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
                 || mIsGetAnyContentIntent
                 || mIsSetWallpaperIntent
 
-        setupPages()
-        setupExplorePage()
-        setupHomePage()
+        // POISTKA: nová navigácia (stránky, Domov, Preskúmať) nesmie za žiadnych okolností zabrániť
+        // spusteniu appky. Keď v nej niečo zlyhá, zapíšeme chybu a pokračujeme so samotnými
+        // priečinkami — galéria musí zostať použiteľná.
+        try {
+            setupPages()
+            setupExplorePage()
+            setupHomePage()
+        } catch (e: Throwable) {
+            mStartupError = e.javaClass.simpleName + (e.message?.let { ": " + it.take(200) } ?: "")
+            android.util.Log.e("GaleriaPlus", "zlyhalo nastavenie stránok", e)
+            try {
+                binding.mainBottomNav.beGone()
+                binding.mainPager.setCurrentItem(MainPagesAdapter.PAGE_FOLDERS, false)
+            } catch (ignored: Throwable) {
+            }
+        }
 
         setupOptionsMenu()
         refreshMenuItems()
@@ -280,7 +296,11 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
         setupEdgeToEdge(
             padBottomImeAndSystem = listOf(binding.directoriesGrid, binding.pageRecent.recentGrid)
         )
-        setupBottomNavPadding()
+        try {
+            setupBottomNavPadding()
+        } catch (e: Throwable) {
+            android.util.Log.e("GaleriaPlus", "zlyhalo odsadenie pod lištou", e)
+        }
 
         binding.directoriesRefreshLayout.setOnRefreshListener { getDirectories() }
         storeStateVariables()
@@ -325,6 +345,23 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
 
         // na tomto mieste sú už udelené oprávnenia — až tu má zmysel ponúknuť uvítanie
         maybeShowIntro()
+
+        // ak nová navigácia zlyhala, povedz to nahlas — nech vieme, čo presne opraviť
+        mStartupError?.let { err ->
+            mStartupError = null
+            androidx.appcompat.app.AlertDialog.Builder(this)
+                .setTitle(R.string.startup_error_title)
+                .setMessage(getString(R.string.startup_error_message, err))
+                .setPositiveButton(org.fossify.commons.R.string.copy) { _, _ ->
+                    try {
+                        val cm = getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                        cm.setPrimaryClip(android.content.ClipData.newPlainText("chyba", err))
+                    } catch (ignored: Throwable) {
+                    }
+                }
+                .setNegativeButton(org.fossify.commons.R.string.ok, null)
+                .show()
+        }
 
         binding.directoriesSwitchSearching.setOnClickListener {
             launchSearchActivity()

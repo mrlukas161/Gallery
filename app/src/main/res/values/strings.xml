@@ -586,6 +586,10 @@
     <string name="faq_18_title">Why do I see ads during video playback?</string>
     <string name="faq_18_text">Our apps have no ads whatsoever. If you see them during video playback, you must be using some other apps video player. Try finding your default video player in the device settings, then do a \"Clear defaults\" on it. The next time you invoke some video intent you will see an app picker prompt, where you can select what app you want to use.</string>
     <!-- Spodná navigačná lišta -->
+    <string name="startup_error_title">Nová navigácia sa nespustila</string>
+    <string name="startup_error_message">Galéria beží ďalej v režime priečinkov. Pošli mi prosím túto chybu:
+
+%1$s</string>
     <string name="start_page_title">Obrazovka po spustení</string>
     <string name="intro_title">Vitaj v Galérii+</string>
     <string name="intro_message">Appka vie prehľadať tvoju knižnicu a nájsť v nej ľudí, text na dokladoch, miesta, duplikáty aj predmety na fotkách. Všetko prebieha priamo v telefóne.
