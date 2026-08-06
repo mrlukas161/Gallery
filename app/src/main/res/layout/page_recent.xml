@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:id="@+id/page_recent"
     android:layout_width="match_parent"
     android:layout_height="match_parent">
@@ -9,13 +10,18 @@
         android:layout_width="match_parent"
         android:layout_height="match_parent">
 
+        <!-- layoutManager MUSÍ byť už v XML: stránkovač pripojí všetky štyri stránky hneď pri
+             štarte a posuvník (fast-scroller) si vypýta layoutManager skôr, než ho stihne
+             nastaviť kód pri prvom otvorení stránky -> inak appka padne hneď po spustení. -->
         <org.fossify.commons.views.MyRecyclerView
             android:id="@+id/recent_grid"
             android:layout_width="match_parent"
             android:layout_height="match_parent"
             android:clipToPadding="false"
             android:padding="1dp"
-            android:scrollbars="none" />
+            android:scrollbars="none"
+            app:layoutManager="org.fossify.commons.views.MyGridLayoutManager"
+            app:spanCount="3" />
 
     </com.qtalk.recyclerviewfastscroller.RecyclerViewFastScroller>
 </FrameLayout>
