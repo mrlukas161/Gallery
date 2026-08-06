@@ -39,8 +39,12 @@ android {
 
         ndk {
             // len arm64 (Xiaomi 15) — drží APK malé, nech MediaPipe natívne knižnice
-            // nie sú pre 4 architektúry naraz
-            abiFilters += "arm64-v8a"
+            // nie sú pre 4 architektúry naraz.
+            // Výnimka pre overovanie na emulátore: `-PtestAbi=x86_64` postaví build s x86_64
+            // knižnicami, aby MediaPipe/TFLite bežali natívne a nie cez ARM preklad (ten
+            // v emulátore padá na SIGSEGV a maskuje skutočné správanie). Vydávané APK
+            // sa stavia VŽDY bez tohto parametra.
+            abiFilters += (providers.gradleProperty("testAbi").orNull ?: "arm64-v8a")
         }
     }
 
