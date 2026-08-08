@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Podobné a duplikáty — prázdny stav záložky Duplikáty (odlišný od burst záložky) -->
+    <string name="compare_none_duplicates">Žiadne duplikáty sa nenašli. Duplikáty sa hľadajú podľa indexu podobnosti — nech najprv dobehne spracovanie knižnice.</string>
+</resources>

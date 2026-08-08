@@ -6,6 +6,7 @@ import android.provider.MediaStore
 import androidx.recyclerview.widget.GridLayoutManager
 import org.fossify.commons.extensions.beGone
 import org.fossify.commons.extensions.beVisible
+import org.fossify.commons.extensions.getProperTextColor
 import org.fossify.commons.extensions.viewBinding
 import org.fossify.commons.helpers.NavigationIcon
 import org.fossify.commons.helpers.ensureBackgroundThread
@@ -43,8 +44,12 @@ class CompareListActivity : SimpleActivity() {
     override fun onResume() {
         super.onResume()
         setupTopAppBar(binding.compareListAppbar, NavigationIcon.Arrow)
+        // len placeholder — dlaždice skupín majú vlastný biely počet na tmavom prekrytí,
+        // plošné updateTextColors by ho vo svetlej téme prefarbilo na tmavý (nečitateľný)
+        binding.compareListPlaceholder.setTextColor(getProperTextColor())
         updateTitle()
-        loadGroups()
+        // pri návrate z porovnávača zachovať pozíciu scrollu (výmena adaptéra by ju zhodila)
+        loadGroups(preserveScroll = true)
     }
 
     private fun updateTitle() {
@@ -52,7 +57,7 @@ class CompareListActivity : SimpleActivity() {
             getString(if (duplicatesMode) R.string.compare_mode_duplicates else R.string.compare_title)
     }
 
-    private fun loadGroups() {
+    private fun loadGroups(preserveScroll: Boolean = false) {
         ensureBackgroundThread {
             val groups = try {
                 buildGroups()
@@ -61,8 +66,19 @@ class CompareListActivity : SimpleActivity() {
             }
             runOnUiThread {
                 if (isDestroyed || isFinishing) return@runOnUiThread
-                if (groups.isEmpty()) binding.compareListPlaceholder.beVisible() else binding.compareListPlaceholder.beGone()
+                if (groups.isEmpty()) {
+                    // odlíšený prázdny stav pre záložku Duplikáty (iný dôvod aj rada než pri burstoch)
+                    binding.compareListPlaceholder.text = getString(
+                        if (duplicatesMode) R.string.compare_none_duplicates else R.string.compare_none
+                    )
+                    binding.compareListPlaceholder.beVisible()
+                } else {
+                    binding.compareListPlaceholder.beGone()
+                }
+                // výmena adaptéra resetuje scroll — pri onResume ho obnovíme, pri prepnutí záložky nie
+                val lmState = if (preserveScroll) binding.compareListGrid.layoutManager?.onSaveInstanceState() else null
                 binding.compareListGrid.adapter = CompareGroupsAdapter(this, groups) { group -> openComparator(group) }
+                lmState?.let { binding.compareListGrid.layoutManager?.onRestoreInstanceState(it) }
             }
         }
     }
@@ -150,8 +166,12 @@ class CompareListActivity : SimpleActivity() {
             prevTaken = t
             prevFolder = f
         }
-        // najnovšie série hore
-        return groups.filter { it.size >= 2 }.sortedByDescending { g -> g.maxOfOrNull { java.io.File(it).lastModified() } ?: 0L }
+        // najnovšie série hore — max lastModified skupiny vypočítať IBA RAZ (do páru),
+        // nie v komparátore pri každom porovnaní (ušetrí tisíce syscallov pri veľkej knižnici)
+        return groups.filter { it.size >= 2 }
+            .map { g -> g to (g.maxOfOrNull { java.io.File(it).lastModified() } ?: 0L) }
+            .sortedByDescending { it.second }
+            .map { it.first }
     }
 
     companion object {

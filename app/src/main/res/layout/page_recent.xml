@@ -5,23 +5,45 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent">
 
-    <com.qtalk.recyclerviewfastscroller.RecyclerViewFastScroller
-        android:id="@+id/recent_fastscroller"
+    <!-- potiahnutie nadol = prenačítanie mriežky (rovnaký vzor ako Priečinky) -->
+    <androidx.swiperefreshlayout.widget.SwipeRefreshLayout
+        android:id="@+id/recent_refresh_layout"
         android:layout_width="match_parent"
         android:layout_height="match_parent">
 
-        <!-- layoutManager MUSÍ byť už v XML: stránkovač pripojí všetky štyri stránky hneď pri
-             štarte a posuvník (fast-scroller) si vypýta layoutManager skôr, než ho stihne
-             nastaviť kód pri prvom otvorení stránky -> inak appka padne hneď po spustení. -->
-        <org.fossify.commons.views.MyRecyclerView
-            android:id="@+id/recent_grid"
+        <com.qtalk.recyclerviewfastscroller.RecyclerViewFastScroller
+            android:id="@+id/recent_fastscroller"
             android:layout_width="match_parent"
             android:layout_height="match_parent"
-            android:clipToPadding="false"
-            android:padding="1dp"
-            android:scrollbars="none"
-            app:layoutManager="org.fossify.commons.views.MyGridLayoutManager"
-            app:spanCount="3" />
+            app:supportSwipeToRefresh="true">
 
-    </com.qtalk.recyclerviewfastscroller.RecyclerViewFastScroller>
+            <!-- layoutManager MUSÍ byť už v XML: stránkovač pripojí všetky štyri stránky hneď pri
+                 štarte a posuvník (fast-scroller) si vypýta layoutManager skôr, než ho stihne
+                 nastaviť kód pri prvom otvorení stránky -> inak appka padne hneď po spustení.
+                 spanCount=3 tu nechať — skutočný počet stĺpcov nastavuje kód podľa prefs. -->
+            <org.fossify.commons.views.MyRecyclerView
+                android:id="@+id/recent_grid"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:clipToPadding="false"
+                android:padding="1dp"
+                android:scrollbars="none"
+                app:layoutManager="org.fossify.commons.views.MyGridLayoutManager"
+                app:spanCount="3" />
+
+        </com.qtalk.recyclerviewfastscroller.RecyclerViewFastScroller>
+    </androidx.swiperefreshlayout.widget.SwipeRefreshLayout>
+
+    <!-- prázdny stav: čerstvé zariadenie bez fotiek (alebo zlyhaný dopyt) -->
+    <org.fossify.commons.views.MyTextView
+        android:id="@+id/recent_placeholder"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:alpha="0.8"
+        android:gravity="center_horizontal"
+        android:padding="@dimen/activity_margin"
+        android:text="@string/a1_recent_empty"
+        android:textSize="@dimen/bigger_text_size"
+        android:textStyle="italic"
+        android:visibility="gone" />
 </FrameLayout>

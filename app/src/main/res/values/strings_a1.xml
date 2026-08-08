@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Stringy pre prestavbu hlavnej obrazovky (stránka Posledné, počty na Preskúmať) -->
+<resources>
+    <!-- stránka Posledné — prázdny stav -->
+    <string name="a1_recent_empty">Zatiaľ tu nie sú žiadne fotky</string>
+
+    <!-- Preskúmať — počty na kartách -->
+    <plurals name="a1_explore_people_count">
+        <item quantity="one">%d pomenovaná osoba</item>
+        <item quantity="few">%d pomenované osoby</item>
+        <item quantity="many">%d pomenovaných osôb</item>
+        <item quantity="other">%d pomenovaných osôb</item>
+    </plurals>
+    <plurals name="a1_explore_docs_count">
+        <item quantity="one">%d fotka s textom</item>
+        <item quantity="few">%d fotky s textom</item>
+        <item quantity="many">%d fotiek s textom</item>
+        <item quantity="other">%d fotiek s textom</item>
+    </plurals>
+    <plurals name="a1_explore_places_count">
+        <item quantity="one">%d fotka s polohou</item>
+        <item quantity="few">%d fotky s polohou</item>
+        <item quantity="many">%d fotiek s polohou</item>
+        <item quantity="other">%d fotiek s polohou</item>
+    </plurals>
+    <!-- Domov — nové dlaždice (vlastné SK stringy, commons camera/favorites sú lokalizované podľa systému) -->
+    <string name="a1_tile_camera">Fotoaparát</string>
+    <string name="a1_tile_favorites">Obľúbené</string>
+</resources>

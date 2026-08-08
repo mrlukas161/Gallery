@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Prehľad spracovania knižnice (IndexStatus / SettingsActivity) -->
+    <string name="a3_index_overview_done_no_clip">Hotovo ✓ — model na hľadanie predmetov nie je stiahnutý (ťukni na stiahnutie)</string>
+    <string name="a3_index_detail_model_missing">" (model nestiahnutý)"</string>
+
+    <!-- Sťahovanie CLIP modelov na mobilných dátach (SettingsActivity / IndexingService) -->
+    <string name="a3_clip_metered_title">Sťahovanie na mobilných dátach</string>
+    <string name="a3_clip_metered_text">Si na mobilných dátach. Model na hľadanie predmetov má %1$s — stiahnuť teraz, alebo počkať na WiFi?</string>
+    <string name="a3_clip_metered_download">Stiahnuť teraz</string>
+    <string name="a3_clip_size_main">~150–580 MB</string>
+    <string name="a3_clip_size_ml">~500 MB</string>
+    <string name="a3_clip_metered_skipped">model sa na mobilných dátach nesťahuje — spusti na WiFi, alebo potvrď sťahovanie v Nastaveniach</string>
+
+    <!-- PC sync server — viditeľné chyby štartu (HttpSyncService / SettingsActivity) -->
+    <string name="a3_pc_server_no_wifi">Server sa nespustil — pripoj telefón na WiFi (bez nej adresa pre PC neexistuje)</string>
+    <string name="a3_pc_server_start_failed">Server sa nespustil: %1$s (port môže byť obsadený — skús o chvíľu znova)</string>
+    <string name="a3_pc_server_error_summary">Nespustený — %1$s\nŤuknutím skúsiš znova</string>
+</resources>

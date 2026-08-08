@@ -670,12 +670,6 @@
             android:parentActivityName=".activities.PeopleActivity" />
 
         <activity
-            android:name=".activities.PersonPhotoPagerActivity"
-            android:configChanges="orientation|screenSize"
-            android:exported="false"
-            android:parentActivityName=".activities.PersonActivity" />
-
-        <activity
             android:name=".activities.PeopleSearchActivity"
             android:configChanges="orientation"
             android:exported="false"

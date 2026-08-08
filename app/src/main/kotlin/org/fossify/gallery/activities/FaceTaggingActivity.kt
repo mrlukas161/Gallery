@@ -3,14 +3,19 @@ package org.fossify.gallery.activities
 import android.content.Context
 import android.os.Bundle
 import android.view.View
-import android.widget.EditText
+import android.widget.LinearLayout
 import android.widget.SeekBar
-import androidx.appcompat.app.AlertDialog
 import androidx.recyclerview.widget.GridLayoutManager
+import org.fossify.commons.dialogs.RadioGroupDialog
+import org.fossify.commons.extensions.getAlertDialogBuilder
+import org.fossify.commons.extensions.setupDialogStuff
 import org.fossify.commons.extensions.toast
+import org.fossify.commons.extensions.value
 import org.fossify.commons.extensions.viewBinding
 import org.fossify.commons.helpers.NavigationIcon
 import org.fossify.commons.helpers.ensureBackgroundThread
+import org.fossify.commons.models.RadioItem
+import org.fossify.commons.views.MyEditText
 import org.fossify.gallery.R
 import org.fossify.gallery.adapters.FaceTagAdapter
 import org.fossify.gallery.databinding.ActivityFaceTaggingBinding
@@ -326,19 +331,17 @@ class FaceTaggingActivity : SimpleActivity() {
             val persons = PeopleDatabase.getInstance(this).PeopleDao().getPersons()
             runOnUiThread {
                 if (isDestroyed || isFinishing) return@runOnUiThread
-                val labels = ArrayList<String>()
-                persons.forEach { labels.add(it.name ?: "#${it.id}") }
-                labels.add(getString(R.string.new_person))
-                AlertDialog.Builder(this)
-                    .setTitle(R.string.assign_to_person)
-                    .setItems(labels.toTypedArray()) { _, which ->
-                        if (which == persons.size) {
-                            promptName { name -> doAssign(ids, null, name) }
-                        } else {
-                            doAssign(ids, persons[which].id, null)
-                        }
+                val items = ArrayList<RadioItem>()
+                persons.forEachIndexed { index, person -> items.add(RadioItem(index, person.name ?: "#${person.id}")) }
+                items.add(RadioItem(persons.size, getString(R.string.new_person)))
+                RadioGroupDialog(this, items, titleId = R.string.assign_to_person) {
+                    val which = it as Int
+                    if (which == persons.size) {
+                        promptName { name -> doAssign(ids, null, name) }
+                    } else {
+                        doAssign(ids, persons[which].id, null)
                     }
-                    .show()
+                }
             }
         }
     }
@@ -381,16 +384,24 @@ class FaceTaggingActivity : SimpleActivity() {
     }
 
     private fun promptName(onName: (String) -> Unit) {
-        val input = EditText(this)
-        AlertDialog.Builder(this)
-            .setTitle(R.string.enter_name)
-            .setView(input)
-            .setPositiveButton(android.R.string.ok) { _, _ ->
-                val name = input.text.toString().trim()
+        val input = MyEditText(this).apply { setSingleLine() }
+        val margin = resources.getDimensionPixelSize(org.fossify.commons.R.dimen.activity_margin)
+        val wrapper = LinearLayout(this).apply {
+            setPadding(margin, margin / 2, margin, 0)
+            addView(
+                input,
+                LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT),
+            )
+        }
+        getAlertDialogBuilder()
+            .setPositiveButton(org.fossify.commons.R.string.ok) { _, _ ->
+                val name = input.value
                 if (name.isNotEmpty()) onName(name)
             }
-            .setNegativeButton(android.R.string.cancel, null)
-            .show()
+            .setNegativeButton(org.fossify.commons.R.string.cancel, null)
+            .apply {
+                setupDialogStuff(wrapper, this, R.string.enter_name)
+            }
     }
 
     companion object {

@@ -4,13 +4,17 @@ import android.content.Intent
 import android.os.Bundle
 import android.provider.MediaStore
 import androidx.recyclerview.widget.GridLayoutManager
+import org.fossify.commons.dialogs.RadioGroupDialog
 import org.fossify.commons.extensions.getProperPrimaryColor
+import org.fossify.commons.extensions.updateTextColors
 import org.fossify.commons.extensions.viewBinding
 import org.fossify.commons.helpers.NavigationIcon
 import org.fossify.commons.helpers.ensureBackgroundThread
+import org.fossify.commons.models.RadioItem
 import org.fossify.gallery.R
-import org.fossify.gallery.adapters.PersonPhotosAdapter
+import org.fossify.gallery.adapters.PhotoPathsAdapter
 import org.fossify.gallery.databinding.ActivityDocsBinding
+import org.fossify.gallery.helpers.GridZoom
 import org.fossify.gallery.helpers.PATH
 import org.fossify.gallery.helpers.PathTransfer
 import org.fossify.gallery.helpers.SHOW_ALL
@@ -23,13 +27,17 @@ class SpecialActivity : SimpleActivity() {
     private var found = HashMap<SpecialPhoto.Kind, MutableList<String>>()
     private var shown = ArrayList<String>()
     private var filter: SpecialPhoto.Kind? = null
+    private val prefs by lazy { getSharedPreferences("galeria_faces", android.content.Context.MODE_PRIVATE) }
     @Volatile
     private var scanning = true
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(binding.root)
-        binding.docsGrid.layoutManager = GridLayoutManager(this, 3)
+        // pinch-zoom mení počet stĺpcov a pamätá si ho — rovnaké ovládanie ako v ostatných mriežkach
+        val lm = GridLayoutManager(this, prefs.getInt("special_columns", 3))
+        binding.docsGrid.layoutManager = lm
+        GridZoom.setup(binding.docsGrid, lm, prefs, "special_columns")
         binding.docsFastscroller.updateColors(getProperPrimaryColor())
         binding.docsToolbar.title = getString(R.string.special_title)
         scan()
@@ -38,6 +46,9 @@ class SpecialActivity : SimpleActivity() {
     override fun onResume() {
         super.onResume()
         setupTopAppBar(binding.docsAppbar, NavigationIcon.Arrow)
+        // prefarbenie podľa témy Fossify — inak by boli texty „skenujem/nič sa nenašlo"
+        // vo svetlej téme svetlosivé na bielom (téma z XML je vždy tmavá M3)
+        updateTextColors(binding.docsCoordinator)
         binding.docsToolbar.menu.clear()
         binding.docsToolbar.inflateMenu(R.menu.menu_docs)
         binding.docsToolbar.setOnMenuItemClickListener { item ->
@@ -113,7 +124,21 @@ class SpecialActivity : SimpleActivity() {
             if (f == null) found.values.flatten().distinct() else (found[f]?.toList() ?: emptyList())
         }
         shown = ArrayList(paths)
-        binding.docsGrid.adapter = PersonPhotosAdapter(this, shown, onClick = { p -> openPhoto(p) })
+        // adaptér vzniká len RAZ — počas skenu sa applyFilter volá každých 60 fotiek a výmena
+        // adaptéra by zakaždým zhodila scroll na začiatok; updateItems pozíciu drží
+        val existing = binding.docsGrid.adapter as? PhotoPathsAdapter
+        if (existing == null) {
+            binding.docsGrid.adapter = PhotoPathsAdapter(
+                this, shown, binding.docsGrid,
+                onClick = { p -> openPhoto(p) },
+                onDeleted = { deleted ->
+                    synchronized(found) { found.values.forEach { it.removeAll(deleted.toSet()) } }
+                    applyFilter()
+                },
+            )
+        } else {
+            existing.updateItems(shown)
+        }
         binding.docsPlaceholder.visibility = if (shown.isEmpty()) android.view.View.VISIBLE else android.view.View.GONE
         if (shown.isEmpty()) {
             binding.docsPlaceholder.text = getString(R.string.special_none)
@@ -122,23 +147,21 @@ class SpecialActivity : SimpleActivity() {
 
     private fun showFilterDialog() {
         val kinds = listOf<SpecialPhoto.Kind?>(null) + SpecialPhoto.Kind.entries
-        val labels = kinds.map { k ->
+        // Fossify dialóg (RadioGroupDialog) namiesto surového AlertDialog.Builder —
+        // správne témovanie (pozadie, texty aj tlačidlá podľa zvolenej témy)
+        val items = ArrayList<RadioItem>()
+        kinds.forEachIndexed { i, k ->
             val name = if (k == null) getString(R.string.docs_filter_all) else getString(SpecialPhoto.labelRes(k))
             val cnt = synchronized(found) {
                 if (k == null) found.values.flatten().distinct().size else (found[k]?.size ?: 0)
             }
-            "$name ($cnt)"
-        }.toTypedArray()
+            items.add(RadioItem(i, "$name ($cnt)"))
+        }
         val current = kinds.indexOfFirst { it == filter }.coerceAtLeast(0)
-        androidx.appcompat.app.AlertDialog.Builder(this)
-            .setTitle(R.string.filter_media)
-            .setSingleChoiceItems(labels, current) { dlg, which ->
-                filter = kinds[which]
-                applyFilter()
-                dlg.dismiss()
-            }
-            .setNegativeButton(org.fossify.commons.R.string.cancel, null)
-            .show()
+        RadioGroupDialog(this, items, current, R.string.filter_media) {
+            filter = kinds[it as Int]
+            applyFilter()
+        }
     }
 
     private fun openPhoto(path: String) {

@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/photo_path_holder"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
+    android:clickable="true"
+    android:focusable="true">
+
+    <org.fossify.commons.views.MySquareImageView
+        android:id="@+id/photo_image"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:padding="1dp"
+        android:scaleType="centerCrop" />
+
+    <!-- ▶ indikátor videa — rovnaký vzhľad ako v mriežke albumu (video_item_grid.xml) -->
+    <ImageView
+        android:id="@+id/photo_play_outline"
+        android:layout_width="@dimen/selection_check_size"
+        android:layout_height="@dimen/selection_check_size"
+        android:layout_alignParentStart="true"
+        android:layout_alignParentTop="true"
+        android:layout_marginStart="@dimen/small_margin"
+        android:layout_marginTop="@dimen/small_margin"
+        android:background="@drawable/darkened_automatic_circle_background"
+        android:contentDescription="@null"
+        android:src="@drawable/ic_play_vector"
+        android:visibility="gone" />
+
+    <!-- fajka vybratej fotky — rovnaký vzhľad ako v mriežke albumu (photo_item_grid.xml) -->
+    <ImageView
+        android:id="@+id/photo_check"
+        android:layout_width="@dimen/selection_check_size"
+        android:layout_height="@dimen/selection_check_size"
+        android:layout_alignParentTop="true"
+        android:layout_alignParentEnd="true"
+        android:layout_margin="@dimen/medium_margin"
+        android:background="@drawable/circle_background"
+        android:contentDescription="@null"
+        android:padding="@dimen/tiny_margin"
+        android:src="@drawable/ic_check_vector"
+        android:visibility="gone" />
+
+</RelativeLayout>

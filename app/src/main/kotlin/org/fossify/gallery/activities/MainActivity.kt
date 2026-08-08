@@ -19,6 +19,7 @@ import androidx.recyclerview.widget.RecyclerView
 import org.fossify.commons.dialogs.CreateNewFolderDialog
 import org.fossify.commons.dialogs.FilePickerDialog
 import org.fossify.commons.dialogs.RadioGroupDialog
+import org.fossify.commons.extensions.adjustAlpha
 import org.fossify.commons.extensions.appLaunched
 import org.fossify.commons.extensions.appLockManager
 import org.fossify.commons.extensions.areSystemAnimationsEnabled
@@ -35,8 +36,11 @@ import org.fossify.commons.extensions.getFilenameFromPath
 import org.fossify.commons.extensions.getLatestMediaByDateId
 import org.fossify.commons.extensions.getLatestMediaId
 import org.fossify.commons.extensions.getMimeType
+import org.fossify.commons.extensions.getParentPath
 import org.fossify.commons.extensions.getProperBackgroundColor
+import org.fossify.commons.extensions.getBottomNavigationBackgroundColor
 import org.fossify.commons.extensions.getProperPrimaryColor
+import org.fossify.commons.extensions.updateTextColors
 import org.fossify.commons.extensions.getProperSize
 import org.fossify.commons.extensions.getProperTextColor
 import org.fossify.commons.extensions.formatSize
@@ -90,7 +94,7 @@ import org.fossify.gallery.BuildConfig
 import org.fossify.gallery.R
 import org.fossify.gallery.adapters.DirectoryAdapter
 import org.fossify.gallery.adapters.MainPagesAdapter
-import org.fossify.gallery.adapters.PersonPhotosAdapter
+import org.fossify.gallery.adapters.PhotoPathsAdapter
 import org.fossify.gallery.databases.GalleryDatabase
 import org.fossify.gallery.databinding.ActivityMainBinding
 import org.fossify.gallery.dialogs.ChangeSortingDialog
@@ -135,6 +139,7 @@ import org.fossify.gallery.helpers.GROUP_BY_DATE_TAKEN_MONTHLY
 import org.fossify.gallery.helpers.GROUP_BY_LAST_MODIFIED_DAILY
 import org.fossify.gallery.helpers.GROUP_BY_LAST_MODIFIED_MONTHLY
 import org.fossify.gallery.helpers.GROUP_DESCENDING
+import org.fossify.gallery.helpers.GridZoom
 import org.fossify.gallery.helpers.HomeStats
 import org.fossify.gallery.helpers.IndexStatus
 import org.fossify.gallery.helpers.LOCATION_INTERNAL
@@ -184,6 +189,12 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
         // „Na upratanie" prechádza celý pHash index — neprepočítavame ho častejšie ako raz za pol minúty
         private const val HOME_CLEANUP_MIN_INTERVAL = 30_000L
 
+        // cache stránky Posledné: po tomto čase mimo stránky sa pri návrate prenačíta
+        private const val RECENT_CACHE_MAX_AGE = 2 * 60_000L
+
+        // interval obnovy riadku stavu na Domove počas behu indexovania
+        private const val HOME_STATUS_TICK = 2_000L
+
         // aby dialóg „označené z PC" neotravoval pri každom onResume, pýtame sa len keď sa počet zmení
         @Volatile
         private var lastPcMarkedPrompt = -1
@@ -225,9 +236,16 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
     private var mDirs = ArrayList<Directory>()
     private var mDirsIgnoringSearch = ArrayList<Directory>()
 
-    // stránka Posledné — najnovšie fotky knižnice (načítajú sa raz, pri prvom zobrazení)
+    // stránka Posledné — najnovšie fotky a videá knižnice (cache sa invaliduje pri zmene knižnice)
     private var mRecentPaths = ArrayList<String>()
     private var mRecentLoading = false
+    private var mRecentLoadedAt = 0L
+
+    // ticker živého stavu spracovania na Domove (beží len keď je aktivita resumed)
+    private val mHomeStatusHandler = Handler()
+
+    // počty na kartách Preskúmať sa neprepočítavajú častejšie ako HOME_CLEANUP_MIN_INTERVAL
+    private var mExploreCountsAt = 0L
 
     // spodné odsadenie mriežok o výšku spodnej lišty sa nastavuje len raz
     private var mBottomNavPaddingApplied = false
@@ -343,9 +361,6 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
             org.fossify.gallery.faces.OcrCleanup.runIfNeeded(this)
         }
 
-        // na tomto mieste sú už udelené oprávnenia — až tu má zmysel ponúknuť uvítanie
-        maybeShowIntro()
-
         // ak nová navigácia zlyhala, povedz to nahlas — nech vieme, čo presne opraviť
         mStartupError?.let { err ->
             mStartupError = null
@@ -367,8 +382,13 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
             launchSearchActivity()
         }
 
-        // just request the permission, tryLoadGallery will then trigger in onResume
-        handleMediaPermissions()
+        // potiahnutie nadol na Posledných = zneplatnenie cache a prenačítanie mriežky
+        binding.pageRecent.recentRefreshLayout.setOnRefreshListener { invalidateRecent() }
+
+        // just request the permission, tryLoadGallery will then trigger in onResume;
+        // uvítanie sa ponúkne až PO udelení oprávnení — inak by ho prekryl systémový dialóg
+        // a spustené indexovanie by bežalo bez prístupu k médiám
+        handleMediaPermissions { maybeShowIntro() }
     }
 
     // stránkovač hlavnej obrazovky: Domov · Priečinky · Posledné · Preskúmať
@@ -394,6 +414,16 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
             true
         }
 
+        // opätovné ťuknutie na už aktívnu záložku = návrat na začiatok stránky (štandard M3)
+        binding.mainBottomNav.setOnItemReselectedListener { item ->
+            when (item.itemId) {
+                R.id.nav_recent -> binding.pageRecent.recentGrid.smoothScrollToPosition(0)
+                R.id.nav_folders -> binding.directoriesGrid.smoothScrollToPosition(0)
+                R.id.nav_home -> binding.pageHome.root.smoothScrollTo(0, 0)
+                R.id.nav_explore -> binding.pageExplore.root.smoothScrollTo(0, 0)
+            }
+        }
+
         binding.mainPager.addOnPageChangeListener(object : androidx.viewpager.widget.ViewPager.OnPageChangeListener {
             override fun onPageScrolled(position: Int, offset: Float, offsetPx: Int) {}
 
@@ -416,6 +446,11 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
                 // pri návrate na Domov premietneme aktuálny stav (výpočet má vlastnú brzdu)
                 if (position == MainPagesAdapter.PAGE_HOME) {
                     refreshHome()
+                }
+
+                // na Preskúmať doplníme na karty aktuálne počty (lacné COUNT dopyty na pozadí)
+                if (position == MainPagesAdapter.PAGE_EXPLORE) {
+                    refreshExploreCounts()
                 }
             }
 
@@ -492,6 +527,73 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
             // otvor hlavné hľadanie galérie
             startActivity(Intent(this, SearchActivity::class.java))
         }
+
+        refreshExploreCounts()
+    }
+
+    // Počty na kartách Preskúmať (osoby / fotky s textom / fotky s polohou) — lacné COUNT
+    // dopyty na pozadí; brzda cez mExploreCountsAt, nech sa nerátajú pri každom prepnutí.
+    private fun refreshExploreCounts() {
+        if (mIsThirdPartyIntent) {
+            return
+        }
+
+        val now = System.currentTimeMillis()
+        if (mExploreCountsAt > 0 && now - mExploreCountsAt < HOME_CLEANUP_MIN_INTERVAL) {
+            return
+        }
+
+        mExploreCountsAt = now
+        ensureBackgroundThread {
+            val people = try {
+                org.fossify.gallery.faces.PeopleDatabase.getInstance(this).PeopleDao()
+                    .getPersons().count { !it.name.isNullOrBlank() }
+            } catch (ignored: Throwable) {
+                0
+            }
+            // DocClassifier.loadAll je drahý — počet fotiek s textom z OCR databázy stačí
+            val docs = try {
+                org.fossify.gallery.faces.OcrDatabase.getInstance(this).OcrDao().countWithText()
+            } catch (ignored: Throwable) {
+                0
+            }
+            val places = try {
+                org.fossify.gallery.faces.GeoDatabase.getInstance(this).GeoDao().countGeotagged()
+            } catch (ignored: Throwable) {
+                0
+            }
+
+            runOnUiThread {
+                if (isDestroyed || isFinishing) {
+                    return@runOnUiThread
+                }
+
+                try {
+                    if (people > 0) {
+                        exploreCardSubtitle(binding.pageExplore.explorePeople)?.text =
+                            resources.getQuantityString(R.plurals.a1_explore_people_count, people, people)
+                    }
+                    if (docs > 0) {
+                        exploreCardSubtitle(binding.pageExplore.exploreDocs)?.text =
+                            resources.getQuantityString(R.plurals.a1_explore_docs_count, docs, docs)
+                    }
+                    if (places > 0) {
+                        exploreCardSubtitle(binding.pageExplore.explorePlaces)?.text =
+                            resources.getQuantityString(R.plurals.a1_explore_places_count, places, places)
+                    }
+                } catch (ignored: Throwable) {
+                }
+            }
+        }
+    }
+
+    // Podtitulky kariet Preskúmať nemajú v layoute vlastné id — nájdeme ich podľa štruktúry
+    // karty (karta -> riadok -> stĺpec textov -> druhý text). Bezpečné casty, pri zmene
+    // layoutu vráti null a počet sa jednoducho nezobrazí.
+    private fun exploreCardSubtitle(card: ViewGroup): MyTextView? {
+        val row = card.getChildAt(0) as? ViewGroup ?: return null
+        val texts = row.getChildAt(1) as? ViewGroup ?: return null
+        return texts.getChildAt(1) as? MyTextView
     }
 
     // Stránka Domov: hľadanie, karta „Na upratanie", štyri skratky, stav spracovania a priečinky.
@@ -516,6 +618,13 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
         page.homeTileMemories.setOnClickListener {
             startActivity(Intent(this, MemoriesActivity::class.java))
         }
+        page.homeTileCamera.setOnClickListener {
+            launchCamera()
+        }
+        page.homeTileFavorites.setOnClickListener {
+            // Obľúbené sú virtuálny priečinok — otvoria sa ako bežný album
+            itemClicked(FAVORITES)
+        }
         page.homeStatus.setOnClickListener {
             org.fossify.gallery.services.IndexingService.start(
                 this, org.fossify.gallery.services.IndexingService.TASK_ALL,
@@ -526,7 +635,48 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
             FolderSort.showDialog(this) { refreshHomeFolders() }
         }
 
-        refreshHome(force = true)
+        // prvé naplnenie Domova rieši setupPages (štart na Domove) alebo onPageSelected —
+        // druhé volanie tu by len duplicitne spúšťalo DB dopyty pri každom štarte
+    }
+
+    // Farby nových stránok (Domov, Preskúmať) a spodnej lišty podľa témy Fossify — MyTextView si
+    // samy farbu nenastavia a vo svetlej téme by text kariet ostal svetlý/nečitateľný. Volá sa
+    // z onResume, takže sa premietne aj zmena témy v Nastaveniach po návrate späť.
+    private fun updatePageColors() {
+        if (mIsThirdPartyIntent) {
+            return
+        }
+
+        try {
+            updateTextColors(binding.pageHome.root)
+            updateTextColors(binding.pageExplore.root)
+
+            val cardColor = getBottomNavigationBackgroundColor()
+            listOf(
+                binding.pageHome.homeCleanup,
+                binding.pageExplore.exploreMemories,
+                binding.pageExplore.explorePeople,
+                binding.pageExplore.explorePlaces,
+                binding.pageExplore.exploreDocs,
+                binding.pageExplore.exploreSpecial,
+                binding.pageExplore.exploreSimilar,
+                binding.pageExplore.exploreSearch,
+            ).forEach { it.setCardBackgroundColor(cardColor) }
+
+            val states = arrayOf(intArrayOf(android.R.attr.state_checked), intArrayOf())
+            val itemColors = android.content.res.ColorStateList(
+                states, intArrayOf(getProperPrimaryColor(), getProperTextColor()),
+            )
+            binding.mainBottomNav.setBackgroundColor(cardColor)
+            binding.mainBottomNav.itemIconTintList = itemColors
+            binding.mainBottomNav.itemTextColor = itemColors
+            // aktívna „pilulka" M3 za zvolenou ikonou by inak ostala tmavá z Material3 témy —
+            // priesvitný akcent (~40/255) sedí so zvyškom prefarbenia
+            binding.mainBottomNav.itemActiveIndicatorColor =
+                android.content.res.ColorStateList.valueOf(getProperPrimaryColor().adjustAlpha(0.16f))
+        } catch (e: Throwable) {
+            android.util.Log.e("GaleriaPlus", "zlyhalo prefarbenie stránok", e)
+        }
     }
 
     // `force` obíde pamäť posledného výpočtu (pri prvom zobrazení Domova ju chceme naplniť hneď)
@@ -647,6 +797,9 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
             binding.mainPager.setCurrentItem(MainPagesAdapter.PAGE_FOLDERS, true)
         }
         page.homeFoldersList.addView(all)
+
+        // riadky sa nafukujú dynamicky — musia dostať farbu témy hneď (nie až pri ďalšom onResume)
+        updateTextColors(page.homeFoldersList)
     }
 
     // Spodná lišta leží nad stránkovačom a prekrývala by posledný riadok mriežok, preto im
@@ -709,31 +862,19 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
         }
     }
 
-    // Stránka Posledné: chronologická mriežka najnovších fotiek naprieč celou knižnicou.
+    // Stránka Posledné: chronologická mriežka najnovších fotiek A VIDEÍ naprieč celou knižnicou,
+    // zoradená podľa dátumu nasnímania (fallback dátum zmeny). Rešpektuje vylúčené, skryté
+    // (.nomedia) aj heslom zamknuté priečinky — tie sa v mriežke vôbec neobjavia.
     private fun loadRecentPage() {
         if (mRecentPaths.isNotEmpty() || mRecentLoading) {
+            binding.pageRecent.recentRefreshLayout.isRefreshing = false
             return
         }
 
         mRecentLoading = true
-        binding.pageRecent.recentGrid.layoutManager = GridLayoutManager(this, 3)
-        binding.pageRecent.recentFastscroller.updateColors(getProperPrimaryColor())
+        setupRecentGrid()
         ensureBackgroundThread {
-            val list = ArrayList<String>()
-            try {
-                contentResolver.query(
-                    MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
-                    arrayOf(MediaStore.Images.Media.DATA),
-                    null, null, "${MediaStore.Images.Media.DATE_MODIFIED} DESC",
-                )?.use { c ->
-                    val d = c.getColumnIndexOrThrow(MediaStore.Images.Media.DATA)
-                    // pri veľkých knižniciach stačí najnovších 3000 položiek
-                    while (c.moveToNext() && list.size < 3000) {
-                        c.getString(d)?.let { list.add(it) }
-                    }
-                }
-            } catch (ignored: Throwable) {
-            }
+            val list = queryRecentPaths()
 
             runOnUiThread {
                 mRecentLoading = false
@@ -741,13 +882,118 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
                     return@runOnUiThread
                 }
 
+                binding.pageRecent.recentRefreshLayout.isRefreshing = false
                 mRecentPaths = list
-                binding.pageRecent.recentGrid.adapter = PersonPhotosAdapter(
+                mRecentLoadedAt = System.currentTimeMillis()
+                binding.pageRecent.recentPlaceholder.beVisibleIf(list.isEmpty())
+                binding.pageRecent.recentGrid.adapter = PhotoPathsAdapter(
                     activity = this@MainActivity,
                     paths = mRecentPaths,
+                    recyclerView = binding.pageRecent.recentGrid,
                     onClick = { path -> openRecentPhoto(path) },
+                    onDeleted = {
+                        // po zmazaní sa cache zneplatní (kôš/DB mohli zmeniť aj ďalšie údaje);
+                        // post() — nech sa adaptér nevymieňa uprostred odoberacej animácie
+                        binding.pageRecent.recentGrid.post { invalidateRecent() }
+                        refreshHome(force = true)
+                    },
                 )
             }
+        }
+    }
+
+    // mriežka Posledných: počet stĺpcov z prefs + pinch-zoom (rovnaký vzor ako mriežky osôb);
+    // app:spanCount=3 v XML ostáva ako poistka proti pádu fast-scrollera pri štarte
+    private fun setupRecentGrid() {
+        val prefs = getSharedPreferences("galeria_faces", android.content.Context.MODE_PRIVATE)
+        val columns = prefs.getInt("recent_columns", 3).coerceIn(GridZoom.MIN, GridZoom.MAX)
+        val grid = binding.pageRecent.recentGrid
+        val lm = grid.layoutManager as? GridLayoutManager
+            ?: GridLayoutManager(this, columns).also { grid.layoutManager = it }
+        lm.spanCount = columns
+        GridZoom.setup(grid, lm, prefs, "recent_columns")
+        binding.pageRecent.recentFastscroller.updateColors(getProperPrimaryColor())
+    }
+
+    // MediaStore dopyt pre Posledné — fotky aj videá; zoradenie rátame v Kotline
+    // (COALESCE v sort order MediaStore nemusí zvládnuť). Beží na pozadí.
+    private fun queryRecentPaths(): ArrayList<String> {
+        val rows = ArrayList<Pair<String, Long>>()
+        try {
+            contentResolver.query(
+                MediaStore.Files.getContentUri("external"),
+                arrayOf(
+                    MediaStore.Files.FileColumns.DATA,
+                    MediaStore.Files.FileColumns.MEDIA_TYPE,
+                    Images.Media.DATE_TAKEN,
+                    MediaStore.Files.FileColumns.DATE_MODIFIED,
+                ),
+                "${MediaStore.Files.FileColumns.MEDIA_TYPE} IN (?, ?)",
+                arrayOf(
+                    MediaStore.Files.FileColumns.MEDIA_TYPE_IMAGE.toString(),
+                    MediaStore.Files.FileColumns.MEDIA_TYPE_VIDEO.toString(),
+                ),
+                "${MediaStore.Files.FileColumns.DATE_MODIFIED} DESC",
+            )?.use { c ->
+                val dataCol = c.getColumnIndexOrThrow(MediaStore.Files.FileColumns.DATA)
+                val takenCol = c.getColumnIndexOrThrow(Images.Media.DATE_TAKEN)
+                val modifiedCol = c.getColumnIndexOrThrow(MediaStore.Files.FileColumns.DATE_MODIFIED)
+                while (c.moveToNext()) {
+                    val path = c.getString(dataCol) ?: continue
+                    val taken = c.getLong(takenCol)
+                    val modified = c.getLong(modifiedCol) * 1000
+                    rows.add(path to if (taken > 0) taken else modified)
+                }
+            }
+        } catch (ignored: Throwable) {
+        }
+
+        rows.sortByDescending { it.second }
+
+        // vylúčené / skryté / zamknuté priečinky sa na Posledných nesmú objaviť
+        val excluded = if (config.temporarilyShowExcluded) emptySet() else config.excludedFolders
+        val showHidden = config.shouldShowHidden
+        val noMediaFolders = if (showHidden) {
+            emptyList<String>()
+        } else {
+            try {
+                getNoMediaFoldersSync()
+            } catch (ignored: Throwable) {
+                emptyList<String>()
+            }
+        }
+
+        // rozhodnutie per PRIEČINOK sa cachuje — v jednom priečinku bývajú stovky fotiek
+        val allowedParents = HashMap<String, Boolean>()
+        val list = ArrayList<String>()
+        for ((path, _) in rows) {
+            // pri veľkých knižniciach stačí najnovších 3000 položiek
+            if (list.size >= 3000) {
+                break
+            }
+
+            val parent = path.getParentPath()
+            val allowed = allowedParents.getOrPut(parent) {
+                excluded.none { parent.startsWith(it) }
+                        && (showHidden || (!parent.contains("/.") && noMediaFolders.none { parent.startsWith(it) }))
+                        && !config.isFolderProtected(parent)
+            }
+            if (allowed) {
+                list.add(path)
+            }
+        }
+        return list
+    }
+
+    // Zneplatnenie cache Posledných — volá sa pri zmene knižnice (nové/zmazané médiá).
+    // Keď je stránka práve na obrazovke, mriežka sa hneď prenačíta.
+    private fun invalidateRecent() {
+        mRecentPaths = ArrayList()
+        mRecentLoadedAt = 0L
+        if (!isDestroyed && !isFinishing
+            && binding.mainPager.currentItem == MainPagesAdapter.PAGE_RECENT
+        ) {
+            loadRecentPage()
         }
     }
 
@@ -780,6 +1026,7 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
     override fun onResume() {
         super.onResume()
         updateMenuColors()
+        updatePageColors()
         checkPcMarkedDeletions()
         config.isThirdPartyIntent = false
         mDateFormat = config.dateFormat
@@ -818,12 +1065,15 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
 
         binding.directoriesFastscroller.updateColors(primaryColor)
         binding.directoriesRefreshLayout.isEnabled = config.enablePullToRefresh
+        binding.pageRecent.recentRefreshLayout.isEnabled = config.enablePullToRefresh
         getRecyclerAdapter()?.apply {
             dateFormat = config.dateFormat
             timeFormat = getTimeFormat()
         }
 
         binding.directoriesEmptyPlaceholder.setTextColor(getProperTextColor())
+        // prázdny stav Posledných si farbu sám nenastaví — vo svetlej téme by bol nečitateľný
+        binding.pageRecent.recentPlaceholder.setTextColor(getProperTextColor())
         binding.directoriesEmptyPlaceholder2.setTextColor(primaryColor)
         binding.directoriesSwitchSearching.setTextColor(primaryColor)
         binding.directoriesSwitchSearching.underlineText()
@@ -844,14 +1094,56 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
         if (binding.mainPager.currentItem == MainPagesAdapter.PAGE_HOME) {
             refreshHome()
         }
+
+        // Posledné: po ~2 minútach mimo appky sa cache zneplatní (nové fotky z fotoaparátu a pod.)
+        if (binding.mainPager.currentItem == MainPagesAdapter.PAGE_RECENT
+            && mRecentPaths.isNotEmpty()
+            && System.currentTimeMillis() - mRecentLoadedAt > RECENT_CACHE_MAX_AGE
+        ) {
+            invalidateRecent()
+        }
+
+        // živý stav spracovania na Domove — ticker beží, kým je aktivita resumed
+        scheduleHomeStatusTick()
+
+        // automatický dosken nových fotiek do indexov, ak sú staré (implementácia v IndexingService)
+        try {
+            org.fossify.gallery.services.IndexingService.autoScanIfStale(this)
+        } catch (e: Throwable) {
+        }
+    }
+
+    // Kým IndexingService beží a je vidno Domov, riadok stavu sa obnovuje sám každé ~2 s.
+    // Samotný tik bez behu indexovania je lacný (dve porovnania) — DB dopyty sa spúšťajú
+    // len keď naozaj beží spracovanie. Ruší sa v onPause.
+    private fun scheduleHomeStatusTick() {
+        mHomeStatusHandler.removeCallbacksAndMessages(null)
+        if (mIsThirdPartyIntent) {
+            return
+        }
+
+        mHomeStatusHandler.postDelayed({
+            if (isDestroyed || isFinishing) {
+                return@postDelayed
+            }
+
+            if (binding.mainPager.currentItem == MainPagesAdapter.PAGE_HOME
+                && org.fossify.gallery.services.IndexingService.liveProgress.isNotEmpty()
+            ) {
+                refreshHomeStatus()
+            }
+            scheduleHomeStatusTick()
+        }, HOME_STATUS_TICK)
     }
 
     override fun onPause() {
         super.onPause()
         binding.directoriesRefreshLayout.isRefreshing = false
+        binding.pageRecent.recentRefreshLayout.isRefreshing = false
         mIsGettingDirs = false
         storeStateVariables()
         mLastMediaHandler.removeCallbacksAndMessages(null)
+        mHomeStatusHandler.removeCallbacksAndMessages(null)
     }
 
     override fun onStop() {
@@ -888,6 +1180,18 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
     }
 
     override fun onBackPressedCompat(): Boolean {
+        // štandard spodnej navigácie: Späť na inej stránke sa najprv vráti na štartovú stránku,
+        // až ďalšie Späť appku zavrie (namiesto okamžitého zavretia z Domova/Posledné/Preskúmať)
+        if (!mIsThirdPartyIntent && !binding.mainMenu.isSearchOpen) {
+            val start = getSharedPreferences("galeria_faces", android.content.Context.MODE_PRIVATE)
+                .getInt("start_page", MainPagesAdapter.PAGE_FOLDERS)
+                .coerceIn(0, MainPagesAdapter.PAGE_EXPLORE)
+            if (binding.mainPager.currentItem != start) {
+                binding.mainPager.setCurrentItem(start, true)
+                return true
+            }
+        }
+
         return if (binding.mainMenu.isSearchOpen) {
             binding.mainMenu.closeSearch()
             true
@@ -1063,6 +1367,13 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
         binding.mainMenu.setupMenu()
 
         binding.mainMenu.onSearchOpenListener = {
+            // horné hľadanie filtruje mriežku Priečinkov — prepni na ňu, nech používateľ
+            // vidí, čo vlastne filtruje (na Domove/Posledných hľadanie „nič nerobilo")
+            if (!mIsThirdPartyIntent
+                && binding.mainPager.currentItem != MainPagesAdapter.PAGE_FOLDERS
+            ) {
+                binding.mainPager.setCurrentItem(MainPagesAdapter.PAGE_FOLDERS, false)
+            }
             if (config.searchAllFilesByDefault) {
                 launchSearchActivity()
             }
@@ -2215,6 +2526,8 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
                     mLatestMediaDateId = mediaDateId
                     runOnUiThread {
                         getDirectories()
+                        // knižnica sa zmenila — aj cache Posledných musí ísť preč
+                        invalidateRecent()
                     }
                 } else {
                     mLastMediaHandler.removeCallbacksAndMessages(null)

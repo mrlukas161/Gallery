@@ -35,18 +35,27 @@ class HttpSyncService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_STOP) {
+            lastError = null
             stopEverything()
             return START_NOT_STICKY
         }
         ensureChannel()
         val pin = intent?.getStringExtra(EXTRA_PIN) ?: currentPin ?: newPin()
         val port = MediaServer.DEFAULT_PORT
-        val ip = NetUtil.getWifiIpv4(this) ?: "?"
+        val ip = NetUtil.getWifiIpv4(this)
         currentPin = pin
-        currentUrl = "http://$ip:$port"
+        currentUrl = if (ip != null) "http://$ip:$port" else null
 
         startForegroundCompat(buildNotification(currentUrl ?: "", pin))
 
+        // bez WiFi adresy by sa zobrazila (a kopírovala) nezmyselná adresa „http://?:8089" —
+        // radšej server nespúšťať a rovno povedať, čo treba spraviť
+        if (ip == null) {
+            failWith(getString(R.string.a3_pc_server_no_wifi))
+            return START_NOT_STICKY
+        }
+
+        lastError = null
         if (server == null && !starting) {
             starting = true
             isRunning = true
@@ -56,13 +65,39 @@ class HttpSyncService : Service() {
                     s.start(NanoHTTPD.SOCKET_READ_TIMEOUT, false)
                     server = s
                 } catch (e: Throwable) {
-                    Handler(Looper.getMainLooper()).post { stopEverything() }
+                    // obsadený port, zakázaný socket… — NIE ticho zhasnúť, ale povedať prečo
+                    val reason = e.message?.take(120) ?: e.javaClass.simpleName
+                    Handler(Looper.getMainLooper()).post {
+                        failWith(getString(R.string.a3_pc_server_start_failed, reason))
+                    }
                 } finally {
                     starting = false
                 }
             }
         }
         return START_STICKY
+    }
+
+    // server nebeží a používateľ to MUSÍ vidieť: toast + notifikácia s dôvodom (namiesto toho,
+    // aby foreground notifikácia len ticho zmizla); chybu si prečítajú aj Nastavenia (lastError)
+    private fun failWith(msg: String) {
+        stopEverything()
+        lastError = msg
+        try {
+            android.widget.Toast.makeText(applicationContext, msg, android.widget.Toast.LENGTH_LONG).show()
+        } catch (ignored: Throwable) {
+        }
+        try {
+            val n = NotificationCompat.Builder(this, CHANNEL_ID)
+                .setSmallIcon(android.R.drawable.stat_notify_error)
+                .setContentTitle(getString(R.string.pc_server_title))
+                .setContentText(msg)
+                .setStyle(NotificationCompat.BigTextStyle().bigText(msg))
+                .setAutoCancel(true)
+                .build()
+            getSystemService(NotificationManager::class.java)?.notify(NOTIF_ID + 1, n)
+        } catch (ignored: Throwable) {
+        }
     }
 
     private fun stopEverything() {
@@ -147,6 +182,11 @@ class HttpSyncService : Service() {
 
         @Volatile
         var isRunning = false
+            private set
+
+        // prečo sa server naposledy nespustil (zobrazujú Nastavenia); null = žiadna chyba
+        @Volatile
+        var lastError: String? = null
             private set
 
         @Volatile

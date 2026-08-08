@@ -10,7 +10,7 @@ import org.fossify.gallery.faces.Person
 
 class PeopleAdapter(
     val activity: Activity,
-    val people: List<Person>,
+    private var people: List<Person>,
     val onClick: (Person) -> Unit,
     val onLongClick: (Person) -> Unit,
 ) : RecyclerView.Adapter<PeopleAdapter.ViewHolder>() {
@@ -18,6 +18,12 @@ class PeopleAdapter(
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ViewHolder {
         val binding = ItemPersonBinding.inflate(LayoutInflater.from(parent.context), parent, false)
         return ViewHolder(binding)
+    }
+
+    // aktualizácia dát BEZ výmeny adaptéra — RecyclerView si tak zachová pozíciu scrollu
+    fun updateItems(newPeople: List<Person>) {
+        people = newPeople
+        notifyDataSetChanged()
     }
 
     override fun getItemCount() = people.size

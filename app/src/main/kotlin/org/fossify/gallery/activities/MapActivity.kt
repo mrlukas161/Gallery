@@ -13,13 +13,17 @@ import android.graphics.Shader
 import android.graphics.drawable.BitmapDrawable
 import java.io.File
 import android.os.Bundle
-import androidx.appcompat.app.AlertDialog
+import android.widget.LinearLayout
+import android.widget.ScrollView
 import org.fossify.commons.extensions.beGone
 import org.fossify.commons.extensions.beVisible
+import org.fossify.commons.extensions.getAlertDialogBuilder
 import org.fossify.commons.extensions.isVideoFast
+import org.fossify.commons.extensions.setupDialogStuff
 import org.fossify.commons.extensions.viewBinding
 import org.fossify.commons.helpers.NavigationIcon
 import org.fossify.commons.helpers.ensureBackgroundThread
+import org.fossify.commons.views.MyAppCompatCheckbox
 import org.fossify.gallery.R
 import org.fossify.gallery.databinding.ActivityMapBinding
 import org.fossify.gallery.faces.FacesDatabase
@@ -84,6 +88,8 @@ class MapActivity : SimpleActivity() {
     override fun onResume() {
         super.onResume()
         setupTopAppBar(binding.mapAppbar, NavigationIcon.Arrow)
+        // POZOR: sem nepridávať plošné updateTextColors — jediný text (map_status) je zámerne
+        // biely na tmavom prekrytí nad mapou a prefarbenie by ho vo svetlej téme rozbilo
         if (filterPaths != null) binding.mapToolbar.title = getString(R.string.map_selection)
         binding.mapToolbar.menu.clear()
         binding.mapToolbar.inflateMenu(R.menu.menu_map)
@@ -210,12 +216,24 @@ class MapActivity : SimpleActivity() {
                         }
                     }
                 }
-                AlertDialog.Builder(this)
-                    .setTitle(R.string.filter_media)
-                    .setMultiChoiceItems(labels.toTypedArray(), checked) { _, which, isChecked ->
-                        checked[which] = isChecked
-                    }
-                    .setPositiveButton(android.R.string.ok) { _, _ ->
+                // Fossify témovaný dialóg (getAlertDialogBuilder + setupDialogStuff) namiesto surového
+                // AlertDialog.Builder — multi-výber poskladaný z MyAppCompatCheckbox, ktoré prefarbí téma
+                val pad = resources.getDimensionPixelSize(org.fossify.commons.R.dimen.activity_margin)
+                val list = LinearLayout(this).apply {
+                    orientation = LinearLayout.VERTICAL
+                    setPadding(pad, pad / 2, pad, 0)
+                }
+                labels.forEachIndexed { i, label ->
+                    list.addView(MyAppCompatCheckbox(this).apply {
+                        text = label
+                        isChecked = checked[i]
+                        setPadding(0, pad / 4, 0, pad / 4)
+                        setOnCheckedChangeListener { _, isCh -> checked[i] = isCh }
+                    })
+                }
+                val dialogView = ScrollView(this).apply { addView(list) }
+                getAlertDialogBuilder()
+                    .setPositiveButton(org.fossify.commons.R.string.ok) { _, _ ->
                         showPhotos = checked[0]
                         showVideos = checked[1]
                         val sel = HashSet<Long>()
@@ -234,8 +252,10 @@ class MapActivity : SimpleActivity() {
                         showVideos = true
                         reloadPoints()
                     }
-                    .setNegativeButton(android.R.string.cancel, null)
-                    .show()
+                    .setNegativeButton(org.fossify.commons.R.string.cancel, null)
+                    .apply {
+                        setupDialogStuff(dialogView, this, R.string.filter_media)
+                    }
             }
         }
     }

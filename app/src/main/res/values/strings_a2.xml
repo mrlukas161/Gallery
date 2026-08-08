@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Stringy agenta A2 (osoby / tváre / dialógy). Zámerne prázdne — všetky texty
+         výberového režimu, dialógov aj hromadného „toto nie je osoba" už existujú
+         v strings.xml appky alebo vo Fossify commons (ok, cancel, delete_items...). -->
+</resources>

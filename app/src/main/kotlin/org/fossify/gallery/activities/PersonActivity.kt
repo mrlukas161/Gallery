@@ -2,17 +2,23 @@ package org.fossify.gallery.activities
 
 import android.content.Intent
 import android.os.Bundle
-import android.widget.EditText
-import androidx.appcompat.app.AlertDialog
+import android.widget.LinearLayout
 import androidx.recyclerview.widget.GridLayoutManager
+import org.fossify.commons.dialogs.ConfirmationDialog
+import org.fossify.commons.dialogs.RadioGroupDialog
+import org.fossify.commons.extensions.getAlertDialogBuilder
 import org.fossify.commons.extensions.getProperPrimaryColor
+import org.fossify.commons.extensions.setupDialogStuff
 import org.fossify.commons.extensions.toast
+import org.fossify.commons.extensions.value
 import org.fossify.commons.extensions.viewBinding
 import org.fossify.commons.helpers.NavigationIcon
 import org.fossify.commons.helpers.ensureBackgroundThread
+import org.fossify.commons.models.RadioItem
+import org.fossify.commons.views.MyEditText
 import org.fossify.gallery.R
 import org.fossify.gallery.adapters.PersonFacesAdapter
-import org.fossify.gallery.adapters.PersonPhotosAdapter
+import org.fossify.gallery.adapters.PhotoPathsAdapter
 import org.fossify.gallery.databinding.ActivityPersonBinding
 import org.fossify.gallery.dialogs.ChangeSortingDialog
 import org.fossify.gallery.extensions.config
@@ -113,38 +119,67 @@ class PersonActivity : SimpleActivity() {
 
     private fun render() {
         val sorting = config.getFolderSorting(sortPath())
-        val facesSorted = FaceSorter.sortFaces(loadedFaces, meta, sorting)
-        photoPaths = ArrayList(
-            FaceSorter.sortPaths(loadedFaces.map { it.mediaFullPath }.distinct(), meta, sorting).take(2000)
-        )
-        if (showFullPhotos) {
-            binding.personGrid.adapter = PersonPhotosAdapter(
-                this, photoPaths,
-                onClick = { path -> openPhoto(path) },
-                onLongClick = if (personId >= 0) { path -> confirmNotThisPersonPhoto(path) } else null,
+        val faces = loadedFaces
+        // triedenie tisícok tvárí (lowercase, lookup do meta) patrí na pozadie — UI len nastaví adaptér
+        ensureBackgroundThread {
+            val facesSorted = FaceSorter.sortFaces(faces, meta, sorting)
+            val sortedPaths = ArrayList(
+                FaceSorter.sortPaths(faces.map { it.mediaFullPath }.distinct(), meta, sorting).take(2000)
             )
-        } else {
-            facesAdapter = PersonFacesAdapter(
-                this, facesSorted.toMutableList(),
-                onClick = { face -> openPhoto(face.mediaFullPath) },
-                onLongClick = { face -> showFaceMenu(face) },
-            )
-            binding.personGrid.adapter = facesAdapter
+            runOnUiThread {
+                if (isDestroyed || isFinishing) return@runOnUiThread
+                photoPaths = sortedPaths
+                if (showFullPhotos) {
+                    // jednotná mriežka s výberovým režimom; „toto nie je osoba" je kontextová akcia
+                    // vo výbere (predtým deštruktívny long-press v rozpore so zvyškom appky)
+                    binding.personGrid.adapter = PhotoPathsAdapter(
+                        this, photoPaths, binding.personGrid,
+                        onClick = { path -> openPhoto(path) },
+                        onDeleted = { deleted -> onPhotosDeleted(deleted) },
+                        extraAction = if (personId >= 0) {
+                            PhotoPathsAdapter.ExtraAction(R.string.action_not_this_person) { selection ->
+                                confirmNotThisPersonPhotos(selection)
+                            }
+                        } else {
+                            null
+                        },
+                    )
+                } else {
+                    val existing = facesAdapter
+                    if (existing != null && binding.personGrid.adapter === existing) {
+                        // nevymieňaj adaptér — aktualizácia dát zachová pozíciu scrollu
+                        existing.updateItems(facesSorted)
+                    } else {
+                        facesAdapter = PersonFacesAdapter(
+                            this, facesSorted.toMutableList(),
+                            onClick = { face -> openPhoto(face.mediaFullPath) },
+                            onLongClick = { face -> showFaceMenu(face) },
+                        )
+                        binding.personGrid.adapter = facesAdapter
+                    }
+                }
+            }
         }
     }
 
+    // po zmazaní fotiek vo výberovom režime — adaptér si mriežku upravil sám, tu len zosúladíme
+    // lokálne dáta osoby, aby ďalší render()/prepnutie zobrazenia zmazané fotky nevzkriesilo
+    private fun onPhotosDeleted(deleted: List<String>) {
+        val gone = deleted.toHashSet()
+        loadedFaces = loadedFaces.filter { !gone.contains(it.mediaFullPath) }
+        photoPaths = ArrayList(photoPaths.filter { !gone.contains(it) })
+    }
+
     private fun showFaceMenu(face: FaceEntity) {
-        val options = arrayListOf(getString(R.string.action_move_to_person))
-        val canReject = personId >= 0
-        if (canReject) options.add(getString(R.string.action_not_this_person))
-        AlertDialog.Builder(this)
-            .setItems(options.toTypedArray()) { _, which ->
-                when (which) {
-                    0 -> moveFace(face)
-                    1 -> if (canReject) notThisPerson(face)
-                }
+        val items = ArrayList<RadioItem>()
+        items.add(RadioItem(0, getString(R.string.action_move_to_person)))
+        if (personId >= 0) items.add(RadioItem(1, getString(R.string.action_not_this_person)))
+        RadioGroupDialog(this, items) {
+            when (it as Int) {
+                0 -> moveFace(face)
+                1 -> notThisPerson(face)
             }
-            .show()
+        }
     }
 
     private fun moveFace(face: FaceEntity) {
@@ -153,19 +188,17 @@ class PersonActivity : SimpleActivity() {
             val persons = PeopleDatabase.getInstance(this).PeopleDao().getPersons().filter { it.id != personId }
             runOnUiThread {
                 if (isDestroyed || isFinishing) return@runOnUiThread
-                val labels = ArrayList<String>()
-                persons.forEach { labels.add(it.name ?: "#${it.id}") }
-                labels.add(getString(R.string.new_person))
-                AlertDialog.Builder(this)
-                    .setTitle(R.string.action_move_to_person)
-                    .setItems(labels.toTypedArray()) { _, which ->
-                        if (which == persons.size) {
-                            promptName(null) { name -> assignToNewPerson(fid, name, face) }
-                        } else {
-                            assignToPerson(fid, persons[which].id, face)
-                        }
+                val items = ArrayList<RadioItem>()
+                persons.forEachIndexed { index, person -> items.add(RadioItem(index, person.name ?: "#${person.id}")) }
+                items.add(RadioItem(persons.size, getString(R.string.new_person)))
+                RadioGroupDialog(this, items, titleId = R.string.action_move_to_person) {
+                    val which = it as Int
+                    if (which == persons.size) {
+                        promptName(null) { name -> assignToNewPerson(fid, name, face) }
+                    } else {
+                        assignToPerson(fid, persons[which].id, face)
                     }
-                    .show()
+                }
             }
         }
     }
@@ -204,20 +237,25 @@ class PersonActivity : SimpleActivity() {
         }
     }
 
-    // dlhé stlačenie fotky v zobrazení celých fotiek -> „toto nie je [osoba]" pre všetky jej tváre na fotke
-    private fun confirmNotThisPersonPhoto(path: String) {
-        if (personId < 0) return
-        AlertDialog.Builder(this)
-            .setTitle(R.string.action_not_this_person)
-            .setMessage(getString(R.string.not_this_person_confirm, personName ?: ""))
-            .setPositiveButton(android.R.string.ok) { _, _ -> notThisPersonForPath(path) }
-            .setNegativeButton(android.R.string.cancel, null)
-            .show()
+    // hromadné „toto nie je [osoba]" z výberového režimu — JEDNO potvrdenie pre celý výber
+    private fun confirmNotThisPersonPhotos(selection: ArrayList<String>) {
+        if (personId < 0 || selection.isEmpty()) return
+        ConfirmationDialog(
+            this,
+            message = getString(R.string.not_this_person_confirm, personName ?: ""),
+            positive = org.fossify.commons.R.string.ok,
+            negative = org.fossify.commons.R.string.cancel,
+            dialogTitle = getString(R.string.action_not_this_person),
+        ) {
+            notThisPersonForPaths(selection)
+        }
     }
 
-    private fun notThisPersonForPath(path: String) {
+    // odoberie osobe VŠETKY tváre na vybraných fotkách — spracovanie na pozadí, potom re-render
+    private fun notThisPersonForPaths(selection: List<String>) {
         if (personId < 0) return
-        val faces = loadedFaces.filter { it.mediaFullPath == path }
+        val pathSet = selection.toHashSet()
+        val faces = loadedFaces.filter { pathSet.contains(it.mediaFullPath) }
         ensureBackgroundThread {
             val dao = PeopleDatabase.getInstance(this).PeopleDao()
             faces.forEach { f ->
@@ -228,7 +266,7 @@ class PersonActivity : SimpleActivity() {
             }
             runOnUiThread {
                 if (isDestroyed || isFinishing) return@runOnUiThread
-                loadedFaces = loadedFaces.filter { it.mediaFullPath != path }
+                loadedFaces = loadedFaces.filter { !pathSet.contains(it.mediaFullPath) }
                 toast(R.string.person_saved)
                 render()
             }
@@ -255,17 +293,27 @@ class PersonActivity : SimpleActivity() {
     }
 
     private fun promptName(initial: String?, onName: (String) -> Unit) {
-        val input = EditText(this)
-        input.setText(initial ?: "")
-        AlertDialog.Builder(this)
-            .setTitle(R.string.enter_name)
-            .setView(input)
-            .setPositiveButton(android.R.string.ok) { _, _ ->
-                val name = input.text.toString().trim()
+        val input = MyEditText(this).apply {
+            setSingleLine()
+            setText(initial ?: "")
+        }
+        val margin = resources.getDimensionPixelSize(org.fossify.commons.R.dimen.activity_margin)
+        val wrapper = LinearLayout(this).apply {
+            setPadding(margin, margin / 2, margin, 0)
+            addView(
+                input,
+                LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT),
+            )
+        }
+        getAlertDialogBuilder()
+            .setPositiveButton(org.fossify.commons.R.string.ok) { _, _ ->
+                val name = input.value
                 if (name.isNotEmpty()) onName(name)
             }
-            .setNegativeButton(android.R.string.cancel, null)
-            .show()
+            .setNegativeButton(org.fossify.commons.R.string.cancel, null)
+            .apply {
+                setupDialogStuff(wrapper, this, R.string.enter_name)
+            }
     }
 
     companion object {

@@ -429,8 +429,85 @@ open class PhotoVideoActivity : BaseViewerActivity(), ViewPagerFragment.Fragment
         if (mUri?.scheme == "file") showProperties()
     }
 
-    // Live Text je len v hlavnom prehliadači galérie (tu ide o externe otvorený jeden súbor)
-    override fun liveTextRequested() {}
+    // Dlhé podržanie = rovnaké správanie ako v hlavnom prehliadači (ViewPagerActivity):
+    // pohyblivá fotka sa prehrá, inak sa otvorí výber textu priamo na fotke. Externe otvorený
+    // súbor nemusí mať reálnu cestu — vtedy sa spraví dočasná kópia do cache.
+    override fun liveTextRequested() {
+        if (mIsVideo) return
+        val uri = mUri ?: return
+        ensureBackgroundThread {
+            val path = resolveLocalPath(uri)
+            if (path == null || path.isVideoFast()) return@ensureBackgroundThread
+            val motion = org.fossify.gallery.helpers.MotionPhoto.readCached(path) != null
+            runOnUiThread {
+                if (isDestroyed || isFinishing) return@runOnUiThread
+                if (motion) {
+                    playMotionPhoto(path)
+                } else {
+                    startActivity(
+                        Intent(this, TextSelectActivity::class.java)
+                            .putExtra(TextSelectActivity.EXTRA_PATH, path)
+                    )
+                }
+            }
+        }
+    }
+
+    // reálna cesta k zobrazenému súboru; pre content:// bez cesty dočasná kópia v cache
+    private fun resolveLocalPath(uri: Uri): String? {
+        if (uri.scheme == "file") return uri.path
+        intent.extras?.getString(REAL_FILE_PATH)?.let { if (getDoesFilePathExist(it)) return it }
+        applicationContext.getRealPathFromURI(uri)?.let { if (it.isNotEmpty() && getDoesFilePathExist(it)) return it }
+        return try {
+            val name = getFilenameFromUri(uri).ifEmpty { "live_text.jpg" }
+            val out = File(cacheDir, "livetext_$name")
+            contentResolver.openInputStream(uri)?.use { input ->
+                out.outputStream().use { input.copyTo(it) }
+            } ?: return null
+            if (out.length() > 0) out.absolutePath else null
+        } catch (e: Throwable) {
+            null
+        }
+    }
+
+    // prehratie vloženého videa pohyblivej fotky — tu nie je overlay ako v hlavnom prehliadači,
+    // takže sa vytiahnuté MP4 pustí v prehrávači appky
+    private fun playMotionPhoto(path: String) {
+        ensureBackgroundThread {
+            val info = org.fossify.gallery.helpers.MotionPhoto.read(path)
+            if (info == null) {
+                runOnUiThread { if (!isDestroyed) toast(R.string.motion_not_found) }
+                return@ensureBackgroundThread
+            }
+            val out = File(cacheDir, "motion_" + path.substringAfterLast('/').substringBeforeLast('.') + ".mp4")
+            val ok = try {
+                java.io.FileInputStream(path).use { fis ->
+                    java.io.FileOutputStream(out).use { fos ->
+                        fis.channel.transferTo(info.videoOffset, info.videoLength, fos.channel)
+                    }
+                }
+                out.length() > 0
+            } catch (e: Throwable) {
+                false
+            }
+            runOnUiThread {
+                if (isDestroyed || isFinishing) return@runOnUiThread
+                if (!ok) {
+                    toast(R.string.motion_not_found)
+                    return@runOnUiThread
+                }
+                val videoUri = getFinalUriFromPath(out.absolutePath, BuildConfig.APPLICATION_ID)
+                if (videoUri == null) {
+                    toast(org.fossify.commons.R.string.unknown_error_occurred)
+                    return@runOnUiThread
+                }
+                Intent(this, VideoPlayerActivity::class.java).apply {
+                    setDataAndType(videoUri, "video/mp4")
+                    startActivity(this)
+                }
+            }
+        }
+    }
 
     override fun videoEnded() = false
 

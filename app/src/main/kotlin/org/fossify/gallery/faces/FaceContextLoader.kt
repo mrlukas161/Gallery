@@ -1,19 +1,20 @@
 package org.fossify.gallery.faces
 
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.RectF
 import android.util.LruCache
 import android.widget.ImageView
-import org.fossify.commons.helpers.ensureBackgroundThread
 import java.io.File
 
 // Zobrazí CELÚ fotku so zvýrazneným rámikom okolo konkrétnej tváre — aby bolo jasné, o ktorú
 // tvár ide, keď je na fotke ľudí viac. Dekóduje rovnako ako indexer (upright), takže rámik sedí.
 object FaceContextLoader {
-    private const val MAX_DECODE_SIZE = 1024
+    // v tomto zmenšení indexer ukladal bboxy (UprightDecoder.decode s max 1024)
+    private const val INDEX_DECODE_SIZE = 1024
     private const val OUT_SIZE = 480
 
     private val cache = object : LruCache<String, Bitmap>(16 * 1024 * 1024) {
@@ -23,12 +24,16 @@ object FaceContextLoader {
     fun load(face: FaceEntity, imageView: ImageView) {
         val key = "ctx:${face.mediaFullPath}#${face.faceIndex}"
         imageView.tag = key
+        // bunka dostáva nový obsah — zruš prípadnú starú úlohu z recyklácie
+        facePendingLoads.remove(imageView)?.cancel(false)
         cache.get(key)?.let {
             imageView.setImageBitmap(it)
             return
         }
         imageView.setImageBitmap(null)
-        ensureBackgroundThread {
+        val future = faceThumbExecutor.submit {
+            // bunka sa medzitým recyklovala na inú tvár — nedekóduj zbytočne
+            if (imageView.tag != key) return@submit
             val bmp = try {
                 render(face)
             } catch (e: Throwable) {
@@ -41,12 +46,26 @@ object FaceContextLoader {
                 }
             }
         }
+        facePendingLoads[imageView] = future
     }
 
     private fun render(face: FaceEntity): Bitmap? {
         val path = face.mediaFullPath
         if (!File(path).exists()) return null
-        val full = UprightDecoder.decode(path, MAX_DECODE_SIZE)?.bitmap ?: return null
+        // Dekóduj rovno na výstupnú veľkosť (OUT_SIZE) namiesto plných 1024 — bbox je ale uložený
+        // v priestore max 1024 (ako pri indexovaní), preto ho prepočítame pomerom rozmerov.
+        val decoded = UprightDecoder.decode(path, OUT_SIZE) ?: return null
+        val full = decoded.bitmap
+
+        // rozmery, v akých indexer uložil bbox (rovnaký výpočet inSampleSize ako UprightDecoder)
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeFile(path, bounds)
+        var sample = 1
+        while (bounds.outWidth / sample > INDEX_DECODE_SIZE || bounds.outHeight / sample > INDEX_DECODE_SIZE) sample *= 2
+        val rotated = decoded.rotationDegrees == 90 || decoded.rotationDegrees == 270
+        val indexW = (if (rotated) bounds.outHeight else bounds.outWidth) / sample
+        val boxScale = if (indexW > 0) full.width.toFloat() / indexW else 1f
+
         val out = try {
             full.copy(Bitmap.Config.ARGB_8888, true)
         } catch (e: Throwable) {
@@ -68,20 +87,13 @@ object FaceContextLoader {
             color = Color.parseColor("#FF4CD964")
         }
         val r = RectF(
-            face.bboxLeft.toFloat(), face.bboxTop.toFloat(),
-            face.bboxRight.toFloat(), face.bboxBottom.toFloat(),
+            face.bboxLeft * boxScale, face.bboxTop * boxScale,
+            face.bboxRight * boxScale, face.bboxBottom * boxScale,
         )
         val radius = stroke * 2f
         c.drawRoundRect(r, radius, radius, shadow)
         c.drawRoundRect(r, radius, radius, border)
-
-        val longEdge = maxOf(out.width, out.height)
-        if (longEdge <= OUT_SIZE) return out
-        val sc = OUT_SIZE.toFloat() / longEdge
-        val scaled = Bitmap.createScaledBitmap(
-            out, (out.width * sc).toInt().coerceAtLeast(1), (out.height * sc).toInt().coerceAtLeast(1), true,
-        )
-        if (scaled !== out) out.recycle()
-        return scaled
+        // dekódované rovno na OUT_SIZE — dodatočné zmenšovanie už netreba
+        return out
     }
 }

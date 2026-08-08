@@ -941,18 +941,16 @@ class SettingsActivity : SimpleActivity() {
                 org.fossify.gallery.helpers.FaceAuto.NORMAL,
                 org.fossify.gallery.helpers.FaceAuto.LOOSE,
             )
-            val labels = values.map { getString(org.fossify.gallery.helpers.FaceAuto.labelRes(it)) }.toTypedArray()
             val cur = org.fossify.gallery.helpers.FaceAuto.threshold(this)
             val checked = values.indexOfFirst { kotlin.math.abs(it - cur) < 0.001f }.coerceAtLeast(0)
-            androidx.appcompat.app.AlertDialog.Builder(this)
-                .setTitle(R.string.face_auto_title)
-                .setSingleChoiceItems(labels, checked) { dlg, which ->
-                    org.fossify.gallery.helpers.FaceAuto.setThreshold(this, values[which])
-                    updateFaceAutoSummary()
-                    dlg.dismiss()
-                }
-                .setNegativeButton(org.fossify.commons.R.string.cancel, null)
-                .show()
+            // Fossify vzor namiesto surového AlertDialog.Builder — dialóg sa prefarbí podľa témy
+            val items = ArrayList(values.mapIndexed { i, v ->
+                RadioItem(i, getString(org.fossify.gallery.helpers.FaceAuto.labelRes(v)))
+            })
+            RadioGroupDialog(this, items, checked, R.string.face_auto_title) {
+                org.fossify.gallery.helpers.FaceAuto.setThreshold(this, values[it as Int])
+                updateFaceAutoSummary()
+            }
         }
     }
 
@@ -1180,23 +1178,19 @@ class SettingsActivity : SimpleActivity() {
     private fun setupStartPage() {
         updateStartPageSummary()
         binding.settingsStartPageHolder.setOnClickListener {
-            val labels = arrayOf(
-                getString(R.string.nav_home),
-                getString(R.string.nav_folders),
-                getString(R.string.nav_recent),
-                getString(R.string.nav_explore),
-            )
             val prefs = getSharedPreferences("galeria_faces", android.content.Context.MODE_PRIVATE)
             val cur = prefs.getInt("start_page", 1).coerceIn(0, 3)
-            androidx.appcompat.app.AlertDialog.Builder(this)
-                .setTitle(R.string.start_page_title)
-                .setSingleChoiceItems(labels, cur) { dlg, which ->
-                    prefs.edit().putInt("start_page", which).apply()
-                    updateStartPageSummary()
-                    dlg.dismiss()
-                }
-                .setNegativeButton(org.fossify.commons.R.string.cancel, null)
-                .show()
+            // Fossify vzor namiesto surového AlertDialog.Builder — dialóg sa prefarbí podľa témy
+            val items = arrayListOf(
+                RadioItem(0, getString(R.string.nav_home)),
+                RadioItem(1, getString(R.string.nav_folders)),
+                RadioItem(2, getString(R.string.nav_recent)),
+                RadioItem(3, getString(R.string.nav_explore)),
+            )
+            RadioGroupDialog(this, items, cur, R.string.start_page_title) {
+                prefs.edit().putInt("start_page", it as Int).apply()
+                updateStartPageSummary()
+            }
         }
     }
 
@@ -1217,9 +1211,19 @@ class SettingsActivity : SimpleActivity() {
     private fun setupIndexOverview() {
         refreshIndexOverview()
         binding.settingsIndexOverviewHolder.setOnClickListener {
-            org.fossify.gallery.services.IndexingService.start(this, org.fossify.gallery.services.IndexingService.TASK_ALL)
-            binding.settingsIndexOverviewSummary.text = getString(R.string.indexing_started_bg)
-            binding.settingsIndexOverviewSummary.postDelayed({ refreshIndexOverview() }, 1200)
+            val begin = {
+                org.fossify.gallery.services.IndexingService.start(
+                    this, org.fossify.gallery.services.IndexingService.TASK_ALL, allowMetered = true,
+                )
+                binding.settingsIndexOverviewSummary.text = getString(R.string.indexing_started_bg)
+                binding.settingsIndexOverviewSummary.postDelayed({ refreshIndexOverview() }, 1200)
+            }
+            if (org.fossify.gallery.clip.ClipModels.bothPresent(this)) {
+                begin()
+            } else {
+                // ťuk stiahne aj CLIP model — na mobilných dátach až po potvrdení s veľkosťou
+                confirmClipDownloadOnMetered(getString(R.string.a3_clip_size_main)) { begin() }
+            }
         }
         binding.settingsIndexOverviewHolder.setOnLongClickListener {
             showIndexDetail()
@@ -1233,15 +1237,19 @@ class SettingsActivity : SimpleActivity() {
             val items = org.fossify.gallery.helpers.IndexStatus.all(this, total)
             val pct = org.fossify.gallery.helpers.IndexStatus.overallPercent(items)
             val running = items.any { it.running }
+            val clipModelMissing = items.any { it.modelMissing }
+            // chyba vydrží aj reštart appky (prefs) — nezmizne skôr, než ju používateľ uvidí
+            val err = org.fossify.gallery.services.IndexingService.lastErrorPersisted(this)
             runOnUiThread {
                 if (isDestroyed) return@runOnUiThread
                 binding.settingsIndexOverviewBar.setProgressCompat(pct, true)
                 val live = org.fossify.gallery.services.IndexingService.liveProgress
-                val err = org.fossify.gallery.services.IndexingService.lastError
                 binding.settingsIndexOverviewSummary.text = when {
                     live.isNotEmpty() -> live
                     err != null -> getString(R.string.index_overview_error, err)
                     running -> getString(R.string.index_overview_running, pct)
+                    // bez CLIP modelu nikdy nepovedať čisté „Hotovo" — povedať, čo chýba a že ťuk to stiahne
+                    pct >= 100 && clipModelMissing -> getString(R.string.a3_index_overview_done_no_clip)
                     pct >= 100 -> getString(R.string.index_overview_done)
                     else -> getString(R.string.index_overview_summary, pct)
                 }
@@ -1253,25 +1261,55 @@ class SettingsActivity : SimpleActivity() {
         ensureBackgroundThread {
             val total = org.fossify.gallery.helpers.IndexStatus.photoCount(this)
             val items = org.fossify.gallery.helpers.IndexStatus.all(this, total)
-            val text = items.joinToString("\n") {
-                getString(R.string.index_detail_line, getString(it.titleRes), it.percent, it.done, it.total)
+            val detail = items.joinToString("\n") {
+                val line = getString(R.string.index_detail_line, getString(it.titleRes), it.percent, it.done, it.total)
+                if (it.modelMissing) line + getString(R.string.a3_index_detail_model_missing) else line
             }
             runOnUiThread {
                 if (isDestroyed || isFinishing) return@runOnUiThread
-                androidx.appcompat.app.AlertDialog.Builder(this)
-                    .setTitle(R.string.index_detail_title)
-                    .setMessage(text)
+                val pad = (resources.displayMetrics.density * 20).toInt()
+                val tv = TextView(this).apply {
+                    text = detail
+                    setTextColor(getProperTextColor())
+                    setPadding(pad, pad, pad, 0)
+                }
+                getAlertDialogBuilder()
                     .setPositiveButton(org.fossify.commons.R.string.ok, null)
-                    .show()
+                    .apply {
+                        setupDialogStuff(tv, this, R.string.index_detail_title)
+                    }
             }
         }
+    }
+
+    // Sťahovanie CLIP modelu na mobilných dátach až po potvrdení s uvedením objemu dát;
+    // na WiFi (nemeranej sieti) sa akcia spustí rovno bez otázok.
+    private fun confirmClipDownloadOnMetered(sizeText: String, action: () -> Unit) {
+        if (!org.fossify.gallery.clip.ClipModels.isMeteredNetwork(this)) {
+            action()
+            return
+        }
+        val pad = (resources.displayMetrics.density * 20).toInt()
+        val tv = TextView(this).apply {
+            text = getString(R.string.a3_clip_metered_text, sizeText)
+            setTextColor(getProperTextColor())
+            setPadding(pad, pad, pad, 0)
+        }
+        getAlertDialogBuilder()
+            .setPositiveButton(R.string.a3_clip_metered_download) { _, _ -> action() }
+            .setNegativeButton(org.fossify.commons.R.string.cancel, null)
+            .apply {
+                setupDialogStuff(tv, this, R.string.a3_clip_metered_title)
+            }
     }
 
     // Menej preplnené Nastavenia: jednotlivé funkcie (tváre, OCR, QR, duplikáty, CLIP…) sú
     // predvolene SKRYTÉ pod „Pokročilé nástroje" — bežne stačí prehľad + „Indexovať všetko naraz".
     private fun advancedHolders(): List<android.view.View> = listOf(
         binding.settingsFaceIndexingHolder,
+        binding.settingsFaceAutoHolder,
         binding.settingsPicasaImportHolder,
+        binding.settingsReembedHolder,
         binding.settingsOcrHolder,
         binding.settingsAutoOcrHolder,
         binding.settingsQrHolder,
@@ -1303,8 +1341,18 @@ class SettingsActivity : SimpleActivity() {
     private fun setupIndexAll() {
         binding.settingsIndexAllSummary.text = getString(R.string.index_all_summary)
         binding.settingsIndexAllHolder.setOnClickListener {
-            org.fossify.gallery.services.IndexingService.start(this, org.fossify.gallery.services.IndexingService.TASK_ALL)
-            binding.settingsIndexAllSummary.text = getString(R.string.indexing_started_bg)
+            val begin = {
+                org.fossify.gallery.services.IndexingService.start(
+                    this, org.fossify.gallery.services.IndexingService.TASK_ALL, allowMetered = true,
+                )
+                binding.settingsIndexAllSummary.text = getString(R.string.indexing_started_bg)
+            }
+            if (org.fossify.gallery.clip.ClipModels.bothPresent(this)) {
+                begin()
+            } else {
+                // súčasťou je stiahnutie CLIP modelu — na mobilných dátach až po potvrdení
+                confirmClipDownloadOnMetered(getString(R.string.a3_clip_size_main)) { begin() }
+            }
         }
     }
 
@@ -1334,8 +1382,16 @@ class SettingsActivity : SimpleActivity() {
                 org.fossify.gallery.clip.ClipIndexer.stop()
                 updateClipSummary()
             } else {
-                org.fossify.gallery.services.IndexingService.start(this, org.fossify.gallery.services.IndexingService.TASK_CLIP)
-                binding.settingsClipSummary.text = getString(R.string.indexing_started_bg)
+                val begin = {
+                    org.fossify.gallery.services.IndexingService.start(this, org.fossify.gallery.services.IndexingService.TASK_CLIP)
+                    binding.settingsClipSummary.text = getString(R.string.indexing_started_bg)
+                }
+                if (org.fossify.gallery.clip.ClipModels.bothPresent(this)) {
+                    begin()
+                } else {
+                    // prvé spustenie stiahne model — na mobilných dátach až po potvrdení
+                    confirmClipDownloadOnMetered(getString(R.string.a3_clip_size_main)) { begin() }
+                }
             }
         }
     }
@@ -1371,10 +1427,13 @@ class SettingsActivity : SimpleActivity() {
                     updateClipMlSummary()
                 }
                 !org.fossify.gallery.clip.ClipMlModels.present(this) -> {
-                    // stiahnuť model a rovno zapnúť (aktivuje sa po dokončení sťahovania)
-                    prefs.edit().putBoolean("clip_ml", true).apply()
-                    org.fossify.gallery.services.IndexingService.start(this, org.fossify.gallery.services.IndexingService.TASK_CLIP_ML)
-                    binding.settingsClipMlSummary.text = getString(R.string.clip_ml_downloading)
+                    // stiahnuť model a rovno zapnúť (aktivuje sa po dokončení sťahovania);
+                    // na mobilných dátach až po potvrdení (~500 MB)
+                    confirmClipDownloadOnMetered(getString(R.string.a3_clip_size_ml)) {
+                        prefs.edit().putBoolean("clip_ml", true).apply()
+                        org.fossify.gallery.services.IndexingService.start(this, org.fossify.gallery.services.IndexingService.TASK_CLIP_ML)
+                        binding.settingsClipMlSummary.text = getString(R.string.clip_ml_downloading)
+                    }
                 }
                 else -> {
                     val now = !prefs.getBoolean("clip_ml", false)
@@ -1437,13 +1496,15 @@ class SettingsActivity : SimpleActivity() {
 
     private fun updatePcServerSummary() {
         if (isDestroyed) return
-        binding.settingsPcServerSummary.text = if (org.fossify.gallery.services.HttpSyncService.isRunning) {
-            getString(
+        val error = org.fossify.gallery.services.HttpSyncService.lastError
+        binding.settingsPcServerSummary.text = when {
+            org.fossify.gallery.services.HttpSyncService.isRunning -> getString(
                 R.string.pc_server_running_at,
                 org.fossify.gallery.services.HttpSyncService.shareUrl() ?: "?",
             )
-        } else {
-            getString(R.string.pc_server_tap_to_start)
+            // server sa naposledy nespustil (obsadený port, bez WiFi…) — dôvod nechať viditeľný
+            error != null -> getString(R.string.a3_pc_server_error_summary, error)
+            else -> getString(R.string.pc_server_tap_to_start)
         }
     }
 

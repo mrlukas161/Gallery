@@ -2,15 +2,26 @@ package org.fossify.gallery.activities
 
 import android.content.Intent
 import android.os.Bundle
-import android.widget.EditText
+import android.util.TypedValue
+import android.widget.LinearLayout
+import android.widget.ScrollView
 import androidx.appcompat.app.AlertDialog
 import androidx.recyclerview.widget.GridLayoutManager
+import org.fossify.commons.dialogs.ConfirmationDialog
+import org.fossify.commons.dialogs.RadioGroupDialog
 import org.fossify.commons.extensions.beGone
 import org.fossify.commons.extensions.beVisible
+import org.fossify.commons.extensions.getAlertDialogBuilder
+import org.fossify.commons.extensions.setupDialogStuff
 import org.fossify.commons.extensions.toast
+import org.fossify.commons.extensions.value
 import org.fossify.commons.extensions.viewBinding
 import org.fossify.commons.helpers.NavigationIcon
 import org.fossify.commons.helpers.ensureBackgroundThread
+import org.fossify.commons.models.RadioItem
+import org.fossify.commons.views.MyAppCompatCheckbox
+import org.fossify.commons.views.MyEditText
+import org.fossify.commons.views.MyTextView
 import org.fossify.gallery.R
 import org.fossify.gallery.adapters.PeopleAdapter
 import org.fossify.gallery.databinding.ActivityPeopleBinding
@@ -91,11 +102,17 @@ class PeopleActivity : SimpleActivity() {
                 } else {
                     binding.peoplePlaceholder.beGone()
                 }
-                binding.peopleGrid.adapter = PeopleAdapter(
-                    this, items,
-                    onClick = { person -> openPerson(person) },
-                    onLongClick = { person -> showPersonMenu(person) },
-                )
+                val existing = binding.peopleGrid.adapter as? PeopleAdapter
+                if (existing != null) {
+                    // nevymieňaj adaptér pri každom onResume — aktualizácia dát zachová pozíciu scrollu
+                    existing.updateItems(items)
+                } else {
+                    binding.peopleGrid.adapter = PeopleAdapter(
+                        this, items,
+                        onClick = { person -> openPerson(person) },
+                        onLongClick = { person -> showPersonMenu(person) },
+                    )
+                }
             }
         }
     }
@@ -137,26 +154,54 @@ class PeopleActivity : SimpleActivity() {
 
     private fun showPersonMenu(person: Person) {
         if (person.isConfirmed) {
-            val options = arrayOf(
+            val options = listOf(
                 getString(R.string.action_rename),
                 getString(R.string.action_groups),
                 getString(R.string.action_merge),
                 getString(R.string.action_delete_person),
             )
-            AlertDialog.Builder(this)
-                .setTitle(person.name ?: getString(R.string.people))
-                .setItems(options) { _, which ->
-                    when (which) {
-                        0 -> renamePerson(person)
-                        1 -> manageGroups(person)
-                        2 -> mergePerson(person)
-                        3 -> deletePerson(person)
-                    }
+            showOptionsDialog(person.name ?: getString(R.string.people), options) { which ->
+                when (which) {
+                    0 -> renamePerson(person)
+                    1 -> manageGroups(person)
+                    2 -> mergePerson(person)
+                    3 -> deletePerson(person)
                 }
-                .show()
+            }
         } else {
             // návrh → pomenovaním ho potvrdíš ako osobu
             promptName(null) { name -> confirmGroup(person, name) }
+        }
+    }
+
+    // Zoznam akcií s DYNAMICKÝM titulkom (meno osoby) — RadioGroupDialog vie len titleId,
+    // preto vlastný zoznam MyTextView riadkov témovaný cez setupDialogStuff (Fossify vzor).
+    private fun showOptionsDialog(title: String, options: List<String>, onPick: (Int) -> Unit) {
+        val margin = resources.getDimensionPixelSize(org.fossify.commons.R.dimen.activity_margin)
+        val holder = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(0, margin / 2, 0, margin / 2)
+        }
+        val ripple = TypedValue().also { theme.resolveAttribute(android.R.attr.selectableItemBackground, it, true) }
+        var dialog: AlertDialog? = null
+        options.forEachIndexed { index, option ->
+            holder.addView(
+                MyTextView(this).apply {
+                    text = option
+                    setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
+                    setPadding(margin, margin * 3 / 4, margin, margin * 3 / 4)
+                    setBackgroundResource(ripple.resourceId)
+                    setOnClickListener {
+                        dialog?.dismiss()
+                        onPick(index)
+                    }
+                },
+                LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT),
+            )
+        }
+        val view = ScrollView(this).apply { addView(holder) }
+        getAlertDialogBuilder().apply {
+            setupDialogStuff(view, this, titleText = title) { alertDialog -> dialog = alertDialog }
         }
     }
 
@@ -197,40 +242,39 @@ class PeopleActivity : SimpleActivity() {
                     toast(R.string.no_other_person)
                     return@runOnUiThread
                 }
-                val names = others.map { it.name ?: "#${it.id}" }.toTypedArray()
-                AlertDialog.Builder(this)
-                    .setTitle(R.string.action_merge)
-                    .setItems(names) { _, which ->
-                        val target = others[which]
-                        ensureBackgroundThread {
-                            dao.reassignPerson(id, target.id)
-                            dao.reassignCannotLinks(id, target.id)
-                            dao.deletePerson(id)
-                            runOnUiThread { loadPeople() }
-                        }
+                val items = ArrayList<RadioItem>()
+                others.forEachIndexed { index, p -> items.add(RadioItem(index, p.name ?: "#${p.id}")) }
+                RadioGroupDialog(this, items, titleId = R.string.action_merge) {
+                    val target = others[it as Int]
+                    ensureBackgroundThread {
+                        dao.reassignPerson(id, target.id)
+                        dao.reassignCannotLinks(id, target.id)
+                        dao.deletePerson(id)
+                        runOnUiThread { loadPeople() }
                     }
-                    .show()
+                }
             }
         }
     }
 
     private fun deletePerson(person: Person) {
         val id = person.id ?: return
-        AlertDialog.Builder(this)
-            .setTitle(person.name ?: getString(R.string.people))
-            .setMessage(R.string.delete_person_confirm)
-            .setPositiveButton(android.R.string.ok) { _, _ ->
-                ensureBackgroundThread {
-                    val dao = PeopleDatabase.getInstance(this).PeopleDao()
-                    dao.deleteAssignmentsForPerson(id)
-                    dao.deleteCannotLinksForPerson(id)
-                    dao.deleteAnchorsForPerson(id)
-                    dao.deletePerson(id)
-                    runOnUiThread { loadPeople() }
-                }
+        ConfirmationDialog(
+            this,
+            messageId = R.string.delete_person_confirm,
+            positive = org.fossify.commons.R.string.ok,
+            negative = org.fossify.commons.R.string.cancel,
+            dialogTitle = person.name ?: getString(R.string.people),
+        ) {
+            ensureBackgroundThread {
+                val dao = PeopleDatabase.getInstance(this).PeopleDao()
+                dao.deleteAssignmentsForPerson(id)
+                dao.deleteCannotLinksForPerson(id)
+                dao.deleteAnchorsForPerson(id)
+                dao.deletePerson(id)
+                runOnUiThread { loadPeople() }
             }
-            .setNegativeButton(android.R.string.cancel, null)
-            .show()
+        }
     }
 
     private fun manageGroups(person: Person) {
@@ -245,12 +289,26 @@ class PeopleActivity : SimpleActivity() {
                     promptName(null) { name -> createGroupWith(name, pid) }
                     return@runOnUiThread
                 }
-                val names = groups.map { it.name }.toTypedArray()
                 val checked = groups.map { memberOf.contains(it.id) }.toBooleanArray()
-                AlertDialog.Builder(this)
-                    .setTitle(R.string.action_groups)
-                    .setMultiChoiceItems(names, checked) { _, which, isChecked -> checked[which] = isChecked }
-                    .setPositiveButton(android.R.string.ok) { _, _ ->
+                val margin = resources.getDimensionPixelSize(org.fossify.commons.R.dimen.activity_margin)
+                val holder = LinearLayout(this).apply {
+                    orientation = LinearLayout.VERTICAL
+                    setPadding(margin, margin / 2, margin, margin / 2)
+                }
+                groups.forEachIndexed { i, g ->
+                    holder.addView(
+                        MyAppCompatCheckbox(this).apply {
+                            text = g.name
+                            isChecked = checked[i]
+                            setPadding(0, margin / 4, 0, margin / 4)
+                            setOnCheckedChangeListener { _, isCheckedNow -> checked[i] = isCheckedNow }
+                        },
+                        LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT),
+                    )
+                }
+                val view = ScrollView(this).apply { addView(holder) }
+                getAlertDialogBuilder()
+                    .setPositiveButton(org.fossify.commons.R.string.ok) { _, _ ->
                         ensureBackgroundThread {
                             groups.forEachIndexed { i, g ->
                                 val want = checked[i]
@@ -263,8 +321,10 @@ class PeopleActivity : SimpleActivity() {
                     .setNeutralButton(R.string.new_group) { _, _ ->
                         promptName(null) { name -> createGroupWith(name, pid) }
                     }
-                    .setNegativeButton(android.R.string.cancel, null)
-                    .show()
+                    .setNegativeButton(org.fossify.commons.R.string.cancel, null)
+                    .apply {
+                        setupDialogStuff(view, this, R.string.action_groups)
+                    }
             }
         }
     }
@@ -283,39 +343,49 @@ class PeopleActivity : SimpleActivity() {
             val groups = ExtrasDatabase.getInstance(this).ExtrasDao().getGroups()
             runOnUiThread {
                 if (isDestroyed || isFinishing) return@runOnUiThread
-                val labels = ArrayList<String>()
-                labels.add(getString(R.string.all_people))
-                groups.forEach { labels.add(it.name) }
-                AlertDialog.Builder(this)
-                    .setTitle(R.string.filter_group)
-                    .setItems(labels.toTypedArray()) { _, which ->
-                        if (which == 0) {
-                            filterGroupId = -1L
-                            filterGroupName = null
-                        } else {
-                            filterGroupId = groups[which - 1].id
-                            filterGroupName = groups[which - 1].name
-                        }
-                        binding.peopleToolbar.title = filterGroupName ?: getString(R.string.people)
-                        loadPeople()
+                val items = ArrayList<RadioItem>()
+                items.add(RadioItem(0, getString(R.string.all_people)))
+                groups.forEachIndexed { index, g -> items.add(RadioItem(index + 1, g.name)) }
+                // predznač aktuálny filter, nech vidno, čo je zvolené
+                val checkedId = if (filterGroupId < 0) 0 else groups.indexOfFirst { it.id == filterGroupId } + 1
+                RadioGroupDialog(this, items, checkedItemId = checkedId, titleId = R.string.filter_group) {
+                    val which = it as Int
+                    if (which == 0) {
+                        filterGroupId = -1L
+                        filterGroupName = null
+                    } else {
+                        filterGroupId = groups[which - 1].id
+                        filterGroupName = groups[which - 1].name
                     }
-                    .show()
+                    binding.peopleToolbar.title = filterGroupName ?: getString(R.string.people)
+                    loadPeople()
+                }
             }
         }
     }
 
     private fun promptName(initial: String?, onName: (String) -> Unit) {
-        val input = EditText(this)
-        input.setText(initial ?: "")
-        AlertDialog.Builder(this)
-            .setTitle(R.string.enter_name)
-            .setView(input)
-            .setPositiveButton(android.R.string.ok) { _, _ ->
-                val name = input.text.toString().trim()
+        val input = MyEditText(this).apply {
+            setSingleLine()
+            setText(initial ?: "")
+        }
+        val margin = resources.getDimensionPixelSize(org.fossify.commons.R.dimen.activity_margin)
+        val wrapper = LinearLayout(this).apply {
+            setPadding(margin, margin / 2, margin, 0)
+            addView(
+                input,
+                LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT),
+            )
+        }
+        getAlertDialogBuilder()
+            .setPositiveButton(org.fossify.commons.R.string.ok) { _, _ ->
+                val name = input.value
                 if (name.isNotEmpty()) onName(name)
             }
-            .setNegativeButton(android.R.string.cancel, null)
-            .show()
+            .setNegativeButton(org.fossify.commons.R.string.cancel, null)
+            .apply {
+                setupDialogStuff(wrapper, this, R.string.enter_name)
+            }
     }
 
     companion object {

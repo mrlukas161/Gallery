@@ -30,6 +30,16 @@ object ClipModels {
     fun textualPresent(context: Context): Boolean = textualFile(context).let { it.exists() && it.length() >= TEXTUAL_MIN }
     fun bothPresent(context: Context): Boolean = visualPresent(context) && textualPresent(context)
 
+    // Mobilné dáta / meraná sieť? Pred sťahovaním veľkých modelov (~150–580 MB) sa na takejto
+    // sieti pýta potvrdenie — na WiFi sa sťahuje bez otázok.
+    fun isMeteredNetwork(context: Context): Boolean = try {
+        val cm = context.applicationContext
+            .getSystemService(Context.CONNECTIVITY_SERVICE) as? android.net.ConnectivityManager
+        cm?.isActiveNetworkMetered == true
+    } catch (e: Throwable) {
+        false
+    }
+
     // stiahne chýbajúce modely; onProgress(fáza 1..2, percentá 0..100). Vráti true ak sú oba na mieste.
     fun ensure(context: Context, running: () -> Boolean, onProgress: (phase: String, pct: Int) -> Unit): Boolean {
         if (!visualPresent(context)) {

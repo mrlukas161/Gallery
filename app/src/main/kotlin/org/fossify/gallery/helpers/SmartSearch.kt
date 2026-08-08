@@ -25,6 +25,10 @@ object SmartSearch {
     private const val CLIP_TOP_N = 40
 
     fun extraPaths(context: Context, query: String): Set<String> {
+        // dopyt si zapamätaj TU — jedno miesto pre všetky vstupy hľadania (hlavná lupa,
+        // mriežka, Dokumenty), aby predznačenie slov na fotke fungovalo odvšadiaľ;
+        // prázdny dopyt zvýraznenie zruší (nezvýrazňuje sa staré slovo z minula)
+        lastQuery = query.trim()
         val tokens = query.trim().split(Regex("\\s+")).filter { it.isNotBlank() }
         if (tokens.isEmpty()) return emptySet()
         val norm = tokens.map { TextNormalizer.normalize(it, true) }.filter { it.isNotEmpty() }

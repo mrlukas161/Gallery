@@ -48,6 +48,7 @@ import org.fossify.commons.extensions.beVisibleIf
 import org.fossify.commons.extensions.convertToBitmap
 import org.fossify.commons.extensions.formatSize
 import org.fossify.commons.extensions.getColoredDrawableWithColor
+import org.fossify.commons.extensions.getAlertDialogBuilder
 import org.fossify.commons.extensions.getDataColumn
 import org.fossify.commons.extensions.getDoesFilePathExist
 import org.fossify.commons.extensions.getDuration
@@ -57,6 +58,7 @@ import org.fossify.commons.extensions.getImageResolution
 import org.fossify.commons.extensions.getIsPathDirectory
 import org.fossify.commons.extensions.getParentPath
 import org.fossify.commons.extensions.getProperBackgroundColor
+import org.fossify.commons.extensions.getProperTextColor
 import org.fossify.commons.extensions.getResolution
 import org.fossify.commons.extensions.getUriMimeType
 import org.fossify.commons.extensions.handleDeletePasswordProtection
@@ -77,6 +79,7 @@ import org.fossify.commons.extensions.onGlobalLayout
 import org.fossify.commons.extensions.recycleBinPath
 import org.fossify.commons.extensions.rescanPaths
 import org.fossify.commons.extensions.scanPathRecursively
+import org.fossify.commons.extensions.setupDialogStuff
 import org.fossify.commons.extensions.showErrorToast
 import org.fossify.commons.extensions.toast
 import org.fossify.commons.extensions.tryGenericMimeType
@@ -1597,12 +1600,12 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
         val tv = android.widget.TextView(this).apply {
             setText(text)
             setTextIsSelectable(true)
+            setTextColor(getProperTextColor())
             setPadding(pad, pad, pad, pad)
         }
         val scroll = android.widget.ScrollView(this).apply { addView(tv) }
-        androidx.appcompat.app.AlertDialog.Builder(this)
-            .setTitle(R.string.show_ocr_text)
-            .setView(scroll)
+        // Fossify vzor namiesto surového AlertDialog.Builder — dialóg sa prefarbí podľa témy
+        getAlertDialogBuilder()
             .setPositiveButton(org.fossify.commons.R.string.copy) { _, _ ->
                 try {
                     val cm = getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
@@ -1612,7 +1615,9 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
                 }
             }
             .setNegativeButton(org.fossify.commons.R.string.close, null)
-            .show()
+            .apply {
+                setupDialogStuff(scroll, this, R.string.show_ocr_text)
+            }
     }
 
     // scrcpy / hardvérová klávesnica: ←/→ listovanie, I = info panel fotky
@@ -1808,41 +1813,20 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
         )
     }
 
-    // Galéria+: zobraz rozpoznaný OCR text tejto fotky (výberateľný, s možnosťou kopírovania)
+    // Galéria+: zobraz rozpoznaný OCR text tejto fotky (výberateľný, s možnosťou kopírovania).
+    // Rovnaký zdroj ako dlhé podržanie: textForPhoto číta cache v ocr.db a pri nezaindexovanej
+    // fotke text rozpozná na požiadanie (a uloží do DB) — menu aj podržanie dávajú ten istý výsledok.
     private fun showOcrText(path: String) {
         if (path.isEmpty()) return
         ensureBackgroundThread {
-            val text = try {
-                org.fossify.gallery.faces.OcrDatabase.getInstance(this).OcrDao().getText(path)
-            } catch (e: Throwable) {
-                null
-            }
+            val text = org.fossify.gallery.faces.OcrIndexer.textForPhoto(this, path)
             runOnUiThread {
                 if (isDestroyed || isFinishing) return@runOnUiThread
-                if (text.isNullOrBlank()) {
+                if (text.isBlank()) {
                     android.widget.Toast.makeText(this, R.string.ocr_no_text, android.widget.Toast.LENGTH_SHORT).show()
-                    return@runOnUiThread
+                } else {
+                    showSelectableText(text)
                 }
-                val pad = (16 * resources.displayMetrics.density).toInt()
-                val tv = android.widget.TextView(this).apply {
-                    setText(text)
-                    setTextIsSelectable(true)
-                    setPadding(pad, pad, pad, pad)
-                }
-                val scroll = android.widget.ScrollView(this).apply { addView(tv) }
-                androidx.appcompat.app.AlertDialog.Builder(this)
-                    .setTitle(R.string.show_ocr_text)
-                    .setView(scroll)
-                    .setPositiveButton(R.string.copy_text) { _, _ ->
-                        try {
-                            getSystemService(android.content.ClipboardManager::class.java)
-                                ?.setPrimaryClip(android.content.ClipData.newPlainText("OCR", text))
-                            android.widget.Toast.makeText(this, R.string.ocr_copied, android.widget.Toast.LENGTH_SHORT).show()
-                        } catch (e: Throwable) {
-                        }
-                    }
-                    .setNegativeButton(android.R.string.cancel, null)
-                    .show()
             }
         }
     }

@@ -4,6 +4,7 @@ import android.content.Intent
 import android.os.Bundle
 import androidx.recyclerview.widget.GridLayoutManager
 import org.fossify.commons.extensions.getProperPrimaryColor
+import org.fossify.commons.extensions.getProperTextColor
 import org.fossify.commons.extensions.viewBinding
 import org.fossify.commons.helpers.NavigationIcon
 import org.fossify.commons.helpers.ensureBackgroundThread
@@ -30,6 +31,9 @@ class MemoriesActivity : SimpleActivity() {
     override fun onResume() {
         super.onResume()
         setupTopAppBar(binding.docsAppbar, NavigationIcon.Arrow)
+        // len placeholder — karty spomienok majú vlastný biely text na tmavom prekrytí,
+        // plošné updateTextColors by ho vo svetlej téme prefarbilo na tmavý (nečitateľný)
+        binding.docsPlaceholder.setTextColor(getProperTextColor())
     }
 
     private fun load() {

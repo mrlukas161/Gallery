@@ -30,10 +30,17 @@ class IndexingService : Service() {
     private val progressMap = ConcurrentHashMap<String, String>()
     private val active = AtomicInteger(0)
 
+    // bežal v tejto službe auto-sken? (po dobehnutí sa zapíše čas pre autoScanIfStale)
+    @Volatile
+    private var autoRan = false
+
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        lastError = null
+        // chybu z minulého behu NEMAZAŤ pri každom štarte (auto-štart pri otvorení appky by ju
+        // zmazal skôr, než ju používateľ stihne vidieť) — maže sa až pri štarte rovnakého typu
+        // úlohy v runOne(); tu sa len obnoví prípadná chyba uložená pred reštartom appky
+        lastErrorPersisted(this)
         ensureChannel()
         startForegroundCompat(buildInitial())
         when (val task = intent?.getStringExtra(EXTRA_TASK)) {
@@ -41,6 +48,7 @@ class IndexingService : Service() {
                 // Nové fotky sa automaticky zaradia do VŠETKÉHO, čo už používaš: tváre/poloha/QR vždy,
                 // a navyše tie funkcie, ktoré už majú svoj index (OCR, duplikáty, CLIP) — aby nové
                 // fotky nezaostávali za zvyškom knižnice. Rozhodnutie beží mimo hlavného vlákna (Room).
+                autoRan = true
                 org.fossify.commons.helpers.ensureBackgroundThread {
                     val list = ArrayList<String>()
                     list.add(TASK_FACES)
@@ -70,8 +78,18 @@ class IndexingService : Service() {
                 list.add(TASK_OCR)
                 list.add(TASK_PHASH)
                 // CLIP vždy — ak model chýba, stiahne sa (inak „hľadanie predmetov" nikdy nefunguje
-                // a používateľ nevie prečo)
-                list.add(TASK_CLIP)
+                // a používateľ nevie prečo). Na mobilných dátach sa ale model (~150 MB) bez
+                // výslovného potvrdenia NESŤAHUJE — namiesto tichého míňania dát sa zapíše
+                // viditeľná chyba; Nastavenia posielajú potvrdenie cez EXTRA_ALLOW_METERED.
+                val allowMetered = intent?.getBooleanExtra(EXTRA_ALLOW_METERED, false) == true
+                if (org.fossify.gallery.clip.ClipModels.bothPresent(this) ||
+                    allowMetered ||
+                    !org.fossify.gallery.clip.ClipModels.isMeteredNetwork(this)
+                ) {
+                    list.add(TASK_CLIP)
+                } else {
+                    fail(TASK_CLIP, getString(R.string.a3_clip_metered_skipped))
+                }
                 launch(list, sequential = !IndexPerf.parallel(this))
             }
 
@@ -126,6 +144,9 @@ class IndexingService : Service() {
     }
 
     private fun runOne(task: String, done: () -> Unit) {
+        // chyba z minula sa maže až keď sa ROVNAKÝ typ úlohy reálne spúšťa znova — ak zlyhá
+        // opäť, fail() ju nastaví nanovo; iné úlohy ju nechávajú viditeľnú
+        if (task == lastErrorTask) clearLastError()
         when (task) {
             TASK_FACES -> runFaces(done)
             TASK_GEO -> runGeo(done)
@@ -253,7 +274,28 @@ class IndexingService : Service() {
 
     private fun fail(key: String, msg: String) {
         lastError = "$key: ${msg.take(160)}"
+        lastErrorTask = key
+        // chyba prežije aj reštart appky (Nastavenia/Domov ju vedia zobraziť aj neskôr)
+        try {
+            getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+                .putString(KEY_LAST_ERROR, lastError)
+                .putString(KEY_LAST_ERROR_TASK, key)
+                .apply()
+        } catch (ignored: Throwable) {
+        }
         clearProg(key)
+    }
+
+    private fun clearLastError() {
+        lastError = null
+        lastErrorTask = null
+        try {
+            getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+                .remove(KEY_LAST_ERROR)
+                .remove(KEY_LAST_ERROR_TASK)
+                .apply()
+        } catch (ignored: Throwable) {
+        }
     }
 
     private fun prog(key: String, text: String) {
@@ -295,6 +337,16 @@ class IndexingService : Service() {
             .build()
 
     private fun finish() {
+        // auto-sken si po dobehnutí zapíše čas — autoScanIfStale ho potom 6 hodín nespúšťa znova
+        if (autoRan) {
+            autoRan = false
+            try {
+                getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+                    .putLong(KEY_LAST_AUTO_SCAN, System.currentTimeMillis())
+                    .apply()
+            } catch (ignored: Throwable) {
+            }
+        }
         progressMap.clear()
         stopForegroundCompat()
         stopSelf()
@@ -346,7 +398,18 @@ class IndexingService : Service() {
         @Volatile
         var lastError: String? = null
 
+        // ktorá úloha chybu spôsobila — maže sa až pri jej ďalšom štarte
+        @Volatile
+        private var lastErrorTask: String? = null
+
+        private const val PREFS = "galeria_faces"
+        private const val KEY_LAST_ERROR = "index_last_error"
+        private const val KEY_LAST_ERROR_TASK = "index_last_error_task"
+        private const val KEY_LAST_AUTO_SCAN = "last_auto_scan"
+        private const val AUTO_SCAN_INTERVAL_MS = 6 * 60 * 60 * 1000L
+
         const val EXTRA_TASK = "task"
+        const val EXTRA_ALLOW_METERED = "allow_metered"
         const val TASK_AUTO = "auto"
         const val TASK_ALL = "all"
         const val TASK_FACES = "faces"
@@ -369,11 +432,45 @@ class IndexingService : Service() {
             start(context, TASK_AUTO)
         }
 
-        fun start(context: Context, task: String) {
+        // Auto-sken pri návrate do appky (MainActivity.onResume): spustí TASK_AUTO, keď od
+        // posledného auto-skenu ubehlo viac ako 6 hodín — fotky odfotené počas dňa tak dostanú
+        // tváre/OCR/CLIP aj bez zabitia a nového spustenia appky. Rešpektuje vypnuté
+        // auto-indexovanie v Nastaveniach; bežiace úlohy služba sama preskočí (ref-counted).
+        fun autoScanIfStale(context: Context) {
+            try {
+                val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                if (!prefs.getBoolean("auto_index", true)) return
+                val last = prefs.getLong(KEY_LAST_AUTO_SCAN, 0L)
+                if (System.currentTimeMillis() - last <= AUTO_SCAN_INTERVAL_MS) return
+                start(context, TASK_AUTO)
+            } catch (ignored: Throwable) {
+            }
+        }
+
+        // posledná chyba indexovania vrátane tej z minulého behu appky (prefs) — číta ju
+        // prehľad v Nastaveniach; zároveň ju obnoví do lastError pre ostatných čitateľov
+        fun lastErrorPersisted(context: Context): String? {
+            lastError?.let { return it }
+            return try {
+                val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                val stored = prefs.getString(KEY_LAST_ERROR, null)
+                if (stored != null) {
+                    lastError = stored
+                    lastErrorTask = prefs.getString(KEY_LAST_ERROR_TASK, null)
+                }
+                stored
+            } catch (e: Throwable) {
+                null
+            }
+        }
+
+        fun start(context: Context, task: String, allowMetered: Boolean = false) {
             try {
                 ContextCompat.startForegroundService(
                     context,
-                    Intent(context, IndexingService::class.java).putExtra(EXTRA_TASK, task),
+                    Intent(context, IndexingService::class.java)
+                        .putExtra(EXTRA_TASK, task)
+                        .putExtra(EXTRA_ALLOW_METERED, allowMetered),
                 )
             } catch (ignored: Throwable) {
             }

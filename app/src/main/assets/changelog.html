@@ -51,6 +51,22 @@
 </div>
 
 <div class="ver">
+  <h2><span class="v">0.63.0</span> <span class="d">veľký audit — jednotné ovládanie na všetkých stránkach</span></h2>
+  <ul>
+    <li><span class="tag t-new">NOVÉ</span> <b>Výber viacerých fotiek úplne všade.</b> Dlhé podržanie funguje už aj na Posledných, v Dokumentoch, Špeciálnych fotkách, pri osobe, vo výsledkoch hľadania a v mriežke z mapy — <b>zdieľať, zmazať (kôš), obľúbené, info, vybrať všetko</b>, výber aj ťahaním prsta. Presne ako v albume. Pri osobe navyše hromadné „Toto nie je osoba" s jedným potvrdením.</li>
+    <li><span class="tag t-fix">OPRAVA</span> <b>Posledné konečne žijú:</b> zobrazujú aj <b>videá</b> (so značkou ▶), radia sa podľa <b>dátumu nasnímania</b>, samy sa obnovia pri zmene knižnice aj potiahnutím nadol, <b>rešpektujú vylúčené, skryté a zamknuté priečinky</b>, počet stĺpcov sa mení gestom dvoch prstov a prázdna stránka má hlášku namiesto bielej plochy.</li>
+    <li><span class="tag t-fix">OPRAVA</span> <b>Svetlá téma je čitateľná všade</b> — Domov, Preskúmať, Dokumenty, Špeciálne, Spomienky, Podobné/duplikáty aj dialógy sa prefarbujú podľa témy a akcentu.</li>
+    <li><span class="tag t-new">NOVÉ</span> <b>Domov:</b> dlaždice <b>Fotoaparát</b> a <b>Obľúbené</b>; stav spracovania sa počas indexovania priebežne sám aktualizuje. <b>Preskúmať:</b> karty ukazujú počty (osoby, fotky s textom, fotky s polohou).</li>
+    <li><span class="tag t-new">NOVÉ</span> <b>Ovládanie:</b> Späť sa z inej stránky vráti na štartovú (appka sa nezavrie hneď), opätovné ťuknutie na aktívnu záložku vyskočí na začiatok, horné hľadanie prepne na Priečinky, spodná lišta má nové vektorové ikony s indikátorom vo farbe témy.</li>
+    <li><span class="tag t-fix">OPRAVA</span> <b>Indexovanie už neklame:</b> percento sa počíta z reálneho stavu (zmazané fotky sa raz denne upracú z indexov), nové fotky sa doindexujú automaticky raz za 6 hodín, chyby vidno aj po reštarte appky a veľké modely (~150–580 MB) sa na mobilných dátach nesťahujú bez opýtania.</li>
+    <li><span class="tag t-fix">OPRAVA</span> <b>Tváre svižnejšie:</b> náhľady tvárí sa načítavajú v spoločnom poole a dekóduje sa len výrez tváre — mriežky sa pri rýchlom rolovaní nezadrhávajú; zoznam Ľudí po návrate nebliká; triedenie tisícok tvárí beží na pozadí.</li>
+    <li><span class="tag t-fix">OPRAVA</span> <b>Prehliadač a hľadanie:</b> dlhé podržanie (živá fotka / výber textu) funguje aj pri fotke otvorenej z inej appky; menu „OCR text" dáva rovnaký výsledok ako podržanie; zvýraznenie hľadaného slova funguje zo všetkých vyhľadávaní; listovanie ostane vo výsledkoch; miniatúry sa po úprave fotky obnovia; posuvník mriežok ukazuje dátumovú bublinu.</li>
+    <li><span class="tag t-fix">OPRAVA</span> PC sync server pri zlyhaní štartu zobrazí zrozumiteľnú chybu; odstránený mŕtvy kód (druhý prehliadač osoby a nepoužívané prepočty tvárí).</li>
+  </ul>
+  <div class="test">🔎 <b>Vyskúšaj:</b> podrž fotku na „Posledné" → vyber ťahaním viac → zdieľaj alebo zmaž; potiahni Posledné nadol; prepni svetlú tému a pozri Preskúmať; ťukni dvakrát na aktívnu záložku; over počty na kartách Preskúmať.</div>
+</div>
+
+<div class="ver">
   <h2><span class="v">0.62.0</span> <span class="d">oprava pádu po spustení</span></h2>
   <ul>
     <li><span class="tag t-fix">OPRAVA</span> <b>Appka po aktualizácii na 0.60/0.61 vôbec nenabehla.</b> Príčina: stránka <b>Posledné</b> mala bočný posuvník, ktorý sa pri štarte pýtal na rozloženie mriežky skôr, než ho appka stihla nastaviť — a zhodila celú galériu. Mriežka má rozloženie odteraz definované už v samotnom rozvrhnutí, takže sa to stať nemôže. Rovnako spevnené aj Dokumenty a Ľudia.</li>

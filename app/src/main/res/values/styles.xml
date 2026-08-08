@@ -27,6 +27,13 @@
         <item name="android:clickable">true</item>
         <item name="android:focusable">true</item>
         <item name="android:gravity">center</item>
-        <item name="android:padding">14dp</item>
+        <item name="android:paddingTop">14dp</item>
+        <item name="android:paddingBottom">14dp</item>
+        <item name="android:paddingStart">4dp</item>
+        <item name="android:paddingEnd">4dp</item>
+        <!-- dlhšie názvy (Dokumenty, Spomienky) sa nesmú lámať ani orezávať — jeden riadok,
+             menšie písmo a úzky bočný padding (autosize v štýle sa neaplikoval spoľahlivo) -->
+        <item name="android:maxLines">1</item>
+        <item name="android:textSize">12sp</item>
     </style>
 </resources>

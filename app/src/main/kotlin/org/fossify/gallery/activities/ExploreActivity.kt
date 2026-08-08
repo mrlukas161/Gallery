@@ -2,6 +2,8 @@ package org.fossify.gallery.activities
 
 import android.content.Intent
 import android.os.Bundle
+import org.fossify.commons.extensions.getBottomNavigationBackgroundColor
+import org.fossify.commons.extensions.updateTextColors
 import org.fossify.commons.extensions.viewBinding
 import org.fossify.commons.helpers.NavigationIcon
 import org.fossify.gallery.databinding.ActivityExploreBinding
@@ -42,5 +44,14 @@ class ExploreActivity : SimpleActivity() {
     override fun onResume() {
         super.onResume()
         setupTopAppBar(binding.exploreAppbar, NavigationIcon.Arrow)
+
+        // text kariet by vo svetlej téme ostal svetlý/nečitateľný — prefarbiť podľa témy Fossify
+        updateTextColors(binding.root)
+        val cardColor = getBottomNavigationBackgroundColor()
+        listOf(
+            binding.exploreMemories, binding.explorePeople, binding.explorePlaces,
+            binding.exploreDocs, binding.exploreSpecial, binding.exploreSimilar,
+            binding.exploreSearch,
+        ).forEach { it.setCardBackgroundColor(cardColor) }
     }
 }

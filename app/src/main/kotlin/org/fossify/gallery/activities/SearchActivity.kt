@@ -32,6 +32,9 @@ class SearchActivity : SimpleActivity(), MediaOperationsListener {
     
     private var mLastSearchedText = ""
 
+    // cesty posledných výsledkov — prehliadač po ťuku listuje LEN v nich (ako PeopleSearchActivity)
+    private var mLastResultPaths = ArrayList<String>()
+
     private var mCurrAsyncTask: GetMediaAsynctask? = null
     private var mAllMedia = ArrayList<ThumbnailItem>()
 
@@ -58,6 +61,8 @@ class SearchActivity : SimpleActivity(), MediaOperationsListener {
     override fun onDestroy() {
         super.onDestroy()
         mCurrAsyncTask?.stopFetching()
+        // po zavretí hľadania sa staré slovo nesmie zvýrazňovať na nesúvisiacich fotkách
+        org.fossify.gallery.helpers.SmartSearch.lastQuery = ""
     }
 
     private fun setupOptionsMenu() {
@@ -103,6 +108,7 @@ class SearchActivity : SimpleActivity(), MediaOperationsListener {
                     it is Medium && (it.name.contains(text, true) || extra.contains(it.path))
                 } as ArrayList
                 filtered.sortBy { it is Medium && !it.name.startsWith(text, true) }
+                mLastResultPaths = ArrayList(filtered.filterIsInstance<Medium>().map { it.path })
                 val grouped = MediaFetcher(applicationContext).groupMedia(filtered as ArrayList<Medium>, "")
                 runOnUiThread {
                     if (grouped.isEmpty()) {
@@ -177,6 +183,11 @@ class SearchActivity : SimpleActivity(), MediaOperationsListener {
     }
 
     private fun openInViewPager(path: String) {
+        // uzavrieť listovanie na výsledky hľadania — inak prehliadač načíta celý rodičovský
+        // priečinok a swipe utečie medzi nesúvisiace fotky (vzor PeopleSearchActivity.openPhoto)
+        if (mLastSearchedText.isNotEmpty() && mLastResultPaths.isNotEmpty()) {
+            org.fossify.gallery.helpers.PathTransfer.forViewer = mLastResultPaths
+        }
         Intent(this, ViewPagerActivity::class.java).apply {
             putExtra(PATH, path)
             putExtra(SHOW_ALL, false)

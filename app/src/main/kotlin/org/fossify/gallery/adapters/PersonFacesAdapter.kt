@@ -27,6 +27,13 @@ class PersonFacesAdapter(
         holder.bind(faces[position])
     }
 
+    // aktualizácia dát BEZ výmeny adaptéra — RecyclerView si tak zachová pozíciu scrollu
+    fun updateItems(newFaces: List<FaceEntity>) {
+        faces.clear()
+        faces.addAll(newFaces)
+        notifyDataSetChanged()
+    }
+
     // okamžitá spätná väzba po oprave — vyhoď tvár z mriežky (autoritatívny prepočet príde po návrate späť)
     fun removeFace(face: FaceEntity) {
         val idx = faces.indexOfFirst { it.id == face.id }

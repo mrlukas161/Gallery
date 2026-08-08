@@ -3,14 +3,18 @@ package org.fossify.gallery.activities
 import android.content.Intent
 import android.os.Bundle
 import androidx.recyclerview.widget.GridLayoutManager
+import org.fossify.commons.dialogs.RadioGroupDialog
 import org.fossify.commons.extensions.getProperPrimaryColor
+import org.fossify.commons.extensions.updateTextColors
 import org.fossify.commons.extensions.viewBinding
 import org.fossify.commons.helpers.NavigationIcon
 import org.fossify.commons.helpers.ensureBackgroundThread
+import org.fossify.commons.models.RadioItem
 import org.fossify.gallery.R
-import org.fossify.gallery.adapters.PersonPhotosAdapter
+import org.fossify.gallery.adapters.PhotoPathsAdapter
 import org.fossify.gallery.databinding.ActivityDocsBinding
 import org.fossify.gallery.helpers.DocClassifier
+import org.fossify.gallery.helpers.GridZoom
 import org.fossify.gallery.helpers.PATH
 import org.fossify.gallery.helpers.PathTransfer
 import org.fossify.gallery.helpers.SHOW_ALL
@@ -24,11 +28,15 @@ class DocsActivity : SimpleActivity() {
     private var shown = ArrayList<String>()
     private var filter: DocClassifier.Kind? = null
     private var query = ""
+    private val prefs by lazy { getSharedPreferences("galeria_faces", android.content.Context.MODE_PRIVATE) }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(binding.root)
-        binding.docsGrid.layoutManager = GridLayoutManager(this, 3)
+        // pinch-zoom mení počet stĺpcov a pamätá si ho — rovnaké ovládanie ako v ostatných mriežkach
+        val lm = GridLayoutManager(this, prefs.getInt("docs_columns", 3))
+        binding.docsGrid.layoutManager = lm
+        GridZoom.setup(binding.docsGrid, lm, prefs, "docs_columns")
         binding.docsFastscroller.updateColors(getProperPrimaryColor())
         // vyhľadávanie v texte dokumentov (OCR) priamo v albume
         binding.docsSearch.visibility = android.view.View.VISIBLE
@@ -47,6 +55,9 @@ class DocsActivity : SimpleActivity() {
     override fun onResume() {
         super.onResume()
         setupTopAppBar(binding.docsAppbar, NavigationIcon.Arrow)
+        // prefarbenie podľa témy Fossify — inak by text/hint hľadania aj placeholder boli
+        // vo svetlej téme svetlosivé na bielom (téma z XML je vždy tmavá M3)
+        updateTextColors(binding.docsCoordinator)
         binding.docsToolbar.menu.clear()
         binding.docsToolbar.inflateMenu(R.menu.menu_docs)
         binding.docsToolbar.setOnMenuItemClickListener { item ->
@@ -62,9 +73,13 @@ class DocsActivity : SimpleActivity() {
     private fun load() {
         binding.docsPlaceholder.text = getString(R.string.docs_loading)
         ensureBackgroundThread {
+            // lastModified čítať z disku IBA RAZ na súbor (0 = súbor neexistuje, nahrádza exists()),
+            // nie v komparátore — ten selektor volá pri každom porovnaní (~2·n·log n syscallov)
             val docs = DocClassifier.loadAll(this)
-                .filter { java.io.File(it.path).exists() }
-                .sortedByDescending { java.io.File(it.path).lastModified() }
+                .map { it to java.io.File(it.path).lastModified() }
+                .filter { it.second > 0L }
+                .sortedByDescending { it.second }
+                .map { it.first }
             runOnUiThread {
                 if (isDestroyed) return@runOnUiThread
                 all = docs
@@ -83,7 +98,18 @@ class DocsActivity : SimpleActivity() {
                 (f == null || d.kind == f) && (qTokens.isEmpty() || qTokens.all { d.norm.contains(it) })
             }.map { it.path }
         )
-        binding.docsGrid.adapter = PersonPhotosAdapter(this, shown, onClick = { path -> openPhoto(path) })
+        // adaptér vzniká len RAZ — ďalšie zmeny (písanie do hľadania, filter, mazanie) idú
+        // cez updateItems, nech mriežka nestráca pozíciu scrollu výmenou adaptéra
+        val existing = binding.docsGrid.adapter as? PhotoPathsAdapter
+        if (existing == null) {
+            binding.docsGrid.adapter = PhotoPathsAdapter(
+                this, shown, binding.docsGrid,
+                onClick = { path -> openPhoto(path) },
+                onDeleted = { deleted -> all = all.filter { it.path !in deleted }; applyFilter() },
+            )
+        } else {
+            existing.updateItems(shown)
+        }
         val title = if (f == null) getString(R.string.docs_title) else DocClassifier.label(this, f)
         binding.docsToolbar.title = "$title (${shown.size})"
         if (shown.isEmpty()) {
@@ -104,20 +130,18 @@ class DocsActivity : SimpleActivity() {
             DocClassifier.Kind.ID_CARD to getString(R.string.doc_kind_id),
             DocClassifier.Kind.SCREENSHOT to getString(R.string.doc_kind_screenshot),
         )
-        val labels = kinds.map { (k, name) ->
+        // Fossify dialóg (RadioGroupDialog) namiesto surového AlertDialog.Builder —
+        // správne témovanie (pozadie, texty aj tlačidlá podľa zvolenej témy)
+        val items = ArrayList<RadioItem>()
+        kinds.forEachIndexed { i, (k, name) ->
             val cnt = if (k == null) all.size else all.count { it.kind == k }
-            "$name ($cnt)"
-        }.toTypedArray()
+            items.add(RadioItem(i, "$name ($cnt)"))
+        }
         val current = kinds.indexOfFirst { it.first == filter }.coerceAtLeast(0)
-        androidx.appcompat.app.AlertDialog.Builder(this)
-            .setTitle(R.string.filter_media)
-            .setSingleChoiceItems(labels, current) { dlg, which ->
-                filter = kinds[which].first
-                applyFilter()
-                dlg.dismiss()
-            }
-            .setNegativeButton(org.fossify.commons.R.string.cancel, null)
-            .show()
+        RadioGroupDialog(this, items, current, R.string.filter_media) {
+            filter = kinds[it as Int].first
+            applyFilter()
+        }
     }
 
     private fun openPhoto(path: String) {

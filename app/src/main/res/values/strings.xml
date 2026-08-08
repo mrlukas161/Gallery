@@ -622,4 +622,6 @@ Spustiť teraz?</string>
         Haven't found some strings? There's more at
         https://github.com/FossifyOrg/Commons/tree/master/commons/src/main/res
     -->
+    <string name="added_to_favorites_toast">Pridané do obľúbených</string>
+    <string name="cab_extra_placeholder">…</string>
 </resources>

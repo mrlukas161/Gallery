@@ -12,7 +12,7 @@ import org.fossify.commons.extensions.viewBinding
 import org.fossify.commons.helpers.NavigationIcon
 import org.fossify.commons.helpers.ensureBackgroundThread
 import org.fossify.gallery.R
-import org.fossify.gallery.adapters.PersonPhotosAdapter
+import org.fossify.gallery.adapters.PhotoPathsAdapter
 import org.fossify.gallery.databinding.ActivityPeopleSearchBinding
 import org.fossify.gallery.faces.FaceMediaMeta
 import org.fossify.gallery.faces.FacesDatabase
@@ -90,6 +90,12 @@ class PeopleSearchActivity : SimpleActivity() {
                 else -> false
             }
         }
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        // po zavretí hľadania sa staré slovo nesmie zvýrazňovať na nesúvisiacich fotkách
+        org.fossify.gallery.helpers.SmartSearch.lastQuery = ""
     }
 
     private fun openMap() {
@@ -177,8 +183,11 @@ class PeopleSearchActivity : SimpleActivity() {
     }
 
     private fun runSearch() {
-        val tokens = binding.searchInput.text?.toString().orEmpty().trim()
-            .split(Regex("\\s+")).filter { it.isNotBlank() }
+        val rawQuery = binding.searchInput.text?.toString().orEmpty().trim()
+        // zapamätaj dopyt aj z tohto hľadania — TextSelectActivity ním predznačí nájdené
+        // slová priamo na fotke (rovnako ako hlavná lupa); prázdny dopyt zvýraznenie zruší
+        org.fossify.gallery.helpers.SmartSearch.lastQuery = rawQuery
+        val tokens = rawQuery.split(Regex("\\s+")).filter { it.isNotBlank() }
         val onlyQr = qrOnly
         if (tokens.isEmpty() && !onlyQr) {
             showResults(emptyList(), hint = true)
@@ -262,7 +271,10 @@ class PeopleSearchActivity : SimpleActivity() {
         }
         binding.searchCount.text = getString(R.string.search_count, paths.size)
         val list = ArrayList(paths)
-        binding.searchGrid.adapter = PersonPhotosAdapter(this, list, onClick = { path -> openPhoto(path) })
+        binding.searchGrid.adapter = PhotoPathsAdapter(
+            this, list, binding.searchGrid,
+            onClick = { path -> openPhoto(path) },
+        )
     }
 
     private fun openPhoto(path: String) {
