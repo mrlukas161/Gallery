@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Stringy pre kartu Spomienky na Domove a doplnené počty na kartách Preskúmať -->
+<resources>
+    <!-- Domov — karta Spomienky: „Pred rokom · 2025 · 12 fotiek" (titulok · podtitulok spomienky) -->
+    <string name="b1_home_memories_summary">%1$s · %2$s</string>
+
+    <!-- Preskúmať — Podobné a duplikáty (spája sa cez „ · ") -->
+    <plurals name="b1_explore_duplicates_count">
+        <item quantity="one">%d duplikát</item>
+        <item quantity="few">%d duplikáty</item>
+        <item quantity="many">%d duplikátov</item>
+        <item quantity="other">%d duplikátov</item>
+    </plurals>
+    <plurals name="b1_explore_bursts_count">
+        <item quantity="one">%d séria</item>
+        <item quantity="few">%d série</item>
+        <item quantity="many">%d sérií</item>
+        <item quantity="other">%d sérií</item>
+    </plurals>
+
+    <!-- Preskúmať — Spomienky -->
+    <plurals name="b1_explore_memories_count">
+        <item quantity="one">%d spomienka</item>
+        <item quantity="few">%d spomienky</item>
+        <item quantity="many">%d spomienok</item>
+        <item quantity="other">%d spomienok</item>
+    </plurals>
+
+    <!-- Preskúmať — Špeciálne fotky -->
+    <plurals name="b1_explore_special_count">
+        <item quantity="one">%d fotka</item>
+        <item quantity="few">%d fotky</item>
+        <item quantity="many">%d fotiek</item>
+        <item quantity="other">%d fotiek</item>
+    </plurals>
+</resources>

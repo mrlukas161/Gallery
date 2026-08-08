@@ -18,6 +18,7 @@ import org.fossify.commons.helpers.ensureBackgroundThread
 import org.fossify.gallery.R
 import org.fossify.gallery.databinding.ActivityTextSelectBinding
 import org.fossify.gallery.faces.OcrEngine
+import org.fossify.gallery.faces.OcrIndexer
 import org.fossify.gallery.faces.UprightDecoder
 import org.fossify.gallery.helpers.TextNormalizer
 
@@ -26,33 +27,60 @@ import org.fossify.gallery.helpers.TextNormalizer
 class TextSelectActivity : SimpleActivity() {
     private val binding by viewBinding(ActivityTextSelectBinding::inflate)
     private var view: SelectView? = null
+    private var currentBmp: Bitmap? = null
+    private var photoPath = ""
+    private var searchQuery = ""
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(binding.root)
-        val path = intent.getStringExtra(EXTRA_PATH) ?: run {
+        photoPath = intent.getStringExtra(EXTRA_PATH) ?: run {
             finish()
             return
         }
-        val query = intent.getStringExtra(EXTRA_QUERY).orEmpty()
+        searchQuery = intent.getStringExtra(EXTRA_QUERY).orEmpty()
+        startRecognition()
+    }
+
+    // Rozpoznanie textu (aj opakované po zlyhaní). Rozlišuje dve situácie: „na fotke nie je text"
+    // (definitívny výsledok — uloží sa prázdny záznam) a „OCR zlyhalo" (chyba enginu — nič sa
+    // neukladá a stavový riadok ponúkne nový pokus ťuknutím).
+    private fun startRecognition() {
+        binding.textSelectStatus.setOnClickListener(null)
+        binding.textSelectStatus.isClickable = false
         binding.textSelectStatus.text = getString(R.string.live_text_reading)
         ensureBackgroundThread {
             var engine: OcrEngine? = null
-            val bmp = UprightDecoder.decode(path, 1600)?.bitmap
+            var ocrFailed = false
+            val bmp = UprightDecoder.decode(photoPath, 1600)?.bitmap
             val words = try {
                 if (bmp != null) {
                     engine = OcrEngine(this)
-                    if (engine.isReady()) engine.recognizeWords(bmp) else emptyList()
+                    if (engine.isReady()) {
+                        engine.recognizeWords(bmp)
+                    } else {
+                        // engine sa nepodarilo inicializovať — to NIE je „fotka bez textu"
+                        ocrFailed = true
+                        emptyList()
+                    }
                 } else {
                     emptyList()
                 }
             } catch (e: Throwable) {
+                ocrFailed = true
                 emptyList()
             } finally {
                 try {
                     engine?.close()
                 } catch (ignored: Throwable) {
                 }
+            }
+            if (bmp != null && !ocrFailed) {
+                // [27] výsledok on-demand OCR nezahodiť: ulož ho do ocr.db rovnakou cestou ako
+                // indexer, nech sa fotka zaradí do Dokumentov a nájde ju hľadanie. Fotka bez
+                // textu dostane prázdny záznam (konvencia indexera — OCR sa už nebude opakovať).
+                // overwrite=false: existujúci záznam indexera sa nikdy neprepíše.
+                OcrIndexer.saveResult(this, photoPath, wordsToText(words), overwrite = false)
             }
             runOnUiThread {
                 if (isDestroyed || isFinishing) {
@@ -64,7 +92,8 @@ class TextSelectActivity : SimpleActivity() {
                     finish()
                     return@runOnUiThread
                 }
-                val v = SelectView(this, bmp, words, query) { selectedCount ->
+                currentBmp = bmp
+                val v = SelectView(this, bmp, words, searchQuery) { selectedCount ->
                     binding.textSelectStatus.text = if (selectedCount == 0) {
                         getString(if (words.isEmpty()) R.string.text_select_none else R.string.text_select_hint)
                     } else {
@@ -77,10 +106,46 @@ class TextSelectActivity : SimpleActivity() {
                     android.widget.FrameLayout.LayoutParams.MATCH_PARENT,
                     android.widget.FrameLayout.LayoutParams.MATCH_PARENT,
                 )
-                binding.textSelectStatus.text =
-                    getString(if (words.isEmpty()) R.string.text_select_none else R.string.text_select_hint)
+                if (ocrFailed) {
+                    binding.textSelectStatus.text = getString(R.string.text_select_ocr_failed)
+                    binding.textSelectStatus.setOnClickListener { retryRecognition() }
+                } else {
+                    binding.textSelectStatus.text =
+                        getString(if (words.isEmpty()) R.string.text_select_none else R.string.text_select_hint)
+                }
             }
         }
+    }
+
+    // Nový pokus po zlyhaní OCR: odstráň starý pohľad, uvoľni bitmapu a rozpoznaj odznova.
+    private fun retryRecognition() {
+        binding.textSelectContainer.removeAllViews()
+        view = null
+        try {
+            currentBmp?.recycle()
+        } catch (ignored: Throwable) {
+        }
+        currentBmp = null
+        startRecognition()
+    }
+
+    // Poskladá text z boxov slov (Tesseract ich vracia v poradí čítania) do viacriadkovej podoby
+    // na uloženie do ocr.db — nový riadok tam, kde sa boxy zvislo neprekrývajú.
+    private fun wordsToText(words: List<OcrEngine.WordBox>): String {
+        if (words.isEmpty()) return ""
+        val sb = StringBuilder()
+        var prev: OcrEngine.WordBox? = null
+        for (w in words) {
+            val p = prev
+            if (p != null) {
+                val overlap = minOf(p.bottom, w.bottom) - maxOf(p.top, w.top)
+                val minHeight = minOf(p.bottom - p.top, w.bottom - w.top)
+                sb.append(if (minHeight > 0 && overlap < minHeight / 2) '\n' else ' ')
+            }
+            sb.append(w.text)
+            prev = w
+        }
+        return sb.toString()
     }
 
     override fun onResume() {

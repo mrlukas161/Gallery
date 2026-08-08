@@ -11,6 +11,7 @@ import android.widget.ImageView
 import android.widget.Toast
 import androidx.appcompat.content.res.AppCompatResources
 import androidx.core.view.allViews
+import androidx.recyclerview.widget.DiffUtil
 import com.bumptech.glide.Glide
 import com.qtalk.recyclerviewfastscroller.RecyclerViewFastScroller
 import org.fossify.commons.activities.BaseSimpleActivity
@@ -115,6 +116,9 @@ class MediaAdapter(
     private var rotatedImagePaths = ArrayList<String>()
     private var currentMediaHash = media.hashCode()
     private val hasOTGConnected = activity.hasOTGConnected()
+
+    // generácia diff výpočtu — keď počas výpočtu na pozadí príde novší updateMedia, starší výsledok sa zahodí
+    private var diffGeneration = 0
 
     private var scrollHorizontally = config.scrollHorizontally
     private var animateGifs = config.animateGifs
@@ -625,13 +629,45 @@ class MediaAdapter(
 
     private fun getItemWithKey(key: Int): Medium? = media.firstOrNull { (it as? Medium)?.path?.hashCode() == key } as? Medium
 
+    // [47] Namiesto plného notifyDataSetChanged (blikanie mriežky pri 10k+ položkách) sa zmeny
+    // aplikujú cez DiffUtil — rozdiel sa spočíta na pozadí a na UI vlákne sa dispatchnú len
+    // skutočne zmenené pozície. Volať z UI vlákna.
     fun updateMedia(newMedia: ArrayList<ThumbnailItem>) {
         val thumbnailItems = newMedia.clone() as ArrayList<ThumbnailItem>
-        if (thumbnailItems.hashCode() != currentMediaHash) {
-            currentMediaHash = thumbnailItems.hashCode()
-            media = thumbnailItems
-            notifyDataSetChanged()
-            finishActMode()
+        val newMediaHash = thumbnailItems.hashCode()
+        if (newMediaHash == currentMediaHash) {
+            // zoznam sa reálne nezmenil — nerob nič (pôvodná sémantika)
+            return
+        }
+
+        // snímka starého zoznamu — počas výpočtu na pozadí ju nesmie nikto meniť,
+        // preto kópia (deleteFiles mutuje pole `media` na mieste)
+        val oldMedia = ArrayList(media)
+        val generation = ++diffGeneration
+        ensureBackgroundThread {
+            val diffResult = DiffUtil.calculateDiff(ThumbnailDiffCallback(oldMedia, thumbnailItems), false)
+            activity.runOnUiThread {
+                if (activity.isDestroyed) {
+                    return@runOnUiThread
+                }
+
+                if (generation != diffGeneration) {
+                    // medzitým sa spustil novší updateMedia — tento (starší) výsledok zahoď
+                    return@runOnUiThread
+                }
+
+                currentMediaHash = newMediaHash
+                if (media.size == oldMedia.size) {
+                    // zoznam sa medzi výpočtom a dispatch nezmenil — najprv nový snapshot, potom dispatch diffov
+                    media = thumbnailItems
+                    diffResult.dispatchUpdatesTo(this)
+                } else {
+                    // zoznam sa medzitým zmenil (napr. mazanie) — spočítaný diff už nesedí, prekresli celé
+                    media = thumbnailItems
+                    notifyDataSetChanged()
+                }
+                finishActMode()
+            }
         }
     }
 
@@ -789,6 +825,43 @@ class MediaAdapter(
                 PhotoItemGridBinding.bind(view).toMediaItemBinding()
             } else {
                 VideoItemGridBinding.bind(view).toMediaItemBinding()
+            }
+        }
+    }
+
+    // [47] DiffUtil callback nad snímkami starého a nového zoznamu — položky páruje podľa cesty
+    // (Medium) alebo titulku (ThumbnailSection), obsah porovnáva podľa polí ovplyvňujúcich zobrazenie
+    private class ThumbnailDiffCallback(
+        private val oldList: List<ThumbnailItem>,
+        private val newList: List<ThumbnailItem>,
+    ) : DiffUtil.Callback() {
+
+        override fun getOldListSize() = oldList.size
+
+        override fun getNewListSize() = newList.size
+
+        override fun areItemsTheSame(oldItemPosition: Int, newItemPosition: Int): Boolean {
+            val oldItem = oldList[oldItemPosition]
+            val newItem = newList[newItemPosition]
+            return when {
+                oldItem is Medium && newItem is Medium -> oldItem.path == newItem.path
+                oldItem is ThumbnailSection && newItem is ThumbnailSection -> oldItem.title == newItem.title
+                else -> false
+            }
+        }
+
+        override fun areContentsTheSame(oldItemPosition: Int, newItemPosition: Int): Boolean {
+            val oldItem = oldList[oldItemPosition]
+            val newItem = newList[newItemPosition]
+            return when {
+                oldItem is Medium && newItem is Medium ->
+                    oldItem.path == newItem.path &&
+                        oldItem.modified == newItem.modified &&
+                        oldItem.size == newItem.size &&
+                        oldItem.isFavorite == newItem.isFavorite
+
+                oldItem is ThumbnailSection && newItem is ThumbnailSection -> oldItem.title == newItem.title
+                else -> false
             }
         }
     }

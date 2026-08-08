@@ -146,6 +146,7 @@ import org.fossify.gallery.helpers.LOCATION_INTERNAL
 import org.fossify.gallery.helpers.MAX_COLUMN_COUNT
 import org.fossify.gallery.helpers.MONTH_MILLISECONDS
 import org.fossify.gallery.helpers.MediaFetcher
+import org.fossify.gallery.helpers.Memories
 import org.fossify.gallery.helpers.PATH
 import org.fossify.gallery.helpers.PICKED_PATHS
 import org.fossify.gallery.helpers.PathTransfer
@@ -188,6 +189,9 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
 
         // „Na upratanie" prechádza celý pHash index — neprepočítavame ho častejšie ako raz za pol minúty
         private const val HOME_CLEANUP_MIN_INTERVAL = 30_000L
+
+        // Spomienky prechádzajú celý MediaStore — výsledok držíme 30 minút
+        private const val HOME_MEMORIES_MIN_INTERVAL = 30 * 60_000L
 
         // cache stránky Posledné: po tomto čase mimo stránky sa pri návrate prenačíta
         private const val RECENT_CACHE_MAX_AGE = 2 * 60_000L
@@ -253,6 +257,15 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
     // stránka Domov — pamäť posledného (ťažkého) výpočtu „Na upratanie"
     private var mHomeCleanupComputedAt = 0L
     private var mHomeCleanupRunning = false
+
+    // posledné vypočítané štatistiky „Na upratanie" — zdieľa ich karta Podobné na Preskúmať
+    private var mLastHomeStats: HomeStats.Result? = null
+
+    // stránka Domov — cache spomienok (Memories.build číta celý MediaStore, drží sa 30 minút);
+    // počet spomienok z nej zdieľa aj karta Spomienky na Preskúmať
+    private var mHomeMemories: List<Memories.Memory>? = null
+    private var mHomeMemoriesComputedAt = 0L
+    private var mHomeMemoriesRunning = false
 
     private var mStoredAnimateGifs = true
     private var mStoredCropThumbnails = true
@@ -544,6 +557,9 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
         }
 
         mExploreCountsAt = now
+        // hotové výsledky z Domova (počítajú sa inde) — čítame ich ešte na UI vlákne
+        val stats = mLastHomeStats
+        val memoriesCount = mHomeMemories?.size ?: -1
         ensureBackgroundThread {
             val people = try {
                 org.fossify.gallery.faces.PeopleDatabase.getInstance(this).PeopleDao()
@@ -561,6 +577,13 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
                 org.fossify.gallery.faces.GeoDatabase.getInstance(this).GeoDao().countGeotagged()
             } catch (ignored: Throwable) {
                 0
+            }
+            // počet špeciálnych fotiek zapisuje SpecialActivity po skene (-1 = ešte neznáme)
+            val special = try {
+                getSharedPreferences("galeria_faces", android.content.Context.MODE_PRIVATE)
+                    .getInt("special_count", -1)
+            } catch (ignored: Throwable) {
+                -1
             }
 
             runOnUiThread {
@@ -580,6 +603,29 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
                     if (places > 0) {
                         exploreCardSubtitle(binding.pageExplore.explorePlaces)?.text =
                             resources.getQuantityString(R.plurals.a1_explore_places_count, places, places)
+                    }
+                    // Podobné/duplikáty — z posledného výpočtu „Na upratanie"; bez neho text nemeníme
+                    if (stats != null && stats.hasPhashIndex) {
+                        exploreCardSubtitle(binding.pageExplore.exploreSimilar)?.text = listOf(
+                            resources.getQuantityString(
+                                R.plurals.b1_explore_duplicates_count, stats.duplicates, stats.duplicates,
+                            ),
+                            resources.getQuantityString(
+                                R.plurals.b1_explore_bursts_count, stats.bursts, stats.bursts,
+                            ),
+                        ).joinToString(" · ")
+                    }
+                    // Spomienky — počet z cache Domova; kým sa nespočítali, podtitulok ostáva
+                    if (memoriesCount >= 0) {
+                        exploreCardSubtitle(binding.pageExplore.exploreMemories)?.text =
+                            resources.getQuantityString(
+                                R.plurals.b1_explore_memories_count, memoriesCount, memoriesCount,
+                            )
+                    }
+                    // Špeciálne fotky — počet uložený SpecialActivity po poslednom skene
+                    if (special >= 0) {
+                        exploreCardSubtitle(binding.pageExplore.exploreSpecial)?.text =
+                            resources.getQuantityString(R.plurals.b1_explore_special_count, special, special)
                     }
                 } catch (ignored: Throwable) {
                 }
@@ -654,6 +700,7 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
             val cardColor = getBottomNavigationBackgroundColor()
             listOf(
                 binding.pageHome.homeCleanup,
+                binding.pageHome.homeMemories,
                 binding.pageExplore.exploreMemories,
                 binding.pageExplore.explorePeople,
                 binding.pageExplore.explorePlaces,
@@ -686,6 +733,7 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
         }
 
         refreshHomeCleanup(force)
+        refreshHomeMemories(force)
         refreshHomeStatus()
         refreshHomeFolders()
     }
@@ -708,6 +756,8 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
             runOnUiThread {
                 mHomeCleanupRunning = false
                 mHomeCleanupComputedAt = System.currentTimeMillis()
+                // výsledok si odložíme aj pre kartu Podobné na stránke Preskúmať
+                mLastHomeStats = stats
                 if (isDestroyed || isFinishing) {
                     return@runOnUiThread
                 }
@@ -730,6 +780,52 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
                             this, org.fossify.gallery.services.IndexingService.TASK_PHASH,
                         )
                     }
+                }
+            }
+        }
+    }
+
+    // Karta „Spomienky" na Domove — Memories.build() prechádza celý MediaStore (a geo.db),
+    // preto beží výhradne na pozadí a výsledok sa drží HOME_MEMORIES_MIN_INTERVAL (rovnaký
+    // vzor ako mHomeCleanupComputedAt). Karta sa ukáže, len keď sa niečo našlo.
+    private fun refreshHomeMemories(force: Boolean = false) {
+        if (mHomeMemoriesRunning) {
+            return
+        }
+
+        val now = System.currentTimeMillis()
+        if (!force && mHomeMemoriesComputedAt > 0 && now - mHomeMemoriesComputedAt < HOME_MEMORIES_MIN_INTERVAL) {
+            return
+        }
+
+        mHomeMemoriesRunning = true
+        ensureBackgroundThread {
+            val memories = try {
+                Memories.build(this)
+            } catch (ignored: Throwable) {
+                emptyList()
+            }
+
+            runOnUiThread {
+                mHomeMemoriesRunning = false
+                mHomeMemoriesComputedAt = System.currentTimeMillis()
+                mHomeMemories = memories
+                if (isDestroyed || isFinishing) {
+                    return@runOnUiThread
+                }
+
+                val page = binding.pageHome
+                if (memories.isEmpty()) {
+                    page.homeMemories.beGone()
+                } else {
+                    // prvá (najvyššie zoradená) spomienka — podtitulok už obsahuje počet fotiek
+                    val first = memories.first()
+                    page.homeMemoriesSummary.text =
+                        getString(R.string.b1_home_memories_summary, first.title, first.subtitle)
+                    page.homeMemories.setOnClickListener {
+                        startActivity(Intent(this, MemoriesActivity::class.java))
+                    }
+                    page.homeMemories.beVisible()
                 }
             }
         }

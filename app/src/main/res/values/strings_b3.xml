@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Stringy pre výber textu na fotke (TextSelectActivity) — rozlíšenie zlyhania OCR od fotky bez textu -->
+<resources>
+    <!-- OCR zlyhalo (chyba enginu) — na rozdiel od „na fotke nie je text" sa dá skúsiť znova -->
+    <string name="text_select_ocr_failed">Čítanie textu zlyhalo. Ťukni sem a skúsim to znova.</string>
+</resources>

@@ -86,6 +86,7 @@ class SpecialActivity : SimpleActivity() {
                 }
                 checked++
                 if (checked % 60 == 0 || checked == paths.size) {
+                    saveSpecialCount()
                     val c = checked
                     runOnUiThread {
                         if (isDestroyed) return@runOnUiThread
@@ -94,12 +95,22 @@ class SpecialActivity : SimpleActivity() {
                     }
                 }
             }
+            // finálny zápis počtu — pokryje aj prázdnu galériu (slučka sa vôbec nespustí)
+            saveSpecialCount()
             runOnUiThread {
                 if (isDestroyed) return@runOnUiThread
                 binding.docsToolbar.title = getString(R.string.special_title)
                 applyFilter()
             }
         }
+    }
+
+    // Zapíše celkový počet nájdených špeciálnych fotiek (distinct — fotka môže byť vo viacerých
+    // kategóriách naraz) do prefs "galeria_faces"/"special_count". Číta ho karta Preskúmať,
+    // aby vedela ukázať počet bez opätovného skenu. Volá sa priebežne po každej dávke aj na konci.
+    private fun saveSpecialCount() {
+        val count = synchronized(found) { found.values.flatten().distinct().size }
+        prefs.edit().putInt("special_count", count).apply()
     }
 
     private fun queryImages(): List<String> {

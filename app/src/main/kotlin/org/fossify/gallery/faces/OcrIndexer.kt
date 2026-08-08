@@ -62,11 +62,7 @@ object OcrIndexer {
                         }
                     } catch (ignored: Throwable) {
                     }
-                    try {
-                        val norm = TextNormalizer.normalize(text, true)
-                        dao.insert(OcrEntity(path, text.take(MAX_TEXT), norm.take(MAX_TEXT), System.currentTimeMillis()))
-                    } catch (ignored: Throwable) {
-                    }
+                    saveResult(appCtx, path, text)
                     QrScanner.store(appCtx, path, qr)
                     done++
                     if (done % 3 == 0 || done == total) {
@@ -111,16 +107,7 @@ object OcrIndexer {
             val bmp = decodeDownscaled(path) ?: return ""
             val text = engine.recognize(bmp)
             bmp.recycle()
-            try {
-                dao.insert(
-                    OcrEntity(
-                        path, text.take(MAX_TEXT),
-                        TextNormalizer.normalize(text, true).take(MAX_TEXT),
-                        System.currentTimeMillis(),
-                    )
-                )
-            } catch (ignored: Throwable) {
-            }
+            saveResult(appCtx, path, text)
             text
         } catch (e: Throwable) {
             ""
@@ -129,6 +116,32 @@ object OcrIndexer {
                 engine?.close()
             } catch (ignored: Throwable) {
             }
+        }
+    }
+
+    // [27] JEDNOTNÁ cesta zápisu výsledku OCR do ocr.db — volá ju indexer, textForPhoto aj
+    // on-demand rozpoznanie v TextSelectActivity (dlhé podržanie). Rovnaké čistenie
+    // (OcrText.clean + isMeaningful) a normalizácia ako pri indexovaní; nezmyselný alebo žiadny
+    // text sa uloží ako PRÁZDNY záznam (konvencia indexera) — fotka sa už nebude OCR-ovať znova.
+    // overwrite=false ponechá existujúci záznam nedotknutý (on-demand výsledok poskladaný
+    // z boxov slov nesmie prepísať plný text z indexera).
+    fun saveResult(context: Context, path: String, text: String, overwrite: Boolean = true): Boolean {
+        return try {
+            val dao = OcrDatabase.getInstance(context.applicationContext).OcrDao()
+            if (!overwrite && dao.getText(path) != null) return true
+            val cleaned = OcrText.clean(text)
+            val stored = if (OcrText.isMeaningful(cleaned)) cleaned else ""
+            dao.insert(
+                OcrEntity(
+                    path,
+                    stored.take(MAX_TEXT),
+                    TextNormalizer.normalize(stored, true).take(MAX_TEXT),
+                    System.currentTimeMillis(),
+                )
+            )
+            true
+        } catch (e: Throwable) {
+            false
         }
     }
 
