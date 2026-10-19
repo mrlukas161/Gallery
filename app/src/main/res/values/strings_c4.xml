@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Revízia 0.65 — oblasť C4: hlavná obrazovka, mriežky, sekundárne obrazovky -->
+<resources>
+    <string name="c4_removed_from_favorites_toast">Odobrané z obľúbených</string>
+    <string name="c4_search_failed">Hľadanie zlyhalo</string>
+    <string name="c4_home_cleanup_failed">Prehľad sa nepodarilo spočítať</string>
+    <string name="c4_home_status_failed">Stav spracovania sa nepodarilo načítať</string>
+    <string name="c4_recent_failed">Posledné fotky sa nepodarilo načítať</string>
+    <string name="c4_photo_grid_empty">V tejto mriežke už nie sú žiadne fotky</string>
+    <string name="c4_docs_load_failed">Dokumenty sa nepodarilo načítať</string>
+    <string name="c4_special_scan_failed">Hľadanie špeciálnych fotiek zlyhalo</string>
+    <string name="c4_memories_failed">Spomienky sa nepodarilo poskladať</string>
+    <string name="c4_map_empty">Nenašli sa žiadne fotky s polohou</string>
+</resources>

@@ -6,7 +6,7 @@
     android:layout_height="match_parent"
     android:fillViewport="true">
 
-    <!-- Rozcestník „Preskúmať" — rovnaké karty ako v ExploreActivity, teraz ako stránka -->
+    <!-- Rozcestník „Preskúmať" — stránka hlavnej obrazovky -->
     <LinearLayout
         android:id="@+id/explore_container"
         android:layout_width="match_parent"

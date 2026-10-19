@@ -194,27 +194,20 @@
             android:configChanges="orientation"
             android:exported="false"
             android:label="@string/memories_title"
-            android:parentActivityName=".activities.ExploreActivity" />
+            android:parentActivityName=".activities.MainActivity" />
 
         <activity
             android:name=".activities.SpecialActivity"
             android:configChanges="orientation"
             android:exported="false"
             android:label="@string/special_title"
-            android:parentActivityName=".activities.ExploreActivity" />
+            android:parentActivityName=".activities.MainActivity" />
 
         <activity
             android:name=".activities.DocsActivity"
             android:configChanges="orientation"
             android:exported="false"
             android:label="@string/docs_title"
-            android:parentActivityName=".activities.ExploreActivity" />
-
-        <activity
-            android:name=".activities.ExploreActivity"
-            android:configChanges="orientation"
-            android:exported="false"
-            android:label="@string/explore_title"
             android:parentActivityName=".activities.MainActivity" />
 
         <activity
@@ -345,10 +338,6 @@
                 android:name="android.support.FILE_PROVIDER_PATHS"
                 android:resource="@xml/provider_paths" />
         </provider>
-
-        <receiver
-            android:name=".receivers.UpdateResultReceiver"
-            android:exported="false" />
 
         <receiver
             android:name=".receivers.RefreshMediaReceiver"
