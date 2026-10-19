@@ -23,6 +23,9 @@ object FaceIndexer {
     private const val MAX_DECODE_SIZE = 1024
     private const val CHANNEL_ID = "face_indexing"
     private const val NOTIF_ID = 49231
+    private const val KEY_REPAIR_AT = "faces_embed_repair_at"
+    private const val REPAIR_INTERVAL_MS = 24 * 60 * 60 * 1000L
+    private const val REPAIR_MAX_PHOTOS = 100
 
     fun index(
         context: Context,
@@ -73,32 +76,25 @@ object FaceIndexer {
                     try {
                         val bmp = decodeDownscaled(path)
                         if (bmp != null) {
-                            val detected = detector.detect(bmp)
-                            faceCount = detected.size
-                            if (detected.isNotEmpty()) {
-                                val theEmbedder = embedder
-                                val theLandmarker = landmarker
-                                dao.insertFaces(detected.mapIndexed { i, f ->
-                                    val embedding = try {
-                                        val crop = FaceAligner.cropRegion(bmp, f.left, f.top, f.right, f.bottom, 0.3f)
-                                        if (crop != null) {
-                                            val e = FaceEmbedder.toBytes(FaceAligner.embedCrop(crop, theLandmarker, theEmbedder, detector).vec)
-                                            crop.recycle()
-                                            e
-                                        } else {
-                                            FaceEmbedder.toBytes(theEmbedder.embed(bmp, f))
-                                        }
-                                    } catch (e: Throwable) {
-                                        null
-                                    }
-                                    FaceEntity(
-                                        id = null, mediaFullPath = path, mediaStoreId = mediaStoreId, faceIndex = i,
-                                        bboxLeft = f.left, bboxTop = f.top, bboxRight = f.right, bboxBottom = f.bottom,
-                                        score = f.score, embedding = embedding, detectedAt = System.currentTimeMillis(),
-                                    )
-                                })
+                            try {
+                                val detected = detector.detect(bmp)
+                                faceCount = detected.size
+                                if (detected.isNotEmpty()) {
+                                    val theEmbedder = embedder
+                                    val theLandmarker = landmarker
+                                    dao.insertFaces(detected.mapIndexed { i, f ->
+                                        FaceEntity(
+                                            id = null, mediaFullPath = path, mediaStoreId = mediaStoreId, faceIndex = i,
+                                            bboxLeft = f.left, bboxTop = f.top, bboxRight = f.right, bboxBottom = f.bottom,
+                                            score = f.score,
+                                            embedding = FaceAligner.embedDetected(bmp, f, theLandmarker, theEmbedder, detector),
+                                            detectedAt = System.currentTimeMillis(),
+                                        )
+                                    })
+                                }
+                            } finally {
+                                bmp.recycle()
                             }
-                            bmp.recycle()
                         }
                         dao.insertIndexedPhoto(IndexedPhotoEntity(path, faceCount, System.currentTimeMillis()))
                     } catch (ignored: Throwable) {
@@ -111,6 +107,7 @@ object FaceIndexer {
                     }
                 }
                 cancelNotification(appCtx)
+                if (isRunning) maybeRepairUnembedded(appCtx, dao, detector, embedder, landmarker)
                 val info = try {
                     val embs = dao.getAllEmbeddings().map { FaceEmbedder.toFloats(it) }
                     val thresholds = floatArrayOf(0.35f, 0.40f, 0.45f, 0.50f, 0.55f, 0.60f, 0.65f, 0.70f)
@@ -134,6 +131,25 @@ object FaceIndexer {
 
     fun stop() {
         isRunning = false
+    }
+
+    // Raz denne skús doplniť odtlačok tváram, ktorým ho indexovanie nevypočítalo — bez neho sú
+    // v appke neviditeľné a nedajú sa označiť. Obmedzené počtom fotiek, aby to nezaťažovalo
+    // bežné (automatické) spracovanie knižnice; neopraviteľné sa skúsia znova o deň.
+    private fun maybeRepairUnembedded(
+        context: Context,
+        dao: FaceDao,
+        detector: FaceDetectionHelper,
+        embedder: FaceEmbedder,
+        landmarker: FaceLandmarkHelper,
+    ) {
+        try {
+            val prefs = context.getSharedPreferences("galeria_faces", Context.MODE_PRIVATE)
+            if (System.currentTimeMillis() - prefs.getLong(KEY_REPAIR_AT, 0L) < REPAIR_INTERVAL_MS) return
+            prefs.edit().putLong(KEY_REPAIR_AT, System.currentTimeMillis()).apply()
+            RefreshFaces.repairUnembedded(dao, detector, embedder, landmarker, REPAIR_MAX_PHOTOS) { isRunning }
+        } catch (ignored: Throwable) {
+        }
     }
 
     // Zostaví reťazec príčin (root-first), aby sme videli, čo presne zlyhalo.

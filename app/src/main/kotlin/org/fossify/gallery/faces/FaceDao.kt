@@ -7,7 +7,10 @@ import androidx.room.Query
 
 @Dao
 interface FaceDao {
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    // ABORT, nie REPLACE: pri kolízii (cesta, poradie tváre) by REPLACE potichu zmazal existujúci
+    // riadok aj s jeho id — a tým menovku osoby v people.db. Volajúci kolíziám predchádzajú
+    // (FaceIndexer nedeteguje nanovo fotky s tvárami, RefreshFaces čísluje za všetkými tvárami fotky).
+    @Insert(onConflict = OnConflictStrategy.ABORT)
     fun insertFaces(faces: List<FaceEntity>)
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
@@ -32,6 +35,17 @@ interface FaceDao {
 
     @Query("SELECT * FROM faces WHERE embedding IS NOT NULL")
     fun getAllFaces(): List<FaceEntity>
+
+    // všetky tváre vrátane tých bez odtlačku (prepracovanie ich doplní na mieste)
+    @Query("SELECT * FROM faces")
+    fun getEveryFace(): List<FaceEntity>
+
+    @Query("SELECT * FROM faces WHERE media_full_path = :path")
+    fun getFacesForPath(path: String): List<FaceEntity>
+
+    // fotky s tvárou bez odtlačku (výpočet zlyhal) — náhodne, aby neopraviteľné neblokovali ostatné
+    @Query("SELECT DISTINCT media_full_path FROM faces WHERE embedding IS NULL ORDER BY RANDOM() LIMIT :limit")
+    fun getPathsWithUnembeddedFaces(limit: Int): List<String>
 
     @Query("SELECT * FROM faces WHERE id IN (:ids)")
     fun getFacesByIds(ids: List<Long>): List<FaceEntity>
