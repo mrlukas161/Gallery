@@ -16,6 +16,14 @@ interface FaceDao {
     @Query("SELECT path FROM indexed_photos")
     fun getProcessedPaths(): List<String>
 
+    // fotky, ktoré už majú v DB tváre — indexer ich NESMIE detegovať nanovo: nové riadky by
+    // dostali nové id a menovky v people.db (face_id) by ostali visieť
+    @Query("SELECT DISTINCT media_full_path FROM faces")
+    fun getPathsWithFaces(): List<String>
+
+    @Query("SELECT COUNT(*) FROM faces WHERE media_full_path = :path")
+    fun getFaceCountForPath(path: String): Int
+
     @Query("SELECT COUNT(*) FROM faces")
     fun getFaceCount(): Int
 

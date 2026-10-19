@@ -46,10 +46,24 @@ object FaceIndexer {
 
                 val processed = dao.getProcessedPaths().toHashSet()
                 val todo = queryImages(appCtx).filter { it.second !in processed }
+                // fotka bez značky „spracovaná", ale s tvárami v DB (značku zmazalo staré denné
+                // upratovanie pri dočasne nedostupnom súbore, alebo pád medzi zápisom tvárí a značky):
+                // tváre NEdetegovať nanovo, len doplniť značku — inak by vznikli nové id a menovky
+                // v people.db by ukazovali do prázdna
+                val withFaces = if (todo.isEmpty()) emptySet() else dao.getPathsWithFaces().toHashSet()
                 val total = todo.size
                 var done = 0
                 for ((mediaStoreId, path) in todo) {
                     if (!isRunning) break
+                    if (path in withFaces) {
+                        try {
+                            dao.insertIndexedPhoto(IndexedPhotoEntity(path, dao.getFaceCountForPath(path), System.currentTimeMillis()))
+                        } catch (ignored: Throwable) {
+                        }
+                        done++
+                        if (done % 5 == 0 || done == total) onProgress(done, total)
+                        continue
+                    }
                     var faceCount = 0
                     try {
                         val bmp = decodeDownscaled(path)
