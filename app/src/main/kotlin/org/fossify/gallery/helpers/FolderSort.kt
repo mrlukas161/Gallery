@@ -2,7 +2,8 @@ package org.fossify.gallery.helpers
 
 import android.app.Activity
 import android.content.Context
-import androidx.appcompat.app.AlertDialog
+import org.fossify.commons.dialogs.RadioGroupDialog
+import org.fossify.commons.models.RadioItem
 import org.fossify.gallery.R
 
 // Zoradenie priečinkov — spoločné pre stránku Priečinky aj pre skratku na Domove.
@@ -30,21 +31,17 @@ object FolderSort {
         R.string.folder_sort_modified
     }
 
-    // dialóg s dvoma možnosťami; po výbere sa hneď zavrie a nechá volajúceho prekresliť zoznam
+    // dialóg s dvoma možnosťami; po výbere sa hneď zavrie a nechá volajúceho prekresliť zoznam.
+    // Fossify RadioGroupDialog namiesto surového AlertDialog.Builder — dialóg sa prefarbí podľa témy appky.
     fun showDialog(activity: Activity, onChanged: () -> Unit) {
-        val labels = arrayOf(
-            activity.getString(R.string.folder_sort_name),
-            activity.getString(R.string.folder_sort_modified),
+        val items = arrayListOf(
+            RadioItem(BY_NAME, activity.getString(R.string.folder_sort_name)),
+            RadioItem(BY_MODIFIED, activity.getString(R.string.folder_sort_modified)),
         )
 
-        AlertDialog.Builder(activity)
-            .setTitle(R.string.folder_sort_title)
-            .setSingleChoiceItems(labels, mode(activity)) { dialog, which ->
-                setMode(activity, which)
-                dialog.dismiss()
-                onChanged()
-            }
-            .setNegativeButton(org.fossify.commons.R.string.cancel, null)
-            .show()
+        RadioGroupDialog(activity, items, mode(activity), R.string.folder_sort_title) {
+            setMode(activity, it as Int)
+            onChanged()
+        }
     }
 }

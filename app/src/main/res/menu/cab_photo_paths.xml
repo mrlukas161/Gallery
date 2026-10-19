@@ -21,15 +21,51 @@
         android:showAsAction="always"
         android:title="@string/select_all"
         app:showAsAction="always" />
+    <!-- obľúbené sa prepínajú ako v albume — v kóde je viditeľná vždy len tá správna z dvojice -->
     <item
         android:id="@+id/cab_add_to_favorites"
         android:showAsAction="never"
         android:title="@string/add_to_favorites"
         app:showAsAction="never" />
     <item
+        android:id="@+id/cab_remove_from_favorites"
+        android:showAsAction="never"
+        android:title="@string/remove_from_favorites"
+        android:visible="false"
+        app:showAsAction="never" />
+    <item
         android:id="@+id/cab_properties"
         android:showAsAction="never"
         android:title="@string/properties"
+        app:showAsAction="never" />
+    <item
+        android:id="@+id/cab_copy_to"
+        android:showAsAction="never"
+        android:title="@string/copy_to"
+        app:showAsAction="never" />
+    <item
+        android:id="@+id/cab_move_to"
+        android:showAsAction="never"
+        android:title="@string/move_to"
+        app:showAsAction="never" />
+    <!-- len pri výbere jednej fotky (viditeľnosť rieši kód) -->
+    <item
+        android:id="@+id/cab_open_with"
+        android:showAsAction="never"
+        android:title="@string/open_with"
+        android:visible="false"
+        app:showAsAction="never" />
+    <item
+        android:id="@+id/cab_edit"
+        android:showAsAction="never"
+        android:title="@string/edit"
+        android:visible="false"
+        app:showAsAction="never" />
+    <item
+        android:id="@+id/cab_set_as"
+        android:showAsAction="never"
+        android:title="@string/set_as"
+        android:visible="false"
         app:showAsAction="never" />
     <!-- doplnková akcia obrazovky (napr. „Toto nie je on" pri osobe) — názov sa nastaví v kóde -->
     <item

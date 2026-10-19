@@ -120,6 +120,13 @@ class MediaAdapter(
     // generácia diff výpočtu — keď počas výpočtu na pozadí príde novší updateMedia, starší výsledok sa zahodí
     private var diffGeneration = 0
 
+    // počítadlo priamych zmien poľa `media` mimo updateMedia (dnes len mazanie vo deleteFiles) a cesty
+    // zmazané pri každej z nich — podľa nich updateMedia pozná, že zoznam, z ktorého počítal, už
+    // obsahuje fotky zmazané medzičasom, a nevráti ich späť do mriežky
+    private var mediaMutations = 0
+    private val deletedByMutation = ArrayList<Pair<Int, Set<String>>>()
+    private val MAX_RECORDED_MUTATIONS = 20
+
     private var scrollHorizontally = config.scrollHorizontally
     private var animateGifs = config.animateGifs
     private var cropThumbnails = config.cropThumbnails
@@ -613,6 +620,7 @@ class MediaAdapter(
                 }
 
                 media.removeAll(removeMedia)
+                recordDeletion(removeMedia)
                 listener?.tryDeleteFiles(fileDirItems, skipRecycleBin)
                 listener?.updateMediaGridDecoration(media)
                 removeSelectedItems(positions)
@@ -636,13 +644,16 @@ class MediaAdapter(
         val thumbnailItems = newMedia.clone() as ArrayList<ThumbnailItem>
         val newMediaHash = thumbnailItems.hashCode()
         if (newMediaHash == currentMediaHash) {
-            // zoznam sa reálne nezmenil — nerob nič (pôvodná sémantika)
+            // zoznam sa reálne nezmenil — nerob nič (pôvodná sémantika); platí však posledná požiadavka,
+            // takže starší výpočet, ktorý ešte beží, sa zahodí
+            diffGeneration++
             return
         }
 
         // snímka starého zoznamu — počas výpočtu na pozadí ju nesmie nikto meniť,
         // preto kópia (deleteFiles mutuje pole `media` na mieste)
         val oldMedia = ArrayList(media)
+        val mutationsAtStart = mediaMutations
         val generation = ++diffGeneration
         ensureBackgroundThread {
             val diffResult = DiffUtil.calculateDiff(ThumbnailDiffCallback(oldMedia, thumbnailItems), false)
@@ -656,19 +667,49 @@ class MediaAdapter(
                     return@runOnUiThread
                 }
 
-                currentMediaHash = newMediaHash
-                if (media.size == oldMedia.size) {
-                    // zoznam sa medzi výpočtom a dispatch nezmenil — najprv nový snapshot, potom dispatch diffov
+                if (mutationsAtStart == mediaMutations) {
+                    // zoznam sa medzi výpočtom a dispatchom nezmenil — najprv nový snapshot, potom dispatch diffov
+                    currentMediaHash = newMediaHash
                     media = thumbnailItems
                     diffResult.dispatchUpdatesTo(this)
                 } else {
-                    // zoznam sa medzitým zmenil (napr. mazanie) — spočítaný diff už nesedí, prekresli celé
-                    media = thumbnailItems
+                    // medzitým sa mazalo: nový zoznam vznikol ešte PRED zmazaním, takže obsahuje aj fotky,
+                    // ktoré už nie sú — tie sa nesmú vrátiť do mriežky. Spočítaný diff už nesedí, prekresli celé.
+                    val removedSince = HashSet<String>()
+                    deletedByMutation.forEach { (mutation, deletedPaths) ->
+                        if (mutation > mutationsAtStart) {
+                            removedSince.addAll(deletedPaths)
+                        }
+                    }
+
+                    media = withoutDeleted(thumbnailItems, removedSince)
+                    currentMediaHash = media.hashCode()
                     notifyDataSetChanged()
+                    listener?.updateMediaGridDecoration(media)
                 }
                 finishActMode()
             }
         }
+    }
+
+    // zaznamená priamu zmenu poľa `media` mazaním (volať hneď po media.removeAll)
+    private fun recordDeletion(removed: List<Medium>) {
+        mediaMutations++
+        deletedByMutation.add(mediaMutations to removed.mapTo(HashSet()) { it.path })
+        if (deletedByMutation.size > MAX_RECORDED_MUTATIONS) {
+            deletedByMutation.removeAt(0)
+        }
+    }
+
+    // kópia zoznamu bez zmazaných fotiek (rovnako ako media.removeAll vo deleteFiles — nadpisy sekcií ostávajú)
+    private fun withoutDeleted(items: List<ThumbnailItem>, deletedPaths: Set<String>): ArrayList<ThumbnailItem> {
+        val result = ArrayList<ThumbnailItem>(items.size)
+        items.forEach { item ->
+            if (!(item is Medium && item.path in deletedPaths)) {
+                result.add(item)
+            }
+        }
+        return result
     }
 
     fun updateDisplayFilenames(displayFilenames: Boolean) {
