@@ -4,7 +4,11 @@ import android.app.Activity
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.RecyclerView
+import org.fossify.commons.extensions.applyColorFilter
+import org.fossify.commons.extensions.getContrastColor
+import org.fossify.commons.extensions.getProperPrimaryColor
 import org.fossify.gallery.databinding.ItemTagFaceBinding
 import org.fossify.gallery.faces.FaceCropLoader
 import org.fossify.gallery.faces.FaceEntity
@@ -29,6 +33,33 @@ class FaceTagAdapter(
         }
 
     fun selectedIds(): List<Long> = selected.toList()
+
+    fun selectedCount(): Int = selected.size
+
+    // Výmena zoznamu BEZ výmeny adaptéra (posuvník podobnosti ho volá často): scroll aj výber ostanú.
+    // Výber prežije len pre tváre, ktoré sú v novom zozname — skryté tváre nesmú ostať „vybrané" naslepo.
+    fun updateItems(newFaces: List<FaceEntity>) {
+        val old = ArrayList(faces)
+        val diff = DiffUtil.calculateDiff(object : DiffUtil.Callback() {
+            override fun getOldListSize() = old.size
+            override fun getNewListSize() = newFaces.size
+            override fun areItemsTheSame(oldPos: Int, newPos: Int): Boolean {
+                val a = old[oldPos]
+                val b = newFaces[newPos]
+                return a === b || (a.id != null && a.id == b.id)
+            }
+
+            // výrez tváre sa pri rovnakom id nemení
+            override fun areContentsTheSame(oldPos: Int, newPos: Int) = true
+        })
+        faces.clear()
+        faces.addAll(newFaces)
+        val visible = HashSet<Long>()
+        faces.forEach { f -> f.id?.let { visible.add(it) } }
+        val selectionChanged = selected.retainAll(visible)
+        diff.dispatchUpdatesTo(this)
+        if (selectionChanged) onSelectionChanged(selected.size)
+    }
 
     fun selectRange(from: Int, to: Int) {
         val a = max(0, min(from, to))
@@ -79,6 +110,12 @@ class FaceTagAdapter(
             }
             val isSel = face.id != null && selected.contains(face.id)
             binding.tagFaceCheck.visibility = if (isSel) View.VISIBLE else View.GONE
+            if (isSel) {
+                // výberová fajka vo farbách témy — rovnaký vzhľad ako v mriežke fotiek (MediaAdapter)
+                val primary = activity.getProperPrimaryColor()
+                binding.tagFaceCheck.background?.applyColorFilter(primary)
+                binding.tagFaceCheck.applyColorFilter(primary.getContrastColor())
+            }
             binding.root.setOnClickListener {
                 val id = face.id ?: return@setOnClickListener
                 if (selected.contains(id)) selected.remove(id) else selected.add(id)
