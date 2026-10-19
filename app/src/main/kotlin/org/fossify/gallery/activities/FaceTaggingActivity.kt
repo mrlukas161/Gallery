@@ -56,6 +56,7 @@ class FaceTaggingActivity : SimpleActivity() {
     private var chronological = false
     private var showingIgnored = false
     private var showContext = false
+    private var mediaPathFilter: String? = null
     private val prefs by lazy { getSharedPreferences(PREFS, Context.MODE_PRIVATE) }
 
     // posuvník podobnosti volá onProgressChanged na každý pixel ťahu — mriežka sa prekresľuje najviac raz za
@@ -73,6 +74,8 @@ class FaceTaggingActivity : SimpleActivity() {
         mode = intent.getIntExtra(MODE, MODE_UNLABELED)
         personId = intent.getLongExtra(PERSON_ID, -1L)
         personName = intent.getStringExtra(PERSON_NAME)
+        // „Označiť osoby" z prehliadača: len tváre práve zobrazenej fotky (bez extra = všetky neoznačené)
+        mediaPathFilter = intent.getStringExtra(MEDIA_PATH)
         val lm = GridLayoutManager(this, prefs.getInt("tagging_columns", COLUMNS))
         binding.taggingGrid.layoutManager = lm
         GridZoom.setup(binding.taggingGrid, lm, prefs, "tagging_columns")
@@ -314,7 +317,9 @@ class FaceTaggingActivity : SimpleActivity() {
         val peopleDao = PeopleDatabase.getInstance(this).PeopleDao()
         val assigned = peopleDao.getAssignments().map { it.faceId }.toHashSet()
         val ignored = ExtrasDatabase.getInstance(this).ExtrasDao().getIgnoredIds().toHashSet()
-        val all = facesDao.getAllFaces().filter { FaceFilter.isGood(it) }
+        val path = mediaPathFilter
+        val all = facesDao.getAllFaces()
+            .filter { FaceFilter.isGood(it) && (path == null || it.mediaFullPath == path) }
         return if (showingIgnored) {
             all.filter { val id = it.id; id != null && ignored.contains(id) }
                 .sortedByDescending { it.score }
@@ -472,6 +477,9 @@ class FaceTaggingActivity : SimpleActivity() {
         const val MODE = "mode"
         const val PERSON_ID = "person_id"
         const val PERSON_NAME = "person_name"
+
+        // rovnaký kľúč ako ViewPagerActivity.EXTRA_TAG_MEDIA_PATH (kontrakt s prehliadačom)
+        const val MEDIA_PATH = "media_path"
         const val MODE_UNLABELED = 0
         const val MODE_SUGGESTIONS = 1
         private const val COLUMNS = 4
