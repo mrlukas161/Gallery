@@ -183,6 +183,8 @@ object FaceIndexer {
                 .setOnlyAlertOnce(true)
                 .build()
             NotificationManagerCompat.from(context).notify(NOTIF_ID, notification)
+        } catch (ignored: SecurityException) {
+            // bez povolenia na notifikácie (Android 13+) — priebeh len nezobrazíme
         } catch (ignored: Throwable) {
         }
     }

@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     xmlns:tools="http://schemas.android.com/tools"
     android:id="@+id/comparator_root"
     android:layout_width="match_parent"
@@ -23,7 +24,7 @@
             android:contentDescription="@string/back"
             android:padding="12dp"
             android:src="@drawable/ic_arrow_left_vector"
-            android:tint="#FFFFFFFF" />
+            app:tint="#FFFFFFFF" />
 
         <org.fossify.commons.views.MyTextView
             android:id="@+id/compare_title"
@@ -41,7 +42,7 @@
             android:contentDescription="@string/compare_sync"
             android:padding="12dp"
             android:src="@android:drawable/ic_menu_always_landscape_portrait"
-            android:tint="#FFFFFFFF" />
+            app:tint="#FFFFFFFF" />
 
         <ImageView
             android:id="@+id/compare_duel"
@@ -51,7 +52,7 @@
             android:contentDescription="@string/compare_duel"
             android:padding="12dp"
             android:src="@android:drawable/ic_menu_sort_by_size"
-            android:tint="#FFFFFFFF" />
+            app:tint="#FFFFFFFF" />
 
     </LinearLayout>
 
