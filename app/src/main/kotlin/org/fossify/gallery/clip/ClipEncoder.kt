@@ -23,8 +23,12 @@ class ClipEncoder(context: Context) {
     private val appCtx = context.applicationContext
     private val ortEnv: OrtEnvironment = OrtEnvironment.getEnvironment()
 
-    private val visual: OrtSession? by lazy { createSession(ClipModels.visualFile(appCtx)) }
-    private val textual: OrtSession? by lazy { createSession(ClipModels.textualFile(appCtx)) }
+    // pomenované Lazy, aby close() vedel, či sa session vôbec vytvorila — samotné `visual?.close()`
+    // by nepoužitý model (desiatky až stovky MB) načítalo z disku len preto, aby ho hneď zavrelo
+    private val visualLazy = lazy { createSession(ClipModels.visualFile(appCtx)) }
+    private val visual: OrtSession? by visualLazy
+    private val textualLazy = lazy { createSession(ClipModels.textualFile(appCtx)) }
+    private val textual: OrtSession? by textualLazy
 
     private val tokenizer: ClipTokenizer by lazy { ClipTokenizer(loadVocab(), loadMerges()) }
 
@@ -87,11 +91,11 @@ class ClipEncoder(context: Context) {
 
     fun close() {
         try {
-            visual?.close()
+            if (visualLazy.isInitialized()) visual?.close()
         } catch (ignored: Throwable) {
         }
         try {
-            textual?.close()
+            if (textualLazy.isInitialized()) textual?.close()
         } catch (ignored: Throwable) {
         }
     }

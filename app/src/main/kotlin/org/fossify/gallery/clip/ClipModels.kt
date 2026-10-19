@@ -80,43 +80,45 @@ object ClipModels {
                     readTimeout = 60000
                     setRequestProperty("User-Agent", "GaleriaPlus")
                 }
-                val code = conn.responseCode
-                if (code in 300..399) {
-                    val loc = conn.getHeaderField("Location") ?: return false
-                    conn.disconnect()
-                    url = if (loc.startsWith("http")) loc else URL(URL(url), loc).toString()
-                    redirects++
-                    continue
-                }
-                if (code != HttpURLConnection.HTTP_OK) {
-                    conn.disconnect()
-                    return false
-                }
-                val total = conn.contentLengthLong
-                conn.inputStream.use { input ->
-                    tmp.outputStream().use { out ->
-                        val buf = ByteArray(256 * 1024)
-                        var read = 0L
-                        var lastPct = -1
-                        while (true) {
-                            if (!running()) {
-                                return false
-                            }
-                            val n = input.read(buf)
-                            if (n < 0) break
-                            out.write(buf, 0, n)
-                            read += n
-                            if (total > 0) {
-                                val pct = (read * 100 / total).toInt()
-                                if (pct != lastPct) {
-                                    lastPct = pct
-                                    onProgress(pct)
+                // spojenie sa zavrie pri KAŽDOM výstupe (aj pri zastavení uprostred sťahovania —
+                // predtým `return false` z vnútra use{} preskočil disconnect a soket visel do GC)
+                try {
+                    val code = conn.responseCode
+                    if (code in 300..399) {
+                        val loc = conn.getHeaderField("Location") ?: return false
+                        url = if (loc.startsWith("http")) loc else URL(URL(url), loc).toString()
+                        redirects++
+                        continue
+                    }
+                    if (code != HttpURLConnection.HTTP_OK) return false
+                    val total = conn.contentLengthLong
+                    conn.inputStream.use { input ->
+                        tmp.outputStream().use { out ->
+                            val buf = ByteArray(256 * 1024)
+                            var read = 0L
+                            var lastPct = -1
+                            while (true) {
+                                if (!running()) {
+                                    tmp.delete() // nedokončený .part (stovky MB) nenechávať na disku
+                                    return false
+                                }
+                                val n = input.read(buf)
+                                if (n < 0) break
+                                out.write(buf, 0, n)
+                                read += n
+                                if (total > 0) {
+                                    val pct = (read * 100 / total).toInt()
+                                    if (pct != lastPct) {
+                                        lastPct = pct
+                                        onProgress(pct)
+                                    }
                                 }
                             }
                         }
                     }
+                } finally {
+                    conn.disconnect()
                 }
-                conn.disconnect()
                 if (dest.exists()) dest.delete()
                 if (!tmp.renameTo(dest)) {
                     tmp.copyTo(dest, overwrite = true)

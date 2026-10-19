@@ -9,8 +9,6 @@ import com.google.zxing.NotFoundException
 import com.google.zxing.RGBLuminanceSource
 import com.google.zxing.Result
 import com.google.zxing.common.HybridBinarizer
-import com.google.zxing.multi.GenericMultipleBarcodeReader
-import com.google.zxing.multi.qrcode.QRCodeMultiReader
 
 // Offline FOSS čítanie QR/čiarových kódov z android.graphics.Bitmap cez ZXing core (3.5.4).
 // Čisto Java, žiadne Google služby / ML Kit. NIE je thread-safe: jednu inštanciu drž na jedno
@@ -54,6 +52,7 @@ class ZxingDecoder {
         val height = safe.height
         val pixels = IntArray(width * height)
         safe.getPixels(pixels, 0, width, 0, 0, width, height)
+        if (safe !== bitmap) safe.recycle()
         val source = RGBLuminanceSource(width, height, pixels)
         return BinaryBitmap(HybridBinarizer(source))
     }
@@ -70,61 +69,6 @@ class ZxingDecoder {
             null
         } finally {
             reader.reset()
-        }
-    }
-
-    // Robustný viac-kódový variant pre MALÉ kódy vo veľkých skenoch dokumentov.
-    // 1) celý obraz (QRCodeMultiReader + GenericMultipleBarcodeReader), 2) ak nič -> dlaždice NxN s prekrytím.
-    // Pozor: dlaždicový fallback je POMALÝ (1-3 s) — NEpoužívať na hromadný sken, len pre cielený sken dokumentu.
-    fun decodeAll(bitmap: Bitmap, grid: Int = 3, overlap: Float = 0.15f): List<DecodedCode> {
-        val found = LinkedHashSet<DecodedCode>()
-        decodeMultiInto(toBinaryBitmap(bitmap), found)
-        if (found.isNotEmpty()) return found.toList()
-
-        if (grid >= 2) {
-            val w = bitmap.width
-            val h = bitmap.height
-            val cellW = w / grid
-            val cellH = h / grid
-            if (cellW > 0 && cellH > 0) {
-                val padX = (cellW * overlap).toInt()
-                val padY = (cellH * overlap).toInt()
-                for (gy in 0 until grid) {
-                    for (gx in 0 until grid) {
-                        val x = (gx * cellW - padX).coerceAtLeast(0)
-                        val y = (gy * cellH - padY).coerceAtLeast(0)
-                        val tileW = (cellW + 2 * padX).coerceAtMost(w - x)
-                        val tileH = (cellH + 2 * padY).coerceAtMost(h - y)
-                        if (tileW <= 0 || tileH <= 0) continue
-                        try {
-                            val tilePixels = IntArray(tileW * tileH)
-                            bitmap.getPixels(tilePixels, 0, tileW, x, y, tileW, tileH)
-                            val src = RGBLuminanceSource(tileW, tileH, tilePixels)
-                            decodeMultiInto(BinaryBitmap(HybridBinarizer(src)), found)
-                        } catch (e: Exception) {
-                        }
-                    }
-                }
-            }
-        }
-        return found.toList()
-    }
-
-    private fun decodeMultiInto(image: BinaryBitmap, sink: MutableSet<DecodedCode>) {
-        val qrMulti = QRCodeMultiReader()
-        try {
-            qrMulti.decodeMultiple(image, HINTS).forEach { sink.add(DecodedCode(it.text, it.barcodeFormat)) }
-        } catch (e: Exception) {
-        } finally {
-            qrMulti.reset()
-        }
-        val delegate = MultiFormatReader().apply { setHints(HINTS) }
-        val generic = GenericMultipleBarcodeReader(delegate)
-        try {
-            generic.decodeMultiple(image, HINTS).forEach { sink.add(DecodedCode(it.text, it.barcodeFormat)) }
-        } catch (e: Exception) {
-        } finally {
-            delegate.reset()
         }
     }
 }
