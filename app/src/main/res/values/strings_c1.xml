@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Ochrana menoviek osôb (FaceIndexer / RefreshFaces) -->
+    <string name="c1_faces_refs_unreadable">databázu osôb sa nepodarilo prečítať — tváre sa teraz nespracujú, aby sa mená nepriradili k cudzím tváram</string>
+</resources>

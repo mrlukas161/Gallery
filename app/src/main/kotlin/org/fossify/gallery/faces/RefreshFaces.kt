@@ -3,6 +3,7 @@ package org.fossify.gallery.faces
 import android.content.Context
 import android.graphics.Bitmap
 import org.fossify.commons.helpers.ensureBackgroundThread
+import org.fossify.gallery.R
 
 // „Prepracovať tváre" — jednorazová oprava + doplnenie:
 //  1) fotka sa dekóduje SPRÁVNE OTOČENÁ (EXIF) -> detektor nájde aj tváre na fotkách na výšku,
@@ -42,6 +43,10 @@ object RefreshFaces {
             var added = 0
             try {
                 val dao = FacesDatabase.getInstance(appCtx).FaceDao()
+                // nové tváre len s id nad všetkými odkazmi z people.db/extras.db (poistka proti posunu id)
+                if (!FacesDatabase.ensureIdsAboveReferences(appCtx)) {
+                    throw IllegalStateException(appCtx.getString(R.string.c1_faces_refs_unreadable))
+                }
                 detector = FaceDetectionHelper(appCtx)
                 embedder = FaceEmbedder(appCtx)
                 landmarker = FaceLandmarkHelper(appCtx)

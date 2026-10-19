@@ -10,6 +10,7 @@ import android.provider.MediaStore
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import org.fossify.commons.helpers.ensureBackgroundThread
+import org.fossify.gallery.R
 import java.io.File
 
 // B2: indexovanie = detekcia + ODTLAČOK pre každú tvár (faces.db). Po dokončení sa odtlačky
@@ -39,6 +40,10 @@ object FaceIndexer {
             var landmarker: FaceLandmarkHelper? = null
             try {
                 val dao = FacesDatabase.getInstance(appCtx).FaceDao()
+                // nové tváre len s id nad všetkými odkazmi z people.db/extras.db (poistka proti posunu id)
+                if (!FacesDatabase.ensureIdsAboveReferences(appCtx)) {
+                    throw IllegalStateException(appCtx.getString(R.string.c1_faces_refs_unreadable))
+                }
                 detector = FaceDetectionHelper(appCtx)
                 embedder = FaceEmbedder(appCtx)
                 landmarker = FaceLandmarkHelper(appCtx)
