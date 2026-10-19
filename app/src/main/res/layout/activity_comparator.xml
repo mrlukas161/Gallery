@@ -20,9 +20,9 @@
             android:layout_width="48dp"
             android:layout_height="48dp"
             android:background="?attr/selectableItemBackgroundBorderless"
-            android:contentDescription="@android:string/cancel"
+            android:contentDescription="@string/back"
             android:padding="12dp"
-            android:src="@android:drawable/ic_menu_close_clear_cancel"
+            android:src="@drawable/ic_arrow_left_vector"
             android:tint="#FFFFFFFF" />
 
         <org.fossify.commons.views.MyTextView
