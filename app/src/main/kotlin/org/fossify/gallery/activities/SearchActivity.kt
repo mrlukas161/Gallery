@@ -2,6 +2,8 @@ package org.fossify.gallery.activities
 
 import android.content.Intent
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.view.ViewGroup
 import android.widget.RelativeLayout
 import androidx.recyclerview.widget.GridLayoutManager
@@ -26,10 +28,16 @@ import org.fossify.gallery.interfaces.MediaOperationsListener
 import org.fossify.gallery.models.Medium
 import org.fossify.gallery.models.ThumbnailItem
 import java.io.File
+import java.util.concurrent.atomic.AtomicInteger
 
 class SearchActivity : SimpleActivity(), MediaOperationsListener {
     override var isSearchBarEnabled = true
-    
+
+    private companion object {
+        // pauza po poslednom písmene, po ktorej sa hľadanie spustí
+        const val SEARCH_DEBOUNCE_MS = 150L
+    }
+
     private var mLastSearchedText = ""
 
     // cesty posledných výsledkov — prehliadač po ťuku listuje LEN v nich (ako PeopleSearchActivity)
@@ -37,6 +45,11 @@ class SearchActivity : SimpleActivity(), MediaOperationsListener {
 
     private var mCurrAsyncTask: GetMediaAsynctask? = null
     private var mAllMedia = ArrayList<ThumbnailItem>()
+
+    // píše sa po písmenkách: hľadanie sa spustí až po krátkej pauze a pomalší starší dopyt
+    // (CLIP/ONNX, databázy) nesmie prepísať výsledok novšieho — preto generácia hľadania
+    private val mSearchHandler = Handler(Looper.getMainLooper())
+    private val mSearchGeneration = AtomicInteger()
 
     private val binding by viewBinding(ActivitySearchBinding::inflate)
 
@@ -56,10 +69,15 @@ class SearchActivity : SimpleActivity(), MediaOperationsListener {
     override fun onResume() {
         super.onResume()
         updateMenuColors()
+        // farby sa môžu zmeniť v Nastaveniach — posuvník aj prázdny stav ich dotiahnu pri návrate
+        binding.searchFastscroller.updateColors(getProperPrimaryColor())
+        binding.searchEmptyTextPlaceholder.setTextColor(getProperTextColor())
     }
 
     override fun onDestroy() {
         super.onDestroy()
+        mSearchHandler.removeCallbacksAndMessages(null)
+        mSearchGeneration.incrementAndGet() // bežiace hľadanie už nemá komu zobraziť výsledok
         mCurrAsyncTask?.stopFetching()
         // po zavretí hľadania sa staré slovo nesmie zvýrazňovať na nesúvisiacich fotkách
         org.fossify.gallery.helpers.SmartSearch.lastQuery = ""
@@ -83,7 +101,7 @@ class SearchActivity : SimpleActivity(), MediaOperationsListener {
 
         binding.searchMenu.onSearchTextChangedListener = { text ->
             mLastSearchedText = text
-            textChanged(text)
+            scheduleSearch(text)
         }
 
         binding.searchMenu.requireToolbar().setOnMenuItemClickListener { menuItem ->
@@ -99,18 +117,40 @@ class SearchActivity : SimpleActivity(), MediaOperationsListener {
         binding.searchMenu.updateColors()
     }
 
+    // Pri prázdnom texte sa hľadanie spustí hneď, inak až po krátkej pauze po poslednom písmene;
+    // staršie, ešte bežiace hľadanie sa hneď zneplatní.
+    private fun scheduleSearch(text: String) {
+        mSearchHandler.removeCallbacksAndMessages(null)
+        mSearchGeneration.incrementAndGet()
+        if (text.isEmpty()) {
+            textChanged(text)
+        } else {
+            mSearchHandler.postDelayed({ textChanged(text) }, SEARCH_DEBOUNCE_MS)
+        }
+    }
+
     private fun textChanged(text: String) {
+        val generation = mSearchGeneration.incrementAndGet()
         ensureBackgroundThread {
             try {
                 // okrem názvu súboru zaraď aj zhody podľa OCR textu, QR a mien osôb
                 val extra = org.fossify.gallery.helpers.SmartSearch.extraPaths(applicationContext, text)
+                if (generation != mSearchGeneration.get()) {
+                    return@ensureBackgroundThread
+                }
+
                 val filtered = mAllMedia.filter {
                     it is Medium && (it.name.contains(text, true) || extra.contains(it.path))
                 } as ArrayList
                 filtered.sortBy { it is Medium && !it.name.startsWith(text, true) }
-                mLastResultPaths = ArrayList(filtered.filterIsInstance<Medium>().map { it.path })
+                val resultPaths = ArrayList(filtered.filterIsInstance<Medium>().map { it.path })
                 val grouped = MediaFetcher(applicationContext).groupMedia(filtered as ArrayList<Medium>, "")
                 runOnUiThread {
+                    if (isDestroyed || generation != mSearchGeneration.get()) {
+                        return@runOnUiThread
+                    }
+
+                    mLastResultPaths = resultPaths
                     if (grouped.isEmpty()) {
                         binding.searchEmptyTextPlaceholder.text = getString(org.fossify.commons.R.string.no_items_found)
                         binding.searchEmptyTextPlaceholder.beVisible()
@@ -121,7 +161,13 @@ class SearchActivity : SimpleActivity(), MediaOperationsListener {
                     handleGridSpacing(grouped)
                     getMediaAdapter()?.updateMedia(grouped)
                 }
-            } catch (ignored: Exception) {
+            } catch (e: Throwable) {
+                // hľadanie zlyhalo (databáza, model...) — povedz to namiesto pádu appky
+                runOnUiThread {
+                    if (!isDestroyed && generation == mSearchGeneration.get()) {
+                        toast(R.string.c4_search_failed)
+                    }
+                }
             }
         }
     }

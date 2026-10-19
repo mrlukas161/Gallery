@@ -5,6 +5,7 @@ import android.content.Intent
 import android.graphics.Bitmap
 import android.os.Bundle
 import android.os.Handler
+import android.os.Looper
 import android.view.ViewGroup
 import android.widget.RelativeLayout
 import androidx.core.net.toUri
@@ -113,6 +114,7 @@ import org.fossify.gallery.models.ThumbnailItem
 import org.fossify.gallery.models.ThumbnailSection
 import java.io.File
 import java.io.IOException
+import java.util.concurrent.atomic.AtomicInteger
 
 class MediaActivity : SimpleActivity(), MediaOperationsListener {
     override var isSearchBarEnabled = true
@@ -134,6 +136,8 @@ class MediaActivity : SimpleActivity(), MediaOperationsListener {
     private var mLatestMediaDateId = 0L
     private var mLastMediaHandler = Handler()
     private var mTempShowHiddenHandler = Handler()
+    private val mSearchHandler = Handler(Looper.getMainLooper())
+    private val mSearchGeneration = AtomicInteger()
     private var mCurrAsyncTask: GetMediaAsynctask? = null
     private var mZoomListener: MyRecyclerView.MyZoomListener? = null
 
@@ -151,6 +155,9 @@ class MediaActivity : SimpleActivity(), MediaOperationsListener {
 
     companion object {
         var mMedia = ArrayList<ThumbnailItem>()
+
+        // pauza po poslednom písmene, po ktorej sa hľadanie spustí
+        private const val SEARCH_DEBOUNCE_MS = 150L
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -304,6 +311,8 @@ class MediaActivity : SimpleActivity(), MediaOperationsListener {
         }
 
         mTempShowHiddenHandler.removeCallbacksAndMessages(null)
+        mSearchHandler.removeCallbacksAndMessages(null)
+        mSearchGeneration.incrementAndGet() // bežiace hľadanie už nemá komu zobraziť výsledok
     }
 
     override fun onBackPressedCompat(): Boolean {
@@ -367,7 +376,7 @@ class MediaActivity : SimpleActivity(), MediaOperationsListener {
 
         binding.mediaMenu.onSearchTextChangedListener = { text ->
             mLastSearchedText = text
-            searchQueryChanged(text)
+            scheduleSearch(text)
             binding.mediaRefreshLayout.isEnabled = text.isEmpty() && config.enablePullToRefresh
         }
 
@@ -432,11 +441,29 @@ class MediaActivity : SimpleActivity(), MediaOperationsListener {
         }
     }
 
+    // Píše sa po písmenkách: dopyt sa spustí až po krátkej pauze a staršie, ešte bežiace hľadanie
+    // sa hneď zneplatní (jeho výsledok sa už nezobrazí)
+    private fun scheduleSearch(text: String) {
+        mSearchHandler.removeCallbacksAndMessages(null)
+        mSearchGeneration.incrementAndGet()
+        if (text.isEmpty()) {
+            searchQueryChanged(text)
+        } else {
+            mSearchHandler.postDelayed({ searchQueryChanged(text) }, SEARCH_DEBOUNCE_MS)
+        }
+    }
+
     private fun searchQueryChanged(text: String) {
+        // generácia hľadania: pomalší starší dopyt (CLIP/ONNX, databázy) nesmie prepísať výsledok novšieho
+        val generation = mSearchGeneration.incrementAndGet()
         ensureBackgroundThread {
             try {
                 // okrem názvu súboru zaraď aj zhody podľa OCR textu, QR a mien osôb
                 val extra = org.fossify.gallery.helpers.SmartSearch.extraPaths(applicationContext, text)
+                if (generation != mSearchGeneration.get()) {
+                    return@ensureBackgroundThread
+                }
+
                 val filtered = mMedia
                     .filter { it is Medium && (it.name.contains(text, true) || extra.contains(it.path)) } as ArrayList
                 filtered.sortBy { it is Medium && !it.name.startsWith(text, true) }
@@ -444,6 +471,10 @@ class MediaActivity : SimpleActivity(), MediaOperationsListener {
                     media = filtered as ArrayList<Medium>, path = mPath
                 )
                 runOnUiThread {
+                    if (isDestroyed || generation != mSearchGeneration.get()) {
+                        return@runOnUiThread
+                    }
+
                     if (grouped.isEmpty()) {
                         binding.mediaEmptyTextPlaceholder.text =
                             getString(org.fossify.commons.R.string.no_items_found)
@@ -457,7 +488,13 @@ class MediaActivity : SimpleActivity(), MediaOperationsListener {
                     handleGridSpacing(grouped)
                     getMediaAdapter()?.updateMedia(grouped)
                 }
-            } catch (ignored: Exception) {
+            } catch (e: Throwable) {
+                // hľadanie zlyhalo (databáza, model...) — povedz to namiesto pádu appky
+                runOnUiThread {
+                    if (!isDestroyed && generation == mSearchGeneration.get()) {
+                        toast(R.string.c4_search_failed)
+                    }
+                }
             }
         }
     }
