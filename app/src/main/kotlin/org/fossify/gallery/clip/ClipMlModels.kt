@@ -2,6 +2,7 @@ package org.fossify.gallery.clip
 
 import android.content.Context
 import org.fossify.commons.helpers.ensureBackgroundThread
+import org.fossify.gallery.R
 import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
@@ -43,11 +44,11 @@ object ClipMlModels {
             try {
                 val ok = ensure(appCtx, { isRunning }) { phase, pct -> onProgress(phase, pct, 100) }
                 if (!isRunning) {
-                    onError("zastavené")
+                    onError(appCtx.getString(R.string.q1_stopped))
                 } else if (ok) {
                     onDone()
                 } else {
-                    onError("model sa nestiahol (skontroluj WiFi/pripojenie)")
+                    onError(appCtx.getString(R.string.q1_clip_ml_download_failed))
                 }
             } catch (e: Throwable) {
                 onError(e.javaClass.simpleName + (e.message?.let { ": " + it.take(120) } ?: ""))
@@ -63,11 +64,11 @@ object ClipMlModels {
 
     private fun ensure(context: Context, running: () -> Boolean, onProgress: (phase: String, pct: Int) -> Unit): Boolean {
         if (!tokenizerPresent(context)) {
-            if (!downloadFile(TOKENIZER_URL, tokenizerFile(context), running) { p -> onProgress("tokenizer", p) }) return false
+            if (!downloadFile(TOKENIZER_URL, tokenizerFile(context), running) { p -> onProgress(context.getString(R.string.q1_clip_ml_phase_tokenizer), p) }) return false
         }
         if (!running()) return false
         if (!textPresent(context)) {
-            if (!downloadFile(TEXT_URL, textFile(context), running) { p -> onProgress("SK model", p) }) return false
+            if (!downloadFile(TEXT_URL, textFile(context), running) { p -> onProgress(context.getString(R.string.q1_clip_ml_phase_model), p) }) return false
         }
         return present(context)
     }

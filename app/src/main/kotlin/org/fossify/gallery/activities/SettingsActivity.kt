@@ -827,7 +827,15 @@ class SettingsActivity : SimpleActivity() {
     private fun setupCheckForUpdates() {
         binding.settingsCheckUpdatesHolder.setOnClickListener {
             binding.settingsCheckUpdatesSummary.text = getString(R.string.checking_updates)
-            AppUpdater.checkForUpdate(this, force = true) { update ->
+            AppUpdater.checkForUpdate(
+                this,
+                force = true,
+                onError = {
+                    if (!isDestroyed) {
+                        binding.settingsCheckUpdatesSummary.text = getString(R.string.q1_update_check_error)
+                    }
+                },
+            ) { update ->
                 if (!isDestroyed) {
                     if (update == null) {
                         binding.settingsCheckUpdatesSummary.text = getString(R.string.up_to_date)

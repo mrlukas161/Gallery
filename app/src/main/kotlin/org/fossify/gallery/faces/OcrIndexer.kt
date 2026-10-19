@@ -10,6 +10,7 @@ import android.provider.MediaStore
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import org.fossify.commons.helpers.ensureBackgroundThread
+import org.fossify.gallery.R
 import org.fossify.gallery.helpers.TextNormalizer
 import java.io.File
 
@@ -168,11 +169,10 @@ object OcrIndexer {
     private fun ensureChannel(context: Context) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val nm = context.getSystemService(NotificationManager::class.java) ?: return
-            if (nm.getNotificationChannel(CHANNEL_ID) == null) {
-                nm.createNotificationChannel(
-                    NotificationChannel(CHANNEL_ID, "OCR textu", NotificationManager.IMPORTANCE_LOW)
-                )
-            }
+            // vždy (aj keď kanál existuje) — systém tak premenuje kanál vytvorený staršou verziou
+            nm.createNotificationChannel(
+                NotificationChannel(CHANNEL_ID, context.getString(R.string.q1_channel_ocr), NotificationManager.IMPORTANCE_LOW)
+            )
         }
     }
 
@@ -180,7 +180,7 @@ object OcrIndexer {
         try {
             val notification = NotificationCompat.Builder(context, CHANNEL_ID)
                 .setSmallIcon(android.R.drawable.stat_notify_sync)
-                .setContentTitle("Čítam text z fotiek")
+                .setContentTitle(context.getString(R.string.q1_notif_ocr))
                 .setContentText("$done / $total")
                 .setProgress(total, done, false)
                 .setOngoing(true)

@@ -172,11 +172,10 @@ class HttpSyncService : Service() {
     private fun ensureChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val nm = getSystemService(NotificationManager::class.java) ?: return
-            if (nm.getNotificationChannel(CHANNEL_ID) == null) {
-                nm.createNotificationChannel(
-                    NotificationChannel(CHANNEL_ID, "PC sync server", NotificationManager.IMPORTANCE_LOW)
-                )
-            }
+            // vždy (aj keď kanál existuje) — systém tak premenuje kanál vytvorený staršou verziou
+            nm.createNotificationChannel(
+                NotificationChannel(CHANNEL_ID, getString(R.string.q1_channel_pc_server), NotificationManager.IMPORTANCE_LOW)
+            )
         }
     }
 

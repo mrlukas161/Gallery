@@ -165,11 +165,10 @@ object FaceIndexer {
     private fun ensureChannel(context: Context) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val nm = context.getSystemService(NotificationManager::class.java) ?: return
-            if (nm.getNotificationChannel(CHANNEL_ID) == null) {
-                nm.createNotificationChannel(
-                    NotificationChannel(CHANNEL_ID, "Rozpoznávanie tvárí", NotificationManager.IMPORTANCE_LOW)
-                )
-            }
+            // vždy (aj keď kanál existuje) — systém tak premenuje kanál vytvorený staršou verziou
+            nm.createNotificationChannel(
+                NotificationChannel(CHANNEL_ID, context.getString(R.string.q1_channel_faces), NotificationManager.IMPORTANCE_LOW)
+            )
         }
     }
 
@@ -177,7 +176,7 @@ object FaceIndexer {
         try {
             val notification = NotificationCompat.Builder(context, CHANNEL_ID)
                 .setSmallIcon(android.R.drawable.stat_notify_sync)
-                .setContentTitle("Hľadám tváre")
+                .setContentTitle(context.getString(R.string.q1_notif_faces))
                 .setContentText("$done / $total")
                 .setProgress(total, done, false)
                 .setOngoing(true)

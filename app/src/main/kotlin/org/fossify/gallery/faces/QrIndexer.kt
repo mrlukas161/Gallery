@@ -10,6 +10,7 @@ import android.provider.MediaStore
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import org.fossify.commons.helpers.ensureBackgroundThread
+import org.fossify.gallery.R
 import java.io.File
 
 // QR/čiarové kódy: prejde fotky a uloží dekódovaný obsah (qr.db). RÝCHLE (ZXing jeden prechod ~0,1 s/fotka),
@@ -96,11 +97,10 @@ object QrIndexer {
     private fun ensureChannel(context: Context) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val nm = context.getSystemService(NotificationManager::class.java) ?: return
-            if (nm.getNotificationChannel(CHANNEL_ID) == null) {
-                nm.createNotificationChannel(
-                    NotificationChannel(CHANNEL_ID, "QR kódy", NotificationManager.IMPORTANCE_LOW)
-                )
-            }
+            // vždy (aj keď kanál existuje) — systém tak premenuje kanál vytvorený staršou verziou
+            nm.createNotificationChannel(
+                NotificationChannel(CHANNEL_ID, context.getString(R.string.q1_channel_qr), NotificationManager.IMPORTANCE_LOW)
+            )
         }
     }
 
@@ -108,7 +108,7 @@ object QrIndexer {
         try {
             val notification = NotificationCompat.Builder(context, CHANNEL_ID)
                 .setSmallIcon(android.R.drawable.stat_notify_sync)
-                .setContentTitle("Hľadám QR kódy")
+                .setContentTitle(context.getString(R.string.q1_notif_qr))
                 .setContentText("$done / $total")
                 .setProgress(total, done, false)
                 .setOngoing(true)
