@@ -16,6 +16,10 @@ Lukáš (Xiaomi 15) ↔ manželka (pravdepodobne POCO F8, HyperOS). Cieľ: loká
 - Objavenie na Wi-Fi bez IP (Android NSD/mDNS), šifrovanie kľúčom z QR (AES-GCM), nikto iný na sieti nič neprečíta ani nepošle.
 - Kedy: (1) pri otvorení appky krátky pokus; (2) doma na Wi-Fi a pri nabíjaní až 1 h pripravený, sám skúša synchronizovať (v noci sa stretnú); (3) „Poslať manželke" — ak nedostupná, fronta, odíde pri najbližšom stretnutí, notifikácia. Nič nebeží trvalo na pozadí.
 
+## Časť 2 — odpovede Lukáša (19.10.2026)
+- Identita fotky: **rýchly odtlačok + záloha** (veľkosť + SHA-256 prvých/posledných 64 kB; pre prekomprimované kópie pHash + dátum nasnímania).
+- Osoby: **rodinné UUID + meno + do ~20 reprezentatívnych odtlačkov** (nie všetky, nie len mená).
+
 ## Časti na predloženie Lukášovi (NESCHVÁLENÉ — pracovný návrh)
 - **Časť 2 — Čo sa prenáša:** identita fotky = rýchly odtlačok obsahu (veľkosť + SHA-256 prvých a posledných 64 kB; plný hash 10k fotiek by bol príliš ťažký), pre prekomprimované kópie (WhatsApp) doplnková zhoda pHash + dátum nasnímania. Osoba = trvalé rodinné UUID (mapa v family.db), meno, zlúčenia/premenovania + do ~20 reprezentatívnych odtlačkov (mechanizmus `AnchorEmbeddingEntity` už existuje) → jej telefón rozpozná osoby na vlastných fotkách bez ručného pomenovania. Výsledky k fotke: tváre v RELATÍVNYCH súradniciach (sedia aj na zmenšenej kópii), odtlačky, priradenia, text, poloha, pHash, CLIP vektor (ak má model), kvalita → prijímateľ zapíše a označí fotku ako spracovanú, indexery ju preskočia. Rozpory: rovnaká osoba premenovaná na oboch → otázka „prevziať/ponechať"; dve osoby s rovnakým menom alebo veľmi podobnou tvárou → návrh zlúčiť; mazanie sa neprenáša.
 - **Časť 3 — Ľahkosť a spoľahlivosť:** profil Ľahký/Plný; meranie APK, RAM, batérie; spracovanie šetrné (nabíjanie), modely na požiadanie.
