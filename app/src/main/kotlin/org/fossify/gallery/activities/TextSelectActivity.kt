@@ -30,15 +30,22 @@ class TextSelectActivity : SimpleActivity() {
     private var currentBmp: Bitmap? = null
     private var photoPath = ""
     private var searchQuery = ""
+    private var extraRotation = 0
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(binding.root)
+        // jednotne s ostatnými obrazovkami: lišta pod stavovým pruhom, stavový riadok nad navigačným
+        setupEdgeToEdge(
+            padTopSystem = listOf(binding.textSelectAppbar),
+            padBottomSystem = listOf(binding.textSelectStatus)
+        )
         photoPath = intent.getStringExtra(EXTRA_PATH) ?: run {
             finish()
             return
         }
         searchQuery = intent.getStringExtra(EXTRA_QUERY).orEmpty()
+        extraRotation = intent.getIntExtra(EXTRA_ROTATION, 0)
         startRecognition()
     }
 
@@ -52,7 +59,8 @@ class TextSelectActivity : SimpleActivity() {
         ensureBackgroundThread {
             var engine: OcrEngine? = null
             var ocrFailed = false
-            val bmp = UprightDecoder.decode(photoPath, 1600)?.bitmap
+            // fotka sa zobrazí tak, ako ju práve vidí používateľ v prehliadači (aj s ešte neuloženým otočením)
+            val bmp = rotated(UprightDecoder.decode(photoPath, 1600)?.bitmap, extraRotation)
             val words = try {
                 if (bmp != null) {
                     engine = OcrEngine(this)
@@ -75,7 +83,8 @@ class TextSelectActivity : SimpleActivity() {
                 } catch (ignored: Throwable) {
                 }
             }
-            if (bmp != null && !ocrFailed) {
+            // pri dočasne otočenej fotke sa do ocr.db neukladá (otočenie nemusí zodpovedať skutočnej orientácii textu)
+            if (bmp != null && !ocrFailed && extraRotation % 360 == 0) {
                 // [27] výsledok on-demand OCR nezahodiť: ulož ho do ocr.db rovnakou cestou ako
                 // indexer, nech sa fotka zaradí do Dokumentov a nájde ju hľadanie. Fotka bez
                 // textu dostane prázdny záznam (konvencia indexera — OCR sa už nebude opakovať).
@@ -117,6 +126,19 @@ class TextSelectActivity : SimpleActivity() {
         }
     }
 
+    // Otočí bitmapu o neuložené otočenie z prehliadača (násobky 90°); pôvodnú bitmapu uvoľní.
+    private fun rotated(src: Bitmap?, degrees: Int): Bitmap? {
+        val deg = ((degrees % 360) + 360) % 360
+        if (src == null || deg == 0) return src
+        return try {
+            val out = Bitmap.createBitmap(src, 0, 0, src.width, src.height, Matrix().apply { postRotate(deg.toFloat()) }, true)
+            if (out != src) src.recycle()
+            out
+        } catch (e: Throwable) {
+            src // pri nedostatku pamäte radšej neotočená než žiadna
+        }
+    }
+
     // Nový pokus po zlyhaní OCR: odstráň starý pohľad, uvoľni bitmapu a rozpoznaj odznova.
     private fun retryRecognition() {
         binding.textSelectContainer.removeAllViews()
@@ -150,7 +172,7 @@ class TextSelectActivity : SimpleActivity() {
 
     override fun onResume() {
         super.onResume()
-        setupTopAppBar(binding.textSelectAppbar, NavigationIcon.Arrow)
+        // menu sa naplní PRED setupTopAppBar, aby sa jeho ikony prefarbili podľa témy
         binding.textSelectToolbar.menu.clear()
         binding.textSelectToolbar.inflateMenu(R.menu.menu_text_select)
         binding.textSelectToolbar.setOnMenuItemClickListener { item ->
@@ -173,6 +195,7 @@ class TextSelectActivity : SimpleActivity() {
                 else -> false
             }
         }
+        setupTopAppBar(binding.textSelectAppbar, NavigationIcon.Arrow)
     }
 
     private fun copySelected() {
@@ -184,7 +207,7 @@ class TextSelectActivity : SimpleActivity() {
         try {
             val cm = getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
             cm.setPrimaryClip(android.content.ClipData.newPlainText("OCR", text))
-            toast(org.fossify.commons.R.string.value_copied_to_clipboard)
+            toast(R.string.ocr_copied)
         } catch (ignored: Throwable) {
         }
     }
@@ -304,5 +327,8 @@ class TextSelectActivity : SimpleActivity() {
     companion object {
         const val EXTRA_PATH = "path"
         const val EXTRA_QUERY = "query"
+
+        // neuložené otočenie fotky z prehliadača (stupne), aby výber textu ukázal fotku tak, ako ju používateľ vidí
+        const val EXTRA_ROTATION = "rotation"
     }
 }
