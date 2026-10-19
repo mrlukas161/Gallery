@@ -22,7 +22,8 @@ import fi.iki.elonen.NanoHTTPD
 import java.security.SecureRandom
 
 // Foreground služba (typ specialUse) bežiaca lokálny HTTP server pre PC sync cez WiFi LAN.
-// Štandardne VYPNUTÁ; spúšťa ju používateľ v Nastaveniach. Chránená 6-miestnym PIN-om (nový pri každom štarte).
+// Štandardne VYPNUTÁ; spúšťa ju používateľ v Nastaveniach. Chránená 6-miestnym PIN-om (nový pri každom štarte);
+// po 20 rôznych zlých PIN-och sa server sám zastaví (ochrana pred hádaním na LAN).
 // specialUse zvolené zámerne: nepodlieha 6h/24h limitu typu dataSync (Android 15) -> neumrie pri zhasnutej obrazovke.
 class HttpSyncService : Service() {
     @Volatile
@@ -61,7 +62,12 @@ class HttpSyncService : Service() {
             isRunning = true
             ensureBackgroundThread {
                 try {
-                    val s = MediaServer(applicationContext, pin, port)
+                    // hádanie PIN-u na sieti -> server sa zamkne a tu sa zastaví s viditeľným dôvodom
+                    val s = MediaServer(applicationContext, pin, port) {
+                        Handler(Looper.getMainLooper()).post {
+                            failWith(getString(R.string.c1_pc_server_locked))
+                        }
+                    }
                     s.start(NanoHTTPD.SOCKET_READ_TIMEOUT, false)
                     server = s
                 } catch (e: Throwable) {

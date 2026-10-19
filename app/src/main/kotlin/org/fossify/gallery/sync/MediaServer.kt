@@ -6,6 +6,7 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.media.MediaMetadataRetriever
 import android.net.Uri
+import android.os.StatFs
 import android.provider.MediaStore
 import org.json.JSONArray
 import org.json.JSONObject
@@ -22,10 +23,12 @@ import java.net.URLDecoder
 
 // Telefónny LAN media server (NanoHTTPD). Sprístupní LEN MediaStore Images+Videos, adresované cez
 // nepriehľadné MediaStore _ID (žiadne cesty od klienta -> ../ traversal je nemožný). Chránené PIN tokenom.
+// onTooManyBadPins: volá sa (raz, z vlákna požiadavky), keď sa server zamkol po hádaní PIN-u.
 class MediaServer(
     private val appContext: Context,
     private val pin: String,
     port: Int = DEFAULT_PORT,
+    private val onTooManyBadPins: () -> Unit = {},
 ) : NanoHTTPD(null, port) {
 
     companion object {
@@ -33,6 +36,14 @@ class MediaServer(
         const val SERVER_NAME = "Galéria+"
         const val SERVER_VERSION = "1"
         private const val SAVE_SUBDIR = "Galéria"
+
+        // po toľkých RÔZNYCH zlých tokenoch sa server zamkne (šanca uhádnuť 6-miestny PIN ~ 20 : 900 000)
+        private const val MAX_BAD_PINS = 20
+
+        // strop na jeden nahrávaný súbor a rezerva voľného miesta — upload nesmie zaplniť telefón
+        private const val MAX_UPLOAD_BYTES = 4L * 1024 * 1024 * 1024
+        private const val FREE_SPACE_RESERVE = 200L * 1024 * 1024
+        private const val FREE_SPACE_CHECK_EVERY = 64L * 1024 * 1024
     }
 
     data class Item(
@@ -51,6 +62,15 @@ class MediaServer(
     @Volatile
     private var index: Map<Long, Item> = emptyMap()
 
+    // Ochrana PIN-u pred hádaním na LAN: rátajú sa RÔZNE zlé tokeny (otvorená stará karta v PC
+    // prehliadači posiela stále ten istý starý token a server by inak zbytočne zamkla); požiadavky
+    // úplne bez tokenu (favicon…) nie sú hádanie. Po zamknutí sa odmietne všetko a služba server
+    // zastaví — nový štart = nový PIN.
+    private val badPins = HashSet<String>()
+
+    @Volatile
+    private var locked = false
+
     private val resolver: ContentResolver get() = appContext.contentResolver
 
     fun itemCount(): Int = index.size
@@ -63,7 +83,11 @@ class MediaServer(
     override fun serve(session: IHTTPSession): Response {
         return try {
             if (!authorized(session)) {
-                return json(Status.FORBIDDEN, """{"error":"forbidden"}""")
+                return if (locked) {
+                    json(Status.FORBIDDEN, """{"error":"locked"}""")
+                } else {
+                    json(Status.FORBIDDEN, """{"error":"forbidden"}""")
+                }
             }
             when (session.uri) {
                 "/api/ping" -> handlePing()
@@ -85,10 +109,31 @@ class MediaServer(
     }
 
     private fun authorized(session: IHTTPSession): Boolean {
+        if (locked) return false
         val headerTok = session.headers["x-auth-token"]
         val queryTok = session.parameters["token"]?.firstOrNull()
         val tok = headerTok ?: queryTok ?: return false
-        return constantTimeEquals(tok, pin)
+        if (constantTimeEquals(tok, pin)) return true
+        val lockNow = synchronized(badPins) {
+            if (locked) {
+                false
+            } else {
+                badPins.add(tok.take(64))
+                if (badPins.size >= MAX_BAD_PINS) {
+                    locked = true
+                    true
+                } else {
+                    false
+                }
+            }
+        }
+        if (lockNow) {
+            try {
+                onTooManyBadPins()
+            } catch (ignored: Throwable) {
+            }
+        }
+        return false
     }
 
     private fun handlePing(): Response {
@@ -154,6 +199,10 @@ class MediaServer(
 
     // Hlavná cesta (PC nástroj): multipart/form-data -> parseBody spooluje časť do dočasného súboru.
     private fun uploadMultipart(session: IHTTPSession): Response {
+        val declared = session.headers["content-length"]?.toLongOrNull()
+            ?: return json(Status.LENGTH_REQUIRED, """{"error":"missing Content-Length"}""")
+        // parseBody najprv celé telo zapíše do dočasného súboru, potom sa kopíruje do MediaStore
+        rejectUpload(declared, copies = 2)?.let { return it }
         val files = HashMap<String, String>()
         session.parseBody(files)
         val firstPart = files.entries.firstOrNull()
@@ -181,6 +230,7 @@ class MediaServer(
         }
         val mime = session.headers["x-mime"] ?: guessMime(name)
         val lenHdr = session.headers["content-length"]?.toLongOrNull() ?: -1L
+        rejectUpload(lenHdr, copies = 1)?.let { return it }
         val body = session.inputStream
         val saved = saveToMediaStore(name, mime, lenHdr) { out ->
             copyExactly(body, out, lenHdr)
@@ -408,9 +458,44 @@ class MediaServer(
         else -> "application/octet-stream"
     }
 
+    // null = upload smie pokračovať, inak odpoveď s dôvodom; copies = koľkokrát dáta zaberú miesto
+    private fun rejectUpload(length: Long, copies: Int): Response? {
+        if (length > MAX_UPLOAD_BYTES) {
+            return json(Status.PAYLOAD_TOO_LARGE, """{"error":"file too large"}""")
+        }
+        val free = freeBytes()
+        if (free >= 0 && free < length.coerceAtLeast(0) * copies + FREE_SPACE_RESERVE) {
+            return json(Status.PAYLOAD_TOO_LARGE, """{"error":"not enough free space"}""")
+        }
+        return null
+    }
+
+    // voľné miesto na primárnom úložisku (tam zapisuje saveMediaScoped); -1 = nedá sa zistiť
+    private fun freeBytes(): Long = try {
+        StatFs((appContext.getExternalFilesDir(null) ?: appContext.filesDir).path).availableBytes
+    } catch (e: Throwable) {
+        -1L
+    }
+
     private fun copyExactly(input: InputStream, out: java.io.OutputStream, len: Long) {
         if (len < 0) {
-            input.copyTo(out)
+            // bez Content-Length najviac MAX_UPLOAD_BYTES a priebežne kontroluj voľné miesto —
+            // inak by klient vedel zaplniť úložisko; výnimka = saveMediaScoped položku zmaže
+            val buf = ByteArray(64 * 1024)
+            var copied = 0L
+            var nextCheck = FREE_SPACE_CHECK_EVERY
+            while (true) {
+                val n = input.read(buf)
+                if (n < 0) break
+                copied += n
+                if (copied > MAX_UPLOAD_BYTES) throw java.io.IOException("upload too large")
+                if (copied >= nextCheck) {
+                    nextCheck += FREE_SPACE_CHECK_EVERY
+                    val free = freeBytes()
+                    if (free in 0L until FREE_SPACE_RESERVE) throw java.io.IOException("not enough free space")
+                }
+                out.write(buf, 0, n)
+            }
             return
         }
         val buf = ByteArray(64 * 1024)

@@ -2,4 +2,7 @@
 <resources>
     <!-- Ochrana menoviek osôb (FaceIndexer / RefreshFaces) -->
     <string name="c1_faces_refs_unreadable">databázu osôb sa nepodarilo prečítať — tváre sa teraz nespracujú, aby sa mená nepriradili k cudzím tváram</string>
+
+    <!-- PC sync server — zastavenie po hádaní PIN-u (HttpSyncService) -->
+    <string name="c1_pc_server_locked">Server sa zastavil: niekto na sieti skúšal priveľa nesprávnych PIN-ov. Spusti ho znova — dostane nový PIN.</string>
 </resources>
