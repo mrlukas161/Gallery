@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Stringy pre obrazovky Osoby a tváre (Ľudia, Osoba, Označiť tváre, Hľadať osoby) — revízia 0.65, balík C2 -->
+<resources>
+    <!-- Ľudia — výberový režim (dlhé podržanie) -->
+    <string name="c2_action_name_person">Pomenovať osobu</string>
+    <string name="c2_action_merge_selected">Zlúčiť do jednej osoby</string>
+    <string name="c2_merge_title">Zlúčiť osoby</string>
+    <string name="c2_merge_target_title">Zlúčiť do osoby</string>
+    <string name="c2_merge_confirm">Zlúčiť osobu „%1$s“ do osoby „%2$s“? Tváre sa presunú k osobe „%2$s“ a osoba „%1$s“ zanikne.</string>
+    <string name="c2_merge_confirm_multi">Zlúčiť ostatné vybrané osoby (%1$d) do osoby „%2$s“? Ich tváre sa presunú k osobe „%2$s“ a ostatné osoby zaniknú.</string>
+    <plurals name="c2_delete_persons_confirm">
+        <item quantity="one">Odstrániť %d vybranú osobu? Tváre sa vrátia medzi návrhy.</item>
+        <item quantity="few">Odstrániť %d vybrané osoby? Tváre sa vrátia medzi návrhy.</item>
+        <item quantity="many">Odstrániť %d vybraných osôb? Tváre sa vrátia medzi návrhy.</item>
+        <item quantity="other">Odstrániť %d vybraných osôb? Tváre sa vrátia medzi návrhy.</item>
+    </plurals>
+    <string name="c2_operation_failed">Operácia sa nepodarila — nič sa nezmenilo</string>
+
+    <!-- Ľudia — správa skupín osôb -->
+    <string name="c2_manage_groups">Upraviť skupiny</string>
+    <string name="c2_no_groups">Zatiaľ nie sú žiadne skupiny</string>
+    <string name="c2_group_rename">Premenovať skupinu</string>
+    <string name="c2_group_delete">Odstrániť skupinu</string>
+    <string name="c2_group_delete_confirm">Odstrániť skupinu „%1$s“? Osoby v nej ostanú zachované.</string>
+
+    <!-- Návrhy — „Toto nie je" nad výberom (nevratné: tvár sa už osobe nenavrhne) -->
+    <plurals name="c2_reject_suggestions_confirm">
+        <item quantity="one">Označiť %1$d tvár ako „nie je osoba %2$s“? (už sa nebude navrhovať)</item>
+        <item quantity="few">Označiť %1$d tváre ako „nie je osoba %2$s“? (už sa nebudú navrhovať)</item>
+        <item quantity="many">Označiť %1$d tvárí ako „nie je osoba %2$s“? (už sa nebudú navrhovať)</item>
+        <item quantity="other">Označiť %1$d tvárí ako „nie je osoba %2$s“? (už sa nebudú navrhovať)</item>
+    </plurals>
+
+    <!-- Osoba — hromadné úpravy tvárí -->
+    <plurals name="c2_reject_faces_confirm">
+        <item quantity="one">Odstrániť %1$d tvár od osoby „%2$s“? (už sa nebude navrhovať)</item>
+        <item quantity="few">Odstrániť %1$d tváre od osoby „%2$s“? (už sa nebudú navrhovať)</item>
+        <item quantity="many">Odstrániť %1$d tvárí od osoby „%2$s“? (už sa nebudú navrhovať)</item>
+        <item quantity="other">Odstrániť %1$d tvárí od osoby „%2$s“? (už sa nebudú navrhovať)</item>
+    </plurals>
+</resources>
