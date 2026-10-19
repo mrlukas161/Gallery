@@ -1015,40 +1015,6 @@
                 layout="@layout/divider" />
 
             <TextView
-                android:id="@+id/settings_migrating_label"
-                style="@style/SettingsSectionLabelStyle"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="@string/migrating" />
-
-            <RelativeLayout
-                android:id="@+id/settings_clear_cache_holder"
-                style="@style/SettingsHolderTextViewStyle"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content">
-
-                <org.fossify.commons.views.MyTextView
-                    android:id="@+id/settings_clear_cache_label"
-                    style="@style/SettingsTextLabelStyle"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="@string/clear_cache" />
-
-                <org.fossify.commons.views.MyTextView
-                    android:id="@+id/settings_clear_cache_size"
-                    style="@style/SettingsTextValueStyle"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_below="@+id/settings_clear_cache_label"
-                    tools:text="0 B" />
-
-            </RelativeLayout>
-
-            <include
-                android:id="@+id/settings_galeria_divider"
-                layout="@layout/divider" />
-
-            <TextView
                 android:id="@+id/settings_galeria_label"
                 style="@style/SettingsSectionLabelStyle"
                 android:layout_width="match_parent"
@@ -1108,52 +1074,6 @@
                     android:layout_below="@+id/settings_index_overview_bar"
                     android:layout_marginTop="4dp"
                     tools:text="Celkovo 62 %" />
-
-            </RelativeLayout>
-
-            <RelativeLayout
-                android:id="@+id/settings_changelog_holder"
-                style="@style/SettingsHolderTextViewStyle"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content">
-
-                <org.fossify.commons.views.MyTextView
-                    android:id="@+id/settings_changelog_label"
-                    style="@style/SettingsTextLabelStyle"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="@string/changelog_title" />
-
-                <org.fossify.commons.views.MyTextView
-                    android:id="@+id/settings_changelog_summary"
-                    style="@style/SettingsTextValueStyle"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_below="@+id/settings_changelog_label"
-                    android:text="@string/changelog_summary" />
-
-            </RelativeLayout>
-
-            <RelativeLayout
-                android:id="@+id/settings_index_all_holder"
-                style="@style/SettingsHolderTextViewStyle"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content">
-
-                <org.fossify.commons.views.MyTextView
-                    android:id="@+id/settings_index_all_label"
-                    style="@style/SettingsTextLabelStyle"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="@string/index_all_title" />
-
-                <org.fossify.commons.views.MyTextView
-                    android:id="@+id/settings_index_all_summary"
-                    style="@style/SettingsTextValueStyle"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_below="@+id/settings_index_all_label"
-                    tools:text="Spustiť" />
 
             </RelativeLayout>
 
@@ -1499,6 +1419,78 @@
                     android:layout_height="wrap_content"
                     android:layout_below="@+id/settings_check_updates_label"
                     tools:text="Ťuknutím skontroluješ" />
+
+            </RelativeLayout>
+
+            <RelativeLayout
+                android:id="@+id/settings_auto_update_check_holder"
+                style="@style/SettingsHolderSwitchStyle"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content">
+
+                <org.fossify.commons.views.MyMaterialSwitch
+                    android:id="@+id/settings_auto_update_check"
+                    style="@style/SettingsSwitchStyle"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/c5_auto_update_check" />
+
+            </RelativeLayout>
+
+            <RelativeLayout
+                android:id="@+id/settings_changelog_holder"
+                style="@style/SettingsHolderTextViewStyle"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content">
+
+                <org.fossify.commons.views.MyTextView
+                    android:id="@+id/settings_changelog_label"
+                    style="@style/SettingsTextLabelStyle"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/changelog_title" />
+
+                <org.fossify.commons.views.MyTextView
+                    android:id="@+id/settings_changelog_summary"
+                    style="@style/SettingsTextValueStyle"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_below="@+id/settings_changelog_label"
+                    android:text="@string/changelog_summary" />
+
+            </RelativeLayout>
+
+            <include
+                android:id="@+id/settings_galeria_divider"
+                layout="@layout/divider" />
+
+            <TextView
+                android:id="@+id/settings_migrating_label"
+                style="@style/SettingsSectionLabelStyle"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/migrating" />
+
+            <RelativeLayout
+                android:id="@+id/settings_clear_cache_holder"
+                style="@style/SettingsHolderTextViewStyle"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content">
+
+                <org.fossify.commons.views.MyTextView
+                    android:id="@+id/settings_clear_cache_label"
+                    style="@style/SettingsTextLabelStyle"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/clear_cache" />
+
+                <org.fossify.commons.views.MyTextView
+                    android:id="@+id/settings_clear_cache_size"
+                    style="@style/SettingsTextValueStyle"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_below="@+id/settings_clear_cache_label"
+                    tools:text="0 B" />
 
             </RelativeLayout>
 
