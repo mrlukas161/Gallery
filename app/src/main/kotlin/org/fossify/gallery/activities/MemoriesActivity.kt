@@ -21,6 +21,11 @@ class MemoriesActivity : SimpleActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(binding.root)
+        setupEdgeToEdge(
+            padTopSystem = listOf(binding.docsAppbar),
+            padBottomImeAndSystem = listOf(binding.docsGrid)
+        )
+        setupMaterialScrollListener(binding.docsGrid, binding.docsAppbar)
         binding.docsGrid.layoutManager = GridLayoutManager(this, 2)
         binding.docsFastscroller.updateColors(getProperPrimaryColor())
         binding.docsToolbar.title = getString(R.string.memories_title)
@@ -34,20 +39,27 @@ class MemoriesActivity : SimpleActivity() {
         // len placeholder — karty spomienok majú vlastný biely text na tmavom prekrytí,
         // plošné updateTextColors by ho vo svetlej téme prefarbilo na tmavý (nečitateľný)
         binding.docsPlaceholder.setTextColor(getProperTextColor())
+        // aj posuvník sa prefarbí pri návrate (zmena akcentu v Nastaveniach)
+        binding.docsFastscroller.updateColors(getProperPrimaryColor())
     }
 
     private fun load() {
         ensureBackgroundThread {
+            var failed = false
             val items = try {
                 Memories.build(this).filter { m -> m.paths.any { java.io.File(it).exists() } }
             } catch (e: Throwable) {
+                failed = true
                 emptyList()
             }
             runOnUiThread {
                 if (isDestroyed) return@runOnUiThread
                 binding.docsGrid.adapter = MemoriesAdapter(this, items) { m -> open(m) }
                 binding.docsPlaceholder.visibility = if (items.isEmpty()) android.view.View.VISIBLE else android.view.View.GONE
-                if (items.isEmpty()) binding.docsPlaceholder.text = getString(R.string.memories_empty)
+                if (items.isEmpty()) {
+                    // výpočet zlyhal ≠ spomienky ešte nie sú: nech je z hlásenia jasné, čo sa stalo
+                    binding.docsPlaceholder.text = getString(if (failed) R.string.c4_memories_failed else R.string.memories_empty)
+                }
                 binding.docsToolbar.title = getString(R.string.memories_title)
             }
         }

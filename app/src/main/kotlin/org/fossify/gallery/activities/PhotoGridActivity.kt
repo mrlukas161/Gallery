@@ -3,6 +3,7 @@ package org.fossify.gallery.activities
 import android.content.Intent
 import android.os.Bundle
 import androidx.recyclerview.widget.GridLayoutManager
+import org.fossify.commons.extensions.getProperPrimaryColor
 import org.fossify.commons.extensions.updateTextColors
 import org.fossify.commons.extensions.viewBinding
 import org.fossify.commons.helpers.NavigationIcon
@@ -23,27 +24,39 @@ class PhotoGridActivity : SimpleActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(binding.root)
+        setupEdgeToEdge(
+            padTopSystem = listOf(binding.photoGridAppbar),
+            padBottomImeAndSystem = listOf(binding.photoGrid)
+        )
+        setupMaterialScrollListener(binding.photoGrid, binding.photoGridAppbar)
         paths = ArrayList(org.fossify.gallery.helpers.PathTransfer.forGrid ?: emptyList())
         org.fossify.gallery.helpers.PathTransfer.forGrid = null
         // pinch-zoom mení počet stĺpcov a pamätá si ho — rovnaké ovládanie ako v ostatných mriežkach
         val lm = GridLayoutManager(this, prefs.getInt("grid_columns", 3))
         binding.photoGrid.layoutManager = lm
         GridZoom.setup(binding.photoGrid, lm, prefs, "grid_columns")
+        binding.photoGridFastscroller.updateColors(getProperPrimaryColor())
         binding.photoGrid.adapter = PhotoPathsAdapter(
             this, paths, binding.photoGrid,
             onClick = { path -> openPhoto(path) },
-            onDeleted = {
-                binding.photoGridToolbar.title = getString(R.string.search_count, paths.size)
-            },
+            // adaptér odobral zmazané (alebo presunuté) fotky zo `paths` — premietni to do titulku aj prázdneho stavu
+            onDeleted = { updateTitleAndEmptyState() },
         )
+        updateTitleAndEmptyState()
     }
 
     override fun onResume() {
         super.onResume()
         setupTopAppBar(binding.photoGridAppbar, NavigationIcon.Arrow)
-        // prefarbenie podľa témy Fossify (dnes tu nie sú texty, ale drží obrazovku konzistentnú)
+        // prefarbenie podľa témy Fossify (prázdny stav by vo svetlej téme ostal svetlosivý)
         updateTextColors(binding.photoGridCoordinator)
+        binding.photoGridFastscroller.updateColors(getProperPrimaryColor())
+        updateTitleAndEmptyState()
+    }
+
+    private fun updateTitleAndEmptyState() {
         binding.photoGridToolbar.title = getString(R.string.search_count, paths.size)
+        binding.photoGridPlaceholder.visibility = if (paths.isEmpty()) android.view.View.VISIBLE else android.view.View.GONE
     }
 
     private fun openPhoto(path: String) {

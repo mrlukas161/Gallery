@@ -33,6 +33,12 @@ class DocsActivity : SimpleActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(binding.root)
+        setupOptionsMenu()
+        setupEdgeToEdge(
+            padTopSystem = listOf(binding.docsAppbar),
+            padBottomImeAndSystem = listOf(binding.docsGrid)
+        )
+        setupMaterialScrollListener(binding.docsGrid, binding.docsAppbar)
         // pinch-zoom mení počet stĺpcov a pamätá si ho — rovnaké ovládanie ako v ostatných mriežkach
         val lm = GridLayoutManager(this, prefs.getInt("docs_columns", 3))
         binding.docsGrid.layoutManager = lm
@@ -54,10 +60,17 @@ class DocsActivity : SimpleActivity() {
 
     override fun onResume() {
         super.onResume()
+        // menu je naplnené už z onCreate, takže setupTopAppBar prefarbí aj jeho ikony
         setupTopAppBar(binding.docsAppbar, NavigationIcon.Arrow)
         // prefarbenie podľa témy Fossify — inak by text/hint hľadania aj placeholder boli
         // vo svetlej téme svetlosivé na bielom (téma z XML je vždy tmavá M3)
         updateTextColors(binding.docsCoordinator)
+        // aj posuvník sa prefarbí pri návrate (zmena akcentu v Nastaveniach)
+        binding.docsFastscroller.updateColors(getProperPrimaryColor())
+    }
+
+    // menu sa napĺňa raz v onCreate — PRED setupTopAppBar (ten prefarbí ikony len v už naplnenom menu)
+    private fun setupOptionsMenu() {
         binding.docsToolbar.menu.clear()
         binding.docsToolbar.inflateMenu(R.menu.menu_docs)
         binding.docsToolbar.setOnMenuItemClickListener { item ->
@@ -73,17 +86,26 @@ class DocsActivity : SimpleActivity() {
     private fun load() {
         binding.docsPlaceholder.text = getString(R.string.docs_loading)
         ensureBackgroundThread {
-            // lastModified čítať z disku IBA RAZ na súbor (0 = súbor neexistuje, nahrádza exists()),
-            // nie v komparátore — ten selektor volá pri každom porovnaní (~2·n·log n syscallov)
-            val docs = DocClassifier.loadAll(this)
-                .map { it to java.io.File(it.path).lastModified() }
-                .filter { it.second > 0L }
-                .sortedByDescending { it.second }
-                .map { it.first }
-            runOnUiThread {
-                if (isDestroyed) return@runOnUiThread
-                all = docs
-                applyFilter()
+            try {
+                // lastModified čítať z disku IBA RAZ na súbor (0 = súbor neexistuje, nahrádza exists()),
+                // nie v komparátore — ten selektor volá pri každom porovnaní (~2·n·log n syscallov)
+                val docs = DocClassifier.loadAll(this)
+                    .map { it to java.io.File(it.path).lastModified() }
+                    .filter { it.second > 0L }
+                    .sortedByDescending { it.second }
+                    .map { it.first }
+                runOnUiThread {
+                    if (isDestroyed) return@runOnUiThread
+                    all = docs
+                    applyFilter()
+                }
+            } catch (e: Throwable) {
+                // načítanie zlyhalo (databáza, pamäť...) — povedz to namiesto pádu appky
+                runOnUiThread {
+                    if (isDestroyed) return@runOnUiThread
+                    binding.docsPlaceholder.text = getString(R.string.c4_docs_load_failed)
+                    binding.docsPlaceholder.visibility = android.view.View.VISIBLE
+                }
             }
         }
     }
