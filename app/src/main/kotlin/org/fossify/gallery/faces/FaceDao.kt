@@ -63,9 +63,6 @@ interface FaceDao {
     @Query("SELECT COUNT(*) FROM indexed_photos")
     fun getProcessedCount(): Int
 
-    @Query("DELETE FROM faces")
-    fun deleteAllFaces()
-
-    @Query("DELETE FROM indexed_photos")
-    fun deleteAllIndexedPhotos()
+    // ⛔ Žiadne hromadné mazanie tvárí: id sú odkazované z people.db/extras.db (menovky).
+    // (Nepoužívané deleteAllFaces/deleteAllIndexedPhotos boli odstránené, aby sa nedali omylom zavolať.)
 }
