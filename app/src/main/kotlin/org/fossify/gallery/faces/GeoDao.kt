@@ -13,6 +13,10 @@ interface GeoDao {
     @Query("SELECT path FROM geo")
     fun getIndexedPaths(): List<String>
 
+    // riadky fotiek mimo rozsahu spracovania (zamknutý/vylúčený priečinok) — IndexScope.keepAllowed
+    @Query("DELETE FROM geo WHERE path IN (:paths)")
+    fun deletePaths(paths: List<String>)
+
     @Query("SELECT * FROM geo WHERE has_geo = 1")
     fun getGeotagged(): List<GeoEntity>
 

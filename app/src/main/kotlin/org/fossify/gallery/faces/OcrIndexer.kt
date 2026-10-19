@@ -45,8 +45,10 @@ object OcrIndexer {
                 // Pri už dekódovanej bitmape rovno skontroluj aj QR/čiarové kódy (zápis do qr.db).
                 val qrDecoder = ZxingDecoder()
 
-                val processed = dao.getIndexedPaths().toHashSet()
-                val todo = queryImages(appCtx).filter { it !in processed }
+                // vylúčené a zamknuté priečinky sa nespracúvajú; ich staré riadky sa z indexu zmažú
+                val scope = IndexScope(appCtx)
+                val processed = scope.keepAllowed(dao.getIndexedPaths()) { dao.deletePaths(it) }
+                val todo = queryImages(appCtx).filter { it !in processed && scope.allows(it) }
                 val total = todo.size
                 var done = 0
                 for (path in todo) {
@@ -127,6 +129,9 @@ object OcrIndexer {
     // z boxov slov nesmie prepísať plný text z indexera).
     fun saveResult(context: Context, path: String, text: String, overwrite: Boolean = true): Boolean {
         return try {
+            // fotka zo zamknutého/vylúčeného priečinka: text sa ukáže, ale do ocr.db (Dokumenty,
+            // hľadanie) sa NEULOŽÍ — inak by bol čitateľný bez odomknutia
+            if (!IndexScope(context).allows(path)) return false
             val dao = OcrDatabase.getInstance(context.applicationContext).OcrDao()
             if (!overwrite && dao.getText(path) != null) return true
             val cleaned = OcrText.clean(text)
