@@ -1847,11 +1847,11 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
         updateTextColors(root)
 
         // pozadie panela podľa témy appky (rovnaký vzor ako PlaybackSpeedFragment), nie predvolená farba Material témy
-        val background = ResourcesCompat.getDrawable(resources, org.fossify.commons.R.drawable.bottom_sheet_bg, theme) as LayerDrawable
-        background.findDrawableByLayerId(org.fossify.commons.R.id.bottom_sheet_background).applyColorFilter(getProperBackgroundColor())
+        val sheetBackground = ResourcesCompat.getDrawable(resources, org.fossify.commons.R.drawable.bottom_sheet_bg, theme) as LayerDrawable
+        sheetBackground.findDrawableByLayerId(org.fossify.commons.R.id.bottom_sheet_background).applyColorFilter(getProperBackgroundColor())
         val scroll = android.widget.ScrollView(this).apply {
             addView(root)
-            setBackgroundDrawable(background)
+            background = sheetBackground
         }
         com.google.android.material.bottomsheet.BottomSheetDialog(this, R.style.CustomBottomSheetDialogTheme).apply {
             setContentView(scroll)

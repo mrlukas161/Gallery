@@ -60,7 +60,6 @@ class ComparatorActivity : SimpleActivity() {
     private var duelMode = false
     private var duelNext = 1
     private var adapter: CompareStripAdapter? = null
-    private var deleteInProgress = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -413,7 +412,6 @@ class ComparatorActivity : SimpleActivity() {
     }
 
     private fun deleteMarked() {
-        if (deleteInProgress) return
         val markedPaths = adapter?.markedPaths() ?: emptyList()
         if (markedPaths.isEmpty()) {
             toast(R.string.compare_marked_none)
@@ -449,17 +447,13 @@ class ComparatorActivity : SimpleActivity() {
             val sdk30Path = toDelete.firstOrNull { isAccessibleWithSAFSdk30(it) } ?: toDelete.first()
             checkManageMediaOrHandleSAFDialogSdk30(sdk30Path) { manageOk ->
                 if (!manageOk) return@checkManageMediaOrHandleSAFDialogSdk30
-                deleteInProgress = true
                 if (config.useRecycleBin) {
                     toast(resources.getQuantityString(org.fossify.commons.R.plurals.moving_items_into_bin, toDelete.size, toDelete.size))
                     movePathsInRecycleBin(toDelete) { moved ->
                         if (moved) {
                             deleteOriginals(toDelete, wasMovedToBin = true)
                         } else {
-                            runOnUiThread {
-                                deleteInProgress = false
-                                toast(org.fossify.commons.R.string.unknown_error_occurred)
-                            }
+                            toast(org.fossify.commons.R.string.unknown_error_occurred)
                         }
                     }
                 } else {
@@ -480,7 +474,6 @@ class ComparatorActivity : SimpleActivity() {
                 // pri Koši riadok v DB už prešiel na cestu v Koši (movePathsInRecycleBin), pri trvalom mazaní ho zmaž
                 if (!wasMovedToBin) gone.forEach { deleteDBPath(it) }
                 runOnUiThread {
-                    deleteInProgress = false
                     if (isDestroyed || isFinishing) return@runOnUiThread
                     if (!success) toast(org.fossify.commons.R.string.unknown_error_occurred)
                     removeDeleted(gone)
