@@ -47,8 +47,11 @@ open class SimpleActivity : BaseSimpleActivity() {
         if (spoofFossifyPackage || isCalledFromForkCheck()) FOSSIFY_PACKAGE else super.getPackageName()
 
     private fun isCalledFromForkCheck(): Boolean {
-        // [0] = getPackageName, [1] = volajúci
-        val caller = Throwable().stackTrace.getOrNull(1) ?: return false
+        // volajúci je rámec hneď za naším getPackageName (rámce vlastnej pomocnej metódy preskočíme)
+        val trace = Throwable().stackTrace
+        val own = trace.indexOfFirst { it.methodName == "getPackageName" && it.className == SimpleActivity::class.java.name }
+        if (own < 0) return false
+        val caller = trace.getOrNull(own + 1) ?: return false
         return caller.className == BASE_ACTIVITY_CLASS && caller.methodName in SAF_CHECK_METHODS
     }
 
