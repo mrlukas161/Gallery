@@ -3,22 +3,26 @@
     xmlns:app="http://schemas.android.com/apk/res-auto">
     <item
         android:id="@+id/search_people"
-        android:icon="@android:drawable/ic_menu_search"
+        android:icon="@drawable/ic_search_vector"
         android:title="@string/search_people_title"
         app:showAsAction="ifRoom" />
     <item
         android:id="@+id/show_map"
-        android:icon="@android:drawable/ic_menu_mapmode"
+        android:icon="@drawable/ic_place_vector"
         android:title="@string/map_title"
         app:showAsAction="ifRoom" />
     <item
         android:id="@+id/groups_filter"
-        android:icon="@android:drawable/ic_menu_agenda"
+        android:icon="@drawable/ic_groups_outline_vector"
         android:title="@string/groups_title"
         app:showAsAction="ifRoom" />
     <item
         android:id="@+id/tag_faces"
-        android:icon="@android:drawable/ic_menu_add"
+        android:icon="@drawable/ic_add_person_vector"
         android:title="@string/tag_faces_title"
         app:showAsAction="ifRoom" />
+    <item
+        android:id="@+id/manage_groups"
+        android:title="@string/c2_manage_groups"
+        app:showAsAction="never" />
 </menu>

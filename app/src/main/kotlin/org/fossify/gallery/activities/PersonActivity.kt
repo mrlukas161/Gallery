@@ -22,14 +22,11 @@ import org.fossify.gallery.adapters.PhotoPathsAdapter
 import org.fossify.gallery.databinding.ActivityPersonBinding
 import org.fossify.gallery.dialogs.ChangeSortingDialog
 import org.fossify.gallery.extensions.config
-import org.fossify.gallery.faces.CannotLinkEntity
-import org.fossify.gallery.faces.FaceAssignmentEntity
 import org.fossify.gallery.faces.FaceEntity
 import org.fossify.gallery.faces.FaceMediaMeta
 import org.fossify.gallery.faces.FaceSorter
 import org.fossify.gallery.faces.FacesDatabase
 import org.fossify.gallery.faces.PeopleDatabase
-import org.fossify.gallery.faces.PersonEntity
 import org.fossify.gallery.helpers.GridZoom
 import org.fossify.gallery.helpers.PATH
 import org.fossify.gallery.helpers.SHOW_ALL
@@ -41,10 +38,12 @@ class PersonActivity : SimpleActivity() {
     private var personName: String? = null
     private var manualIds: Set<Long> = emptySet()
     private var facesAdapter: PersonFacesAdapter? = null
+    private var photosAdapter: PhotoPathsAdapter? = null
     private var loadedFaces: List<FaceEntity> = emptyList()
     private var photoPaths: ArrayList<String> = arrayListOf()
     private var meta: Map<String, FaceMediaMeta.Meta> = emptyMap()
     private var showFullPhotos = false
+    private var resumedOnce = false
     private val prefs by lazy { getSharedPreferences("galeria_faces", android.content.Context.MODE_PRIVATE) }
 
     private fun sortPath() = "person_$personId"
@@ -59,13 +58,17 @@ class PersonActivity : SimpleActivity() {
         val lm = GridLayoutManager(this, prefs.getInt("person_columns", COLUMNS))
         binding.personGrid.layoutManager = lm
         GridZoom.setup(binding.personGrid, lm, prefs, "person_columns")
-        binding.personFastscroller.updateColors(getProperPrimaryColor())
+        setupEdgeToEdge(
+            padTopSystem = listOf(binding.personAppbar),
+            padBottomSystem = listOf(binding.personGrid),
+        )
+        setupMaterialScrollListener(binding.personGrid, binding.personAppbar)
         loadFaces(faceIds)
     }
 
     override fun onResume() {
         super.onResume()
-        setupTopAppBar(binding.personAppbar, NavigationIcon.Arrow)
+        binding.personFastscroller.updateColors(getProperPrimaryColor())
         binding.personToolbar.title = personName ?: getString(R.string.person_suggested)
         binding.personToolbar.menu.clear()
         binding.personToolbar.inflateMenu(R.menu.menu_person)
@@ -92,6 +95,11 @@ class PersonActivity : SimpleActivity() {
                 else -> false
             }
         }
+        // až po naplnení menu — setupTopAppBar farbí ikony, ktoré v lište práve sú
+        setupTopAppBar(binding.personAppbar, NavigationIcon.Arrow)
+        // návrat z „Návrhov" / prehliadača: tváre potvrdené inde sa musia objaviť aj na tejto karte
+        // (prvé zobrazenie berie dáta z Intentu, preto sa preskočí)
+        if (resumedOnce) refreshPerson() else resumedOnce = true
     }
 
     private fun updateMenuTitles() {
@@ -117,6 +125,37 @@ class PersonActivity : SimpleActivity() {
         }
     }
 
+    // Prepočet osoby rovnakou logikou ako zoznam Ľudia (ručne potvrdené + auto-zaradené tváre) — NIE holým
+    // dotazom na priradenia, ten by auto-zaradené tváre z karty vyhodil. Nepotvrdená skupina (bez id) je
+    // nemenný snímok, tá sa neobnovuje. Ak sa množina tvárí nezmenila, mriežka sa nedotkne (ostane scroll aj výber).
+    private fun refreshPerson() {
+        if (personId < 0) return
+        val id = personId
+        val knownIds = loadedFaces.mapNotNullTo(HashSet()) { it.id }
+        ensureBackgroundThread {
+            val person = try {
+                PeopleActivity.loadPersons(this).firstOrNull { it.id == id }
+            } catch (e: Throwable) {
+                null
+            } ?: return@ensureBackgroundThread
+            val newIds = person.faces.mapNotNullTo(HashSet()) { it.id }
+            val newMeta = if (newIds == knownIds) {
+                emptyMap()
+            } else {
+                FaceMediaMeta.load(this, person.faces.map { it.mediaFullPath }.distinct())
+            }
+            runOnUiThread {
+                if (isDestroyed || isFinishing) return@runOnUiThread
+                manualIds = person.manualFaceIds
+                personName = person.name ?: personName
+                if (newIds == knownIds) return@runOnUiThread
+                loadedFaces = person.faces
+                meta = newMeta
+                render()
+            }
+        }
+    }
+
     private fun render() {
         val sorting = config.getFolderSorting(sortPath())
         val faces = loadedFaces
@@ -132,30 +171,41 @@ class PersonActivity : SimpleActivity() {
                 if (showFullPhotos) {
                     // jednotná mriežka s výberovým režimom; „toto nie je osoba" je kontextová akcia
                     // vo výbere (predtým deštruktívny long-press v rozpore so zvyškom appky)
-                    binding.personGrid.adapter = PhotoPathsAdapter(
-                        this, photoPaths, binding.personGrid,
-                        onClick = { path -> openPhoto(path) },
-                        onDeleted = { deleted -> onPhotosDeleted(deleted) },
-                        extraAction = if (personId >= 0) {
-                            PhotoPathsAdapter.ExtraAction(R.string.action_not_this_person) { selection ->
-                                confirmNotThisPersonPhotos(selection)
-                            }
-                        } else {
-                            null
-                        },
-                    )
+                    val existing = photosAdapter
+                    if (existing != null && binding.personGrid.adapter === existing) {
+                        // nevymieňaj adaptér — aktualizácia dát zachová pozíciu scrollu
+                        existing.updateItems(photoPaths)
+                    } else {
+                        val adapter = PhotoPathsAdapter(
+                            this, ArrayList(photoPaths), binding.personGrid,
+                            onClick = { path -> openPhoto(path) },
+                            onDeleted = { deleted -> onPhotosDeleted(deleted) },
+                            extraAction = if (personId >= 0) {
+                                PhotoPathsAdapter.ExtraAction(R.string.action_not_this_person) { selection ->
+                                    confirmNotThisPersonPhotos(selection)
+                                }
+                            } else {
+                                null
+                            },
+                        )
+                        photosAdapter = adapter
+                        binding.personGrid.adapter = adapter
+                    }
                 } else {
                     val existing = facesAdapter
                     if (existing != null && binding.personGrid.adapter === existing) {
                         // nevymieňaj adaptér — aktualizácia dát zachová pozíciu scrollu
                         existing.updateItems(facesSorted)
                     } else {
-                        facesAdapter = PersonFacesAdapter(
-                            this, facesSorted.toMutableList(),
+                        val adapter = PersonFacesAdapter(
+                            this, facesSorted.toMutableList(), binding.personGrid,
+                            canReject = personId >= 0,
                             onClick = { face -> openPhoto(face.mediaFullPath) },
-                            onLongClick = { face -> showFaceMenu(face) },
+                            onMove = { selected -> moveFaces(selected) },
+                            onReject = { selected -> confirmRejectFaces(selected) },
                         )
-                        binding.personGrid.adapter = facesAdapter
+                        facesAdapter = adapter
+                        binding.personGrid.adapter = adapter
                     }
                 }
             }
@@ -170,20 +220,18 @@ class PersonActivity : SimpleActivity() {
         photoPaths = ArrayList(photoPaths.filter { !gone.contains(it) })
     }
 
-    private fun showFaceMenu(face: FaceEntity) {
-        val items = ArrayList<RadioItem>()
-        items.add(RadioItem(0, getString(R.string.action_move_to_person)))
-        if (personId >= 0) items.add(RadioItem(1, getString(R.string.action_not_this_person)))
-        RadioGroupDialog(this, items) {
-            when (it as Int) {
-                0 -> moveFace(face)
-                1 -> notThisPerson(face)
-            }
-        }
+    // tváre odišli z karty (presun / „nie je táto osoba") — zosúladí lokálne dáta aj mriežku
+    // a ukončí výberový režim
+    private fun removeFacesLocally(ids: Set<Long>) {
+        loadedFaces = loadedFaces.filter { f -> f.id?.let { !ids.contains(it) } ?: true }
+        manualIds = manualIds - ids
+        facesAdapter?.removeFaces(ids)
     }
 
-    private fun moveFace(face: FaceEntity) {
-        val fid = face.id ?: return
+    // výber tvárí → presun k inej (alebo novej) osobe
+    private fun moveFaces(selected: List<FaceEntity>) {
+        val ids = selected.mapNotNull { it.id }
+        if (ids.isEmpty()) return
         ensureBackgroundThread {
             val persons = PeopleDatabase.getInstance(this).PeopleDao().getPersons().filter { it.id != personId }
             runOnUiThread {
@@ -194,46 +242,62 @@ class PersonActivity : SimpleActivity() {
                 RadioGroupDialog(this, items, titleId = R.string.action_move_to_person) {
                     val which = it as Int
                     if (which == persons.size) {
-                        promptName(null) { name -> assignToNewPerson(fid, name, face) }
+                        promptName(null) { name -> assignToNewPerson(ids, name) }
                     } else {
-                        assignToPerson(fid, persons[which].id, face)
+                        assignToPerson(ids, persons[which].id)
                     }
                 }
             }
         }
     }
 
-    private fun assignToPerson(faceId: Long, targetId: Long, face: FaceEntity) {
+    private fun assignToPerson(faceIds: List<Long>, targetId: Long) {
         ensureBackgroundThread {
+            // všetky tváre výberu naraz v jednej transakcii
+            PeopleDatabase.getInstance(this).PeopleDao().assignFaces(faceIds, targetId, System.currentTimeMillis())
+            runOnUiThread {
+                toast(R.string.person_saved)
+                removeFacesLocally(faceIds.toHashSet())
+            }
+        }
+    }
+
+    private fun assignToNewPerson(faceIds: List<Long>, name: String) {
+        ensureBackgroundThread {
+            // nová osoba + priradenie tvárí v jednej transakcii
             PeopleDatabase.getInstance(this).PeopleDao()
-                .upsertAssignment(FaceAssignmentEntity(faceId, targetId, true, System.currentTimeMillis()))
+                .createPersonWithFaces(name, faceIds, System.currentTimeMillis())
             runOnUiThread {
                 toast(R.string.person_saved)
-                facesAdapter?.removeFace(face)
+                removeFacesLocally(faceIds.toHashSet())
             }
         }
     }
 
-    private fun assignToNewPerson(faceId: Long, name: String, face: FaceEntity) {
-        ensureBackgroundThread {
-            val dao = PeopleDatabase.getInstance(this).PeopleDao()
-            val newId = dao.insertPerson(PersonEntity(name = name, createdAt = System.currentTimeMillis()))
-            dao.upsertAssignment(FaceAssignmentEntity(faceId, newId, true, System.currentTimeMillis()))
-            runOnUiThread {
-                toast(R.string.person_saved)
-                facesAdapter?.removeFace(face)
-            }
+    // „toto nie je táto osoba" nad výberom tvárí — nevratné (tvár sa už nebude navrhovať), preto s potvrdením
+    private fun confirmRejectFaces(selected: List<FaceEntity>) {
+        val ids = selected.mapNotNull { it.id }
+        if (personId < 0 || ids.isEmpty()) return
+        ConfirmationDialog(
+            this,
+            message = resources.getQuantityString(R.plurals.c2_reject_faces_confirm, ids.size, ids.size, personName ?: ""),
+            positive = org.fossify.commons.R.string.ok,
+            negative = org.fossify.commons.R.string.cancel,
+            dialogTitle = getString(R.string.action_not_this_person),
+        ) {
+            rejectFaces(ids)
         }
     }
 
-    private fun notThisPerson(face: FaceEntity) {
-        val fid = face.id ?: return
+    private fun rejectFaces(faceIds: List<Long>) {
         if (personId < 0) return
         ensureBackgroundThread {
-            val dao = PeopleDatabase.getInstance(this).PeopleDao()
-            if (manualIds.contains(fid)) dao.deleteAssignment(fid)
-            dao.insertCannotLink(CannotLinkEntity(fid, personId)) // aby sa už nenavrhla
-            runOnUiThread { facesAdapter?.removeFace(face) }
+            // zrušenie priradenia + negatívne pravidlo (aby sa už nenavrhla) v jednej transakcii
+            PeopleDatabase.getInstance(this).PeopleDao().rejectFacesForPerson(faceIds, personId)
+            runOnUiThread {
+                if (isDestroyed || isFinishing) return@runOnUiThread
+                removeFacesLocally(faceIds.toHashSet())
+            }
         }
     }
 
@@ -255,18 +319,13 @@ class PersonActivity : SimpleActivity() {
     private fun notThisPersonForPaths(selection: List<String>) {
         if (personId < 0) return
         val pathSet = selection.toHashSet()
-        val faces = loadedFaces.filter { pathSet.contains(it.mediaFullPath) }
+        val faceIds = loadedFaces.filter { pathSet.contains(it.mediaFullPath) }.mapNotNull { it.id }
         ensureBackgroundThread {
-            val dao = PeopleDatabase.getInstance(this).PeopleDao()
-            faces.forEach { f ->
-                f.id?.let { fid ->
-                    dao.deleteAssignment(fid)
-                    dao.insertCannotLink(CannotLinkEntity(fid, personId))
-                }
-            }
+            PeopleDatabase.getInstance(this).PeopleDao().rejectFacesForPerson(faceIds, personId)
             runOnUiThread {
                 if (isDestroyed || isFinishing) return@runOnUiThread
                 loadedFaces = loadedFaces.filter { !pathSet.contains(it.mediaFullPath) }
+                manualIds = manualIds - faceIds.toSet()
                 toast(R.string.person_saved)
                 render()
             }

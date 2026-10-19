@@ -2,14 +2,20 @@ package org.fossify.gallery.activities
 
 import android.content.Context
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.view.View
 import android.widget.LinearLayout
 import android.widget.SeekBar
 import androidx.recyclerview.widget.GridLayoutManager
+import org.fossify.commons.dialogs.ConfirmationDialog
 import org.fossify.commons.dialogs.RadioGroupDialog
 import org.fossify.commons.extensions.getAlertDialogBuilder
+import org.fossify.commons.extensions.getBottomNavigationBackgroundColor
+import org.fossify.commons.extensions.getProperTextColor
 import org.fossify.commons.extensions.setupDialogStuff
 import org.fossify.commons.extensions.toast
+import org.fossify.commons.extensions.updateTextColors
 import org.fossify.commons.extensions.value
 import org.fossify.commons.extensions.viewBinding
 import org.fossify.commons.helpers.NavigationIcon
@@ -21,9 +27,7 @@ import org.fossify.gallery.adapters.FaceTagAdapter
 import org.fossify.gallery.databinding.ActivityFaceTaggingBinding
 import org.fossify.gallery.dialogs.ChangeSortingDialog
 import org.fossify.gallery.extensions.config
-import org.fossify.gallery.faces.CannotLinkEntity
 import org.fossify.gallery.faces.ExtrasDatabase
-import org.fossify.gallery.faces.FaceAssignmentEntity
 import org.fossify.gallery.faces.FaceEmbedder
 import org.fossify.gallery.faces.FaceEntity
 import org.fossify.gallery.faces.FaceFilter
@@ -32,7 +36,6 @@ import org.fossify.gallery.faces.IgnoredFaceEntity
 import org.fossify.gallery.faces.FaceSorter
 import org.fossify.gallery.faces.FacesDatabase
 import org.fossify.gallery.faces.PeopleDatabase
-import org.fossify.gallery.faces.PersonEntity
 import org.fossify.gallery.faces.PersonGrouper
 import org.fossify.gallery.helpers.DragSelectListener
 import org.fossify.gallery.helpers.GridZoom
@@ -53,7 +56,17 @@ class FaceTaggingActivity : SimpleActivity() {
     private var chronological = false
     private var showingIgnored = false
     private var showContext = false
+    private var mediaPathFilter: String? = null
     private val prefs by lazy { getSharedPreferences(PREFS, Context.MODE_PRIVATE) }
+
+    // posuvník podobnosti volá onProgressChanged na každý pixel ťahu — mriežka sa prekresľuje najviac raz za
+    // THRESHOLD_THROTTLE_MS (živý náhľad ostane, ale bez trhania); po pustení posuvníka sa prekreslí hneď
+    private val uiHandler = Handler(Looper.getMainLooper())
+    private var thresholdPending = false
+    private val thresholdRunnable = Runnable {
+        thresholdPending = false
+        applyThreshold()
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -61,20 +74,32 @@ class FaceTaggingActivity : SimpleActivity() {
         mode = intent.getIntExtra(MODE, MODE_UNLABELED)
         personId = intent.getLongExtra(PERSON_ID, -1L)
         personName = intent.getStringExtra(PERSON_NAME)
+        // „Označiť osoby" z prehliadača: len tváre práve zobrazenej fotky (bez extra = všetky neoznačené)
+        mediaPathFilter = intent.getStringExtra(MEDIA_PATH)
         val lm = GridLayoutManager(this, prefs.getInt("tagging_columns", COLUMNS))
         binding.taggingGrid.layoutManager = lm
         GridZoom.setup(binding.taggingGrid, lm, prefs, "tagging_columns")
         val dl = DragSelectListener { from, to -> adapter?.selectRange(from, to) }
         dragListener = dl
         binding.taggingGrid.addOnItemTouchListener(dl)
+        setupEdgeToEdge(
+            padTopSystem = listOf(binding.taggingAppbar),
+            // spodná lišta akcií aj koniec mriežky (ktorý lišta zakrýva) odsadené o systémovú navigáciu
+            padBottomSystem = listOf(binding.taggingGrid, binding.taggingBottomBar),
+        )
+        setupMaterialScrollListener(binding.taggingGrid, binding.taggingAppbar)
         setupBottomBar()
         setupThresholdBar()
         load()
     }
 
+    override fun onDestroy() {
+        super.onDestroy()
+        uiHandler.removeCallbacks(thresholdRunnable)
+    }
+
     override fun onResume() {
         super.onResume()
-        setupTopAppBar(binding.taggingAppbar, NavigationIcon.Arrow)
         binding.taggingToolbar.title = if (mode == MODE_SUGGESTIONS) {
             getString(R.string.suggestions_for, personName ?: "")
         } else {
@@ -136,6 +161,13 @@ class FaceTaggingActivity : SimpleActivity() {
                 else -> false
             }
         }
+        // až po naplnení menu — setupTopAppBar farbí ikony, ktoré v lište práve sú
+        setupTopAppBar(binding.taggingAppbar, NavigationIcon.Arrow)
+        // panely pod lištou a spodná lišta vo farbách témy (nie natvrdo zelené / biele)
+        updateTextColors(binding.taggingAppbar)
+        updateTextColors(binding.taggingBottomBar)
+        binding.taggingBottomBar.setBackgroundColor(getBottomNavigationBackgroundColor())
+        binding.taggingPlaceholder.setTextColor(getProperTextColor())
     }
 
     private fun setupBottomBar() {
@@ -168,13 +200,22 @@ class FaceTaggingActivity : SimpleActivity() {
         binding.taggingThresholdSeek.progress = prefs.getInt(KEY_THRESHOLD, DEFAULT_THRESHOLD_PCT)
         binding.taggingThresholdSeek.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(sb: SeekBar?, progress: Int, fromUser: Boolean) {
-                applyThreshold()
+                if (!fromUser) {
+                    applyThreshold()
+                } else if (!thresholdPending) {
+                    thresholdPending = true
+                    uiHandler.postDelayed(thresholdRunnable, THRESHOLD_THROTTLE_MS)
+                }
             }
 
             override fun onStartTrackingTouch(sb: SeekBar?) {}
 
             override fun onStopTrackingTouch(sb: SeekBar?) {
                 prefs.edit().putInt(KEY_THRESHOLD, binding.taggingThresholdSeek.progress).apply()
+                // po pustení posuvníka hneď presný stav
+                uiHandler.removeCallbacks(thresholdRunnable)
+                thresholdPending = false
+                applyThreshold()
             }
         })
     }
@@ -183,6 +224,10 @@ class FaceTaggingActivity : SimpleActivity() {
         binding.taggingCount.text = getString(R.string.selected_count, n)
         binding.taggingBtnPrimary.isEnabled = n > 0
         binding.taggingBtnSecondary.isEnabled = n > 0
+        // farba textu tlačidiel je jednotná (téma), vypnutý stav preto vyjadruje priehľadnosť
+        val alpha = if (n > 0) 1f else 0.4f
+        binding.taggingBtnPrimary.alpha = alpha
+        binding.taggingBtnSecondary.alpha = alpha
     }
 
     private fun load() {
@@ -224,13 +269,22 @@ class FaceTaggingActivity : SimpleActivity() {
     }
 
     private fun showList(faces: List<FaceEntity>) {
-        adapter = FaceTagAdapter(
-            this, faces.toMutableList(),
-            onSelectionChanged = { n -> updateCount(n) },
-            onLongPress = { pos -> startDrag(pos) },
-        )
-        binding.taggingGrid.adapter = adapter
-        updateCount(0)
+        val existing = adapter
+        if (existing != null) {
+            // adaptér vzniká len RAZ — ďalšie zmeny (posuvník, triedenie, obnova návrhov) idú cez updateItems,
+            // nech sa nestratí scroll ani výber (výber ostane len pre tváre, ktoré sú stále vidno)
+            existing.updateItems(faces)
+        } else {
+            val created = FaceTagAdapter(
+                this, faces.toMutableList(),
+                onSelectionChanged = { n -> updateCount(n) },
+                onLongPress = { pos -> startDrag(pos) },
+            )
+            created.showContext = showContext
+            adapter = created
+            binding.taggingGrid.adapter = created
+        }
+        updateCount(adapter?.selectedCount() ?: 0)
     }
 
     private fun startDrag(pos: Int) {
@@ -263,7 +317,9 @@ class FaceTaggingActivity : SimpleActivity() {
         val peopleDao = PeopleDatabase.getInstance(this).PeopleDao()
         val assigned = peopleDao.getAssignments().map { it.faceId }.toHashSet()
         val ignored = ExtrasDatabase.getInstance(this).ExtrasDao().getIgnoredIds().toHashSet()
-        val all = facesDao.getAllFaces().filter { FaceFilter.isGood(it) }
+        val path = mediaPathFilter
+        val all = facesDao.getAllFaces()
+            .filter { FaceFilter.isGood(it) && (path == null || it.mediaFullPath == path) }
         return if (showingIgnored) {
             all.filter { val id = it.id; id != null && ignored.contains(id) }
                 .sortedByDescending { it.score }
@@ -303,8 +359,8 @@ class FaceTaggingActivity : SimpleActivity() {
         if (ids.isEmpty() || personId < 0) return
         ensureBackgroundThread {
             val dao = PeopleDatabase.getInstance(this).PeopleDao()
-            val now = System.currentTimeMillis()
-            ids.forEach { dao.upsertAssignment(FaceAssignmentEntity(it, personId, true, now)) }
+            // všetky potvrdené tváre naraz v jednej transakcii
+            dao.assignFaces(ids, personId, System.currentTimeMillis())
             runOnUiThread {
                 toast(R.string.person_saved)
                 load() // prepočítaj návrhy z nového vzoru = real-time učenie
@@ -312,14 +368,23 @@ class FaceTaggingActivity : SimpleActivity() {
         }
     }
 
+    // „toto nie je [osoba]" je nevratné (tvár sa už danej osobe nebude navrhovať) — preto s potvrdením
     private fun rejectSelected() {
         val ids = adapter?.selectedIds().orEmpty()
         if (ids.isEmpty() || personId < 0) return
-        ensureBackgroundThread {
-            val dao = PeopleDatabase.getInstance(this).PeopleDao()
-            ids.forEach { dao.insertCannotLink(CannotLinkEntity(it, personId)) }
-            runOnUiThread {
-                load() // prepočítaj (zohľadní cannot-link aj nové potvrdenia)
+        ConfirmationDialog(
+            this,
+            message = resources.getQuantityString(R.plurals.c2_reject_suggestions_confirm, ids.size, ids.size, personName ?: ""),
+            positive = org.fossify.commons.R.string.ok,
+            negative = org.fossify.commons.R.string.cancel,
+            dialogTitle = getString(R.string.this_is_not),
+        ) {
+            ensureBackgroundThread {
+                val dao = PeopleDatabase.getInstance(this).PeopleDao()
+                dao.rejectFacesForPerson(ids, personId)
+                runOnUiThread {
+                    load() // prepočítaj (zohľadní cannot-link aj nové potvrdenia)
+                }
             }
         }
     }
@@ -351,9 +416,13 @@ class FaceTaggingActivity : SimpleActivity() {
             val dao = PeopleDatabase.getInstance(this).PeopleDao()
             val extras = ExtrasDatabase.getInstance(this).ExtrasDao()
             val now = System.currentTimeMillis()
-            val targetId = existingId ?: dao.insertPerson(PersonEntity(name = newName, createdAt = now))
+            // priradenie (aj založenie novej osoby) naraz v jednej transakcii
+            if (existingId != null) {
+                dao.assignFaces(ids, existingId, now)
+            } else {
+                dao.createPersonWithFaces(newName.orEmpty(), ids, now)
+            }
             ids.forEach {
-                dao.upsertAssignment(FaceAssignmentEntity(it, targetId, true, now))
                 extras.deleteIgnored(it) // priradenie zruší prípadné ignorovanie
             }
             runOnUiThread {
@@ -408,6 +477,9 @@ class FaceTaggingActivity : SimpleActivity() {
         const val MODE = "mode"
         const val PERSON_ID = "person_id"
         const val PERSON_NAME = "person_name"
+
+        // rovnaký kľúč ako ViewPagerActivity.EXTRA_TAG_MEDIA_PATH (kontrakt s prehliadačom)
+        const val MEDIA_PATH = "media_path"
         const val MODE_UNLABELED = 0
         const val MODE_SUGGESTIONS = 1
         private const val COLUMNS = 4
@@ -416,6 +488,7 @@ class FaceTaggingActivity : SimpleActivity() {
         private const val PREFS = "galeria_faces"
         private const val KEY_THRESHOLD = "suggest_threshold_pct"
         private const val DEFAULT_THRESHOLD_PCT = 30
+        private const val THRESHOLD_THROTTLE_MS = 90L
         private const val FACES_SORT_PATH = "faces_tagging"
     }
 }
