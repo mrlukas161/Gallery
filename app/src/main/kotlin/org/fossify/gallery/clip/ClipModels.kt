@@ -40,14 +40,14 @@ object ClipModels {
         false
     }
 
-    // stiahne chýbajúce modely; onProgress(fáza 1..2, percentá 0..100). Vráti true ak sú oba na mieste.
+    // stiahne chýbajúce modely; onProgress(fáza "1/2" / "2/2", percentá 0..100). Vráti true ak sú oba na mieste.
     fun ensure(context: Context, running: () -> Boolean, onProgress: (phase: String, pct: Int) -> Unit): Boolean {
         if (!visualPresent(context)) {
-            if (!downloadAny(VISUAL_URLS, visualFile(context), VISUAL_MIN, running) { p -> onProgress("model 1/2", p) }) return false
+            if (!downloadAny(VISUAL_URLS, visualFile(context), VISUAL_MIN, running) { p -> onProgress("1/2", p) }) return false
         }
         if (!running()) return false
         if (!textualPresent(context)) {
-            if (!downloadAny(TEXTUAL_URLS, textualFile(context), TEXTUAL_MIN, running) { p -> onProgress("model 2/2", p) }) return false
+            if (!downloadAny(TEXTUAL_URLS, textualFile(context), TEXTUAL_MIN, running) { p -> onProgress("2/2", p) }) return false
         }
         return bothPresent(context)
     }

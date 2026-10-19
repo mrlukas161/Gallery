@@ -194,7 +194,7 @@ class IndexingService : Service() {
         }
         FaceIndexer.index(
             applicationContext, notify = false,
-            onProgress = { d, t -> prog("faces", "Tváre $d/$t") },
+            onProgress = { d, t -> prog("faces", getString(R.string.q1_prog_faces, d, t)) },
             onDone = { _, _ -> clearProg("faces"); next() },
             onError = { fail("faces", it); next() },
         )
@@ -206,7 +206,7 @@ class IndexingService : Service() {
         }
         GeoIndexer.index(
             applicationContext,
-            onProgress = { d, t -> prog("geo", "Poloha $d/$t") },
+            onProgress = { d, t -> prog("geo", getString(R.string.q1_prog_geo, d, t)) },
             onDone = { _, _ -> clearProg("geo"); next() },
             onError = { fail("geo", it); next() },
         )
@@ -218,7 +218,7 @@ class IndexingService : Service() {
         }
         QrIndexer.index(
             applicationContext, notify = false,
-            onProgress = { d, t -> prog("qr", "QR kódy $d/$t") },
+            onProgress = { d, t -> prog("qr", getString(R.string.q1_prog_qr, d, t)) },
             onDone = { _, _ -> clearProg("qr"); next() },
             onError = { fail("qr", it); next() },
         )
@@ -230,7 +230,7 @@ class IndexingService : Service() {
         }
         OcrIndexer.index(
             applicationContext, notify = false,
-            onProgress = { d, t -> prog("ocr", "OCR text $d/$t") },
+            onProgress = { d, t -> prog("ocr", getString(R.string.q1_prog_ocr, d, t)) },
             onDone = { _, _ -> clearProg("ocr"); next() },
             onError = { fail("ocr", it); next() },
         )
@@ -242,7 +242,7 @@ class IndexingService : Service() {
         }
         PhashIndexer.index(
             applicationContext, notify = false,
-            onProgress = { d, t -> prog("phash", "Podobné $d/$t") },
+            onProgress = { d, t -> prog("phash", getString(R.string.q1_prog_phash, d, t)) },
             onDone = { _ -> clearProg("phash"); next() },
             onError = { fail("phash", it); next() },
         )
@@ -266,7 +266,7 @@ class IndexingService : Service() {
         }
         org.fossify.gallery.clip.ClipMlModels.download(
             applicationContext,
-            onProgress = { phase, d, t -> prog("clipml", "SK model: $phase $d/$t") },
+            onProgress = { phase, d, t -> prog("clipml", getString(R.string.q1_prog_clip_ml, phase, d, t)) },
             onDone = { org.fossify.gallery.clip.ClipSearch.releaseMl(); clearProg("clipml"); next() },
             onError = { fail("clipml", it); next() },
         )
@@ -280,7 +280,7 @@ class IndexingService : Service() {
         }
         org.fossify.gallery.faces.RefreshFaces.run(
             applicationContext,
-            onProgress = { d, t -> prog("reembed", "Prepracovanie tvárí $d/$t") },
+            onProgress = { d, t -> prog("reembed", getString(R.string.q1_prog_reembed, d, t)) },
             onDone = { _, _ -> clearProg("reembed"); next() },
             onError = { fail("reembed", it); next() },
         )
@@ -441,11 +441,10 @@ class IndexingService : Service() {
     private fun ensureChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val nm = getSystemService(NotificationManager::class.java) ?: return
-            if (nm.getNotificationChannel(CHANNEL_ID) == null) {
-                nm.createNotificationChannel(
-                    NotificationChannel(CHANNEL_ID, "Indexovanie", NotificationManager.IMPORTANCE_LOW)
-                )
-            }
+            // vždy (aj keď kanál existuje) — systém tak premenuje kanál vytvorený staršou verziou
+            nm.createNotificationChannel(
+                NotificationChannel(CHANNEL_ID, getString(R.string.q1_channel_indexing), NotificationManager.IMPORTANCE_LOW)
+            )
         }
     }
 

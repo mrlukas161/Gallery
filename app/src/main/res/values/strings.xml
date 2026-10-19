@@ -7,7 +7,6 @@
     <string name="update_later">Neskôr</string>
     <string name="update_downloading">Sťahujem aktualizáciu…</string>
     <string name="update_check_failed">Aktualizácia zlyhala</string>
-    <string name="show_smart_albums">Zobraziť inteligentné albumy</string>
     <string name="smart_album_videos">Videá</string>
     <string name="smart_album_gifs">GIF</string>
     <string name="smart_album_screenshots">Snímky obrazovky</string>
@@ -16,11 +15,8 @@
     <string name="smart_album_raw">RAW</string>
     <string name="face_indexing_title">Rozpoznávanie tvárí (beta)</string>
     <string name="face_indexing_tap_to_start">Ťuknutím spustíš rozpoznávanie tvárí na fotkách</string>
-    <string name="face_indexing_starting">Spúšťam…</string>
     <string name="face_indexing_running">Spracúvam tváre… (ťuknutím zastavíš)</string>
-    <string name="face_indexing_progress">Spracúvam %1$d / %2$d (ťuknutím zastavíš)</string>
     <string name="face_indexing_result">Nájdené tváre: %1$d · fotky s tvárami: %2$d (ťuknutím spustíš znova)</string>
-    <string name="face_indexing_result_persons">Tváre: %1$d, fotky: %2$d. Osôb podľa prahu:\n%3$s</string>
     <string name="people">Ľudia</string>
     <string name="people_empty">Zatiaľ žiadne osoby — v Nastaveniach → Galéria+ ťukni na „Spracovanie knižnice“</string>
     <string name="loading">Načítavam…</string>
@@ -36,7 +32,6 @@
     <string name="action_not_this_person">Toto nie je táto osoba</string>
     <string name="delete_person_confirm">Odstrániť túto osobu? Tváre sa vrátia medzi návrhy.</string>
     <string name="no_other_person">Niet inej osoby na zlúčenie</string>
-    <string name="person_long_press_hint">Podržaním tváre ju opravíš (presun k osobe / toto nie je táto osoba)</string>
     <!-- Import tvárí z Picasy -->
     <string name="picasa_import_title">Import tvárí z Picasy</string>
     <string name="picasa_import_tap">Ťuknutím vyberieš ZIP s tvárami z Picasy</string>
@@ -61,8 +56,6 @@
     <string name="clear_selection">Zrušiť výber</string>
     <string name="show_photos">Celé fotky</string>
     <string name="show_faces">Tváre</string>
-    <string name="sort_newest">Najnovšie</string>
-    <string name="sort_oldest">Najstaršie</string>
     <string name="sort_action">Zoradiť</string>
     <string name="chronological">Chronologicky (podľa dátumu)</string>
     <!-- Hľadanie osôb -->
@@ -74,18 +67,14 @@
     <string name="search_count">Fotiek: %1$d</string>
     <!-- Prehliadač osoby -->
     <string name="share">Zdieľať</string>
-    <string name="delete_confirm">Vymazať túto fotku?</string>
     <string name="action_failed">Akcia zlyhala</string>
     <!-- Rozsah hľadania + OCR -->
     <string name="search_scope_people">Hľadám: Osoby</string>
     <string name="search_scope_text">Hľadám: Text (OCR)</string>
     <string name="ocr_title">Rozpoznávanie textu (OCR, beta)</string>
     <string name="ocr_tap_to_start">Ťuknutím spustíš rozpoznávanie textu na fotkách (pomalé, beží na pozadí)</string>
-    <string name="ocr_starting">Spúšťam…</string>
     <string name="ocr_running">Rozpoznávam text… (ťuknutím zastavíš)</string>
-    <string name="ocr_progress">Rozpoznávam %1$d / %2$d (ťuknutím zastavíš)</string>
     <string name="ocr_result">Spracované fotky: %1$d · z toho s textom: %2$d (ťuknutím spustíš znova)</string>
-    <string name="ocr_error">Chyba: %1$s (ťuknutím skúsiš znova)</string>
     <!-- Ignorovanie tvárí + skupiny osôb -->
     <string name="ignore_faces">Ignorovať</string>
     <string name="restore">Vrátiť</string>
@@ -104,7 +93,6 @@
     <string name="indexing_faces">Tváre</string>
     <string name="indexing_geo">Poloha</string>
     <string name="indexing_ocr">Text (OCR)</string>
-    <string name="indexing_reembed">Prepracovanie tvárí</string>
     <string name="indexing_qr">QR kódy</string>
     <string name="indexing_phash">Podobné a duplikáty</string>
     <string name="indexing_clip">Hľadanie predmetov (CLIP)</string>
@@ -149,8 +137,6 @@
     <string name="adv_tools_hide">Ťuknutím skryješ jednotlivé funkcie</string>
     <string name="changelog_title">Čo je nové (história zmien)</string>
     <string name="changelog_summary">Prehľad zmien medzi verziami</string>
-    <string name="index_all_title">Spracovať všetko naraz</string>
-    <string name="index_all_summary">Ťuknutím rozbehneš rozpoznávanie tvárí a textu, QR kódy, polohu, duplikáty aj hľadanie predmetov súčasne</string>
     <string name="perf_title">Výkon spracovania</string>
     <string name="perf_max">Naplno — všetky funkcie bežia naraz (rýchlejšie, zohreje telefón)</string>
     <string name="perf_charger">Naplno len pri nabíjaní</string>
@@ -163,7 +149,6 @@
     <string name="info_tag_people">Označiť tváre</string>
     <string name="show_ocr_text">Zobraziť text (OCR)</string>
     <string name="ocr_no_text">Na tejto fotke sa nenašiel text (alebo rozpoznávanie textu ešte nebežalo)</string>
-    <string name="copy_text">Kopírovať</string>
     <string name="ocr_copied">Text skopírovaný</string>
     <string name="auto_ocr_title">Rozpoznávanie textu automaticky (na pozadí)</string>
     <string name="auto_ocr_on">Zapnuté — text sa rozpoznáva sám (pomalé, najlepšie pri nabíjaní)</string>
@@ -238,7 +223,6 @@
     <string name="motion_autoplay_off">Automatické prehrávanie vypnuté</string>
     <string name="motion_badge">Pohyblivá fotka — ťuknutím prehráš</string>
     <string name="motion_not_found">Táto fotka nemá vloženú pohyblivú časť</string>
-    <string name="map_gps_suspicious">Poloha vyzerá nepresne (%1$s)</string>
     <!-- Automatické zaradenie tvárí -->
     <string name="face_auto_title">Automatické zaraďovanie tvárí</string>
     <string name="face_auto_off">Vypnuté — v albume osoby sú len ručne potvrdené tváre</string>
@@ -253,7 +237,6 @@
     <string name="auto_index_on">Zapnuté — nové fotky sa spracujú samé na pozadí</string>
     <string name="auto_index_off">Vypnuté — spracovanie len ručne</string>
     <!-- Kombinované hľadanie -->
-    <string name="smart_search_title">Hľadať (osoby / text)</string>
     <string name="search_time_from">Od dátumu</string>
     <string name="search_time_to">Do dátumu</string>
     <string name="search_time_from_x">Od: %1$s</string>
@@ -281,7 +264,6 @@
     <string name="compare_kept_only">Táto ostáva · na zmazanie označených: %1$d</string>
     <string name="compare_pane_label">%1$s · kvalita %2$d%%</string>
     <string name="compare_done">Hotovo</string>
-    <string name="face_indexing_error">Chyba: %1$s (ťuknutím skúsiš znova)</string>
     <string name="search_settings_hint">Hľadať v nastaveniach</string>
     <string name="check_updates_title">Skontrolovať aktualizácie</string>
     <string name="checking_updates">Kontrolujem…</string>

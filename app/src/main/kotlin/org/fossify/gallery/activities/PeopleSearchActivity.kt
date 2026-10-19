@@ -9,6 +9,7 @@ import androidx.recyclerview.widget.GridLayoutManager
 import org.fossify.commons.extensions.applyColorFilter
 import org.fossify.commons.extensions.beGone
 import org.fossify.commons.extensions.beVisible
+import org.fossify.commons.extensions.getDatePickerDialogTheme
 import org.fossify.commons.extensions.getProperTextColor
 import org.fossify.commons.extensions.updateTextColors
 import org.fossify.commons.extensions.viewBinding
@@ -43,6 +44,10 @@ class PeopleSearchActivity : SimpleActivity() {
     private var lastResults: List<String> = emptyList()
     private var qrOnly = false
     private var searchAdapter: PhotoPathsAdapter? = null
+
+    // poradové číslo hľadania (len UI vlákno) — výsledok staršieho, pomalšieho hľadania
+    // nesmie prepísať výsledky novšieho (napr. pri rýchlom písaní)
+    private var searchGeneration = 0
 
     // fotky zmazané z výsledkov (kôš) — OCR/osobný index o nich ešte vie, no do výsledkov sa vrátiť nesmú
     private val deletedPaths = HashSet<String>()
@@ -143,6 +148,7 @@ class PeopleSearchActivity : SimpleActivity() {
         if (cur in 1 until Long.MAX_VALUE) cal.timeInMillis = cur
         DatePickerDialog(
             this,
+            getDatePickerDialogTheme(),
             { _, y, m, d ->
                 val c = Calendar.getInstance()
                 if (isFrom) {
@@ -208,6 +214,7 @@ class PeopleSearchActivity : SimpleActivity() {
     }
 
     private fun runSearch() {
+        val generation = ++searchGeneration
         val rawQuery = binding.searchInput.text?.toString().orEmpty().trim()
         // zapamätaj dopyt aj z tohto hľadania — TextSelectActivity ním predznačí nájdené
         // slová priamo na fotke (rovnako ako hlavná lupa); prázdny dopyt zvýraznenie zruší
@@ -221,6 +228,10 @@ class PeopleSearchActivity : SimpleActivity() {
         }
         val textMode = binding.searchScopeSwitch.isChecked
         val and = binding.searchAndSwitch.isChecked
+        // stav obrazovky sa číta na UI vlákne — pozadie pracuje so snímkou z času spustenia
+        val from = timeFrom
+        val to = timeTo
+        val metaSnapshot = meta
         ensureBackgroundThread {
             val qrSet: HashSet<String>? = if (onlyQr) {
                 try {
@@ -243,14 +254,15 @@ class PeopleSearchActivity : SimpleActivity() {
             if (qrSet != null && tokens.isNotEmpty()) {
                 rawPaths = rawPaths.filter { qrSet.contains(it) }
             }
-            val missing = rawPaths.filter { !meta.containsKey(it) }
+            val missing = rawPaths.filter { !metaSnapshot.containsKey(it) }
             val extra = if (missing.isNotEmpty()) FaceMediaMeta.load(this, missing) else emptyMap()
-            fun taken(p: String) = meta[p]?.taken ?: extra[p]?.taken ?: 0L
+            fun taken(p: String) = metaSnapshot[p]?.taken ?: extra[p]?.taken ?: 0L
             val filtered = rawPaths
-                .filter { val t = taken(it); t in timeFrom..timeTo }
+                .filter { val t = taken(it); t in from..to }
                 .sortedByDescending { taken(it) }
             runOnUiThread {
                 if (isDestroyed || isFinishing) return@runOnUiThread
+                if (generation != searchGeneration) return@runOnUiThread // medzitým beží novšie hľadanie
                 // fotky zmazané v tejto obrazovke sa do výsledkov nevrátia, kým o nich vie starý index
                 val shown = filtered.filter { !deletedPaths.contains(it) }
                 lastResults = shown
