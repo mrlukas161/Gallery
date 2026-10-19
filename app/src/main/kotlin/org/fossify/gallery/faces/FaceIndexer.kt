@@ -13,8 +13,8 @@ import org.fossify.commons.helpers.ensureBackgroundThread
 import org.fossify.gallery.R
 import java.io.File
 
-// B2: indexovanie = detekcia + ODTLAČOK pre každú tvár (faces.db). Po dokončení sa odtlačky
-// zoskupia a vráti sa počet osôb. Beží na bežnom vlákne (robustnosť FGS/WorkManager = B4).
+// B2: indexovanie = detekcia + ODTLAČOK pre každú tvár (faces.db); po dokončení vráti počet tvárí
+// a fotiek s tvárami. Beží na bežnom vlákne (robustnosť FGS/WorkManager = B4).
 object FaceIndexer {
     @Volatile
     var isRunning = false
@@ -31,7 +31,7 @@ object FaceIndexer {
         context: Context,
         notify: Boolean = true,
         onProgress: (done: Int, total: Int) -> Unit,
-        onDone: (faces: Int, photos: Int, info: String) -> Unit,
+        onDone: (faces: Int, photos: Int) -> Unit,
         onError: (message: String) -> Unit,
     ) {
         if (isRunning) return
@@ -108,15 +108,9 @@ object FaceIndexer {
                 }
                 cancelNotification(appCtx)
                 if (isRunning) maybeRepairUnembedded(appCtx, dao, detector, embedder, landmarker)
-                val info = try {
-                    val embs = dao.getAllEmbeddings().map { FaceEmbedder.toFloats(it) }
-                    val thresholds = floatArrayOf(0.35f, 0.40f, 0.45f, 0.50f, 0.55f, 0.60f, 0.65f, 0.70f)
-                    val counts = FaceClusterer.countPersonsAtThresholds(embs, thresholds)
-                    thresholds.indices.joinToString("  ") { "${thresholds[it]}->${counts[it]}" }
-                } catch (e: Throwable) {
-                    "?"
-                }
-                onDone(safeFaceCount(dao), safePhotoCount(dao), info)
+                // (predtým sa tu po KAŽDOM behu zhlukovali všetky odtlačky pri 8 prahoch len pre
+                // diagnostický reťazec, ktorý nikto nečítal — zbytočná záťaž CPU a batérie)
+                onDone(safeFaceCount(dao), safePhotoCount(dao))
             } catch (e: Throwable) {
                 cancelNotification(appCtx)
                 onError(describe(e))

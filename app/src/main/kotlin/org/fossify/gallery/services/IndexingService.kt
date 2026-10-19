@@ -169,7 +169,7 @@ class IndexingService : Service() {
         FaceIndexer.index(
             applicationContext, notify = false,
             onProgress = { d, t -> prog("faces", "Tváre $d/$t") },
-            onDone = { _, _, _ -> clearProg("faces"); next() },
+            onDone = { _, _ -> clearProg("faces"); next() },
             onError = { fail("faces", it); next() },
         )
     }
