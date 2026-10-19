@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<menu xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    tools:ignore="AppCompatResource,AlwaysShowAction">
+    <item
+        android:id="@+id/cab_move_to_person"
+        android:icon="@drawable/ic_move_vector"
+        android:showAsAction="always"
+        android:title="@string/action_move_to_person"
+        app:showAsAction="always" />
+    <item
+        android:id="@+id/cab_select_all"
+        android:icon="@drawable/ic_select_all_vector"
+        android:showAsAction="always"
+        android:title="@string/select_all"
+        app:showAsAction="always" />
+    <item
+        android:id="@+id/cab_not_this_person"
+        android:showAsAction="never"
+        android:title="@string/action_not_this_person"
+        app:showAsAction="never" />
+</menu>
