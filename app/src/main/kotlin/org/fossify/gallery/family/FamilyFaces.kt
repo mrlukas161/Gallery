@@ -14,9 +14,7 @@ import java.io.IOException
 // Jedna inštancia na jeden beh (cache rozmerov fotiek), nie je thread-safe.
 class FamilyFaces(context: Context, private val faceDao: FaceDao, private val keys: ContentKeyStore) {
     private val scope = IndexScope(context)
-    private val geometry = HashMap<String, Geometry?>()
-
-    private data class Geometry(val rawWidth: Int, val rawHeight: Int, val transform: RelBox.Transform)
+    private val geometry = HashMap<String, PhotoGeometry?>()
 
     // null = tvár z nepovoleného priečinka (zamknutý/vylúčený, spec 2.5) alebo fotka sa nedá prečítať
     fun refFor(face: FaceEntity): FaceRef? {
@@ -42,23 +40,27 @@ class FamilyFaces(context: Context, private val faceDao: FaceDao, private val ke
     }
 
     private fun boxesFor(face: FaceEntity): List<RelBox>? {
-        val g = geometry.getOrPut(face.mediaFullPath) { readGeometry(face.mediaFullPath) } ?: return null
+        val g = geometry.getOrPut(face.mediaFullPath) { readPhotoGeometry(face.mediaFullPath) } ?: return null
         return FaceMatch.relBoxes(
             face.bboxLeft, face.bboxTop, face.bboxRight, face.bboxBottom,
             g.rawWidth, g.rawHeight, g.transform,
         ).takeIf { it.isNotEmpty() }
     }
+}
 
-    private fun readGeometry(path: String): Geometry? {
-        if (!File(path).isFile) return null
-        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-        BitmapFactory.decodeFile(path, bounds)
-        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
-        val orientation = try {
-            ExifInterface(path).getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL)
-        } catch (ignored: IOException) {
-            ExifInterface.ORIENTATION_NORMAL // rovnako ako UprightDecoder: bez čitateľného EXIF sa neotáča
-        }
-        return Geometry(bounds.outWidth, bounds.outHeight, RelBox.exifTransform(orientation))
+// Rozmery súboru z hlavičky (bez dekódovania pixelov) a EXIF transformácia, ktorú aplikuje UprightDecoder.
+// Spoločné pre FamilyFaces (F3) a BundleBuilder (F4). null = súbor sa nedá prečítať.
+internal data class PhotoGeometry(val rawWidth: Int, val rawHeight: Int, val transform: RelBox.Transform)
+
+internal fun readPhotoGeometry(path: String): PhotoGeometry? {
+    if (!File(path).isFile) return null
+    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+    BitmapFactory.decodeFile(path, bounds)
+    if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
+    val orientation = try {
+        ExifInterface(path).getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL)
+    } catch (ignored: IOException) {
+        ExifInterface.ORIENTATION_NORMAL // rovnako ako UprightDecoder: bez čitateľného EXIF sa neotáča
     }
+    return PhotoGeometry(bounds.outWidth, bounds.outHeight, RelBox.exifTransform(orientation))
 }

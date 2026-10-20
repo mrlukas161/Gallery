@@ -11,6 +11,7 @@ import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import org.fossify.commons.helpers.ensureBackgroundThread
 import org.fossify.gallery.R
+import org.fossify.gallery.family.FamilyInbox
 import java.io.File
 
 // CLIP indexovanie: stiahne modely (ak treba) a pre každú fotku spočíta 512-dim vektor (clip.db).
@@ -57,7 +58,9 @@ object ClipIndexer {
                 // vylúčené a zamknuté priečinky sa nespracúvajú; ich staré riadky sa z indexu zmažú
                 val scope = org.fossify.gallery.faces.IndexScope(appCtx)
                 val processed = scope.keepAllowed(dao.getIndexedPaths()) { dao.deletePaths(it) }
-                val todo = queryImages(appCtx).filter { it !in processed && scope.allows(it) }
+                val candidates = queryImages(appCtx).filter { it !in processed && scope.allows(it) }
+                // výsledky z prepojeného telefónu (F4) sa zapíšu hneď, fotka sa druhýkrát nespracúva
+                val todo = FamilyInbox.withoutSupplied(appCtx, candidates, FamilyInbox.CLIP)
                 val total = todo.size
                 var done = 0
                 for (path in todo) {

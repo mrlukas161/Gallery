@@ -6,6 +6,7 @@ import android.provider.MediaStore
 import androidx.exifinterface.media.ExifInterface
 import org.fossify.commons.extensions.isVideoFast
 import org.fossify.commons.helpers.ensureBackgroundThread
+import org.fossify.gallery.family.FamilyInbox
 
 // Prečíta GPS z EXIF každej fotky (rýchle – len hlavička) a z metadát videí (ISO6709) a uloží do
 // geo.db. Typ (fotka/video) sa rozlišuje príponou cesty — bez zmeny schémy. Resumovateľné.
@@ -29,7 +30,10 @@ object GeoIndexer {
                 // vylúčené a zamknuté priečinky sa nespracúvajú; ich staré riadky sa z indexu zmažú
                 val scope = IndexScope(appCtx)
                 val processed = scope.keepAllowed(dao.getIndexedPaths()) { dao.deletePaths(it) }
-                val todo = (queryImages(appCtx) + queryVideos(appCtx)).filter { it !in processed && scope.allows(it) }
+                val candidates =
+                    (queryImages(appCtx) + queryVideos(appCtx)).filter { it !in processed && scope.allows(it) }
+                // výsledky z prepojeného telefónu (F4) sa zapíšu hneď, fotka sa druhýkrát nespracúva
+                val todo = FamilyInbox.withoutSupplied(appCtx, candidates, FamilyInbox.GEO)
                 val total = todo.size
                 var done = 0
                 for (path in todo) {

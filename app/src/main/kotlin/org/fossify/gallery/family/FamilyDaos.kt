@@ -110,3 +110,23 @@ interface ProposalDao {
     @Query("UPDATE proposals SET state = :state WHERE id = :id")
     fun setProposalState(id: Long, state: String)
 }
+
+// prijaté balíky výsledkov k fotkám (F4)
+@Dao
+interface BundleInboxDao {
+    // IGNORE: opakovane doručený balík (rovnaké id) sa nezapíše druhýkrát; vráti -1
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    fun insertBundle(bundle: BundleInboxEntity): Long
+
+    @Query("SELECT * FROM bundle_inbox WHERE id = :id")
+    fun getBundle(id: String): BundleInboxEntity?
+
+    @Query("SELECT * FROM bundle_inbox WHERE state = :state ORDER BY received_at")
+    fun getBundles(state: String): List<BundleInboxEntity>
+
+    @Query("SELECT COUNT(*) FROM bundle_inbox WHERE state = :state")
+    fun countBundles(state: String): Int
+
+    @Query("UPDATE bundle_inbox SET state = :state, applied_path = :path, payload_json = :payload WHERE id = :id")
+    fun finishBundle(id: String, state: String, path: String?, payload: String)
+}

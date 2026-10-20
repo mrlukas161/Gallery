@@ -16,6 +16,9 @@ abstract class MetaDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     abstract fun put(meta: MetaEntity)
 
+    @Query("DELETE FROM meta WHERE `key` = :key")
+    abstract fun delete(key: String)
+
     // vlastné deviceId vznikne pri prvom použití a potom sa nemení
     @Transaction
     open fun deviceId(): String =

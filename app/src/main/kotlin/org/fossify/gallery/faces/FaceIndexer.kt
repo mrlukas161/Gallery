@@ -11,6 +11,7 @@ import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import org.fossify.commons.helpers.ensureBackgroundThread
 import org.fossify.gallery.R
+import org.fossify.gallery.family.FamilyInbox
 import java.io.File
 
 // B2: indexovanie = detekcia + ODTLAČOK pre každú tvár (faces.db); po dokončení vráti počet tvárí
@@ -56,7 +57,9 @@ object FaceIndexer {
                 // vylúčené a zamknuté priečinky sa nespracúvajú (rozhodnutie Lukáša 20.10.2026);
                 // už uložené tváre odtiaľ sa NEmažú — UI ich len skryje
                 val scope = IndexScope(appCtx)
-                val todo = queryImages(appCtx).filter { it.second !in processed && scope.allows(it.second) }
+                val candidates = queryImages(appCtx).filter { it.second !in processed && scope.allows(it.second) }
+                // tváre z prepojeného telefónu (F4) sa zapíšu hneď aj so značkou, detekcia sa nerobí
+                val todo = FamilyInbox.withoutSupplied(appCtx, candidates, FamilyInbox.FACES) { it.second }
                 // fotka bez značky „spracovaná", ale s tvárami v DB (značku zmazalo staré denné
                 // upratovanie pri dočasne nedostupnom súbore, alebo pád medzi zápisom tvárí a značky):
                 // tváre NEdetegovať nanovo, len doplniť značku — inak by vznikli nové id a menovky

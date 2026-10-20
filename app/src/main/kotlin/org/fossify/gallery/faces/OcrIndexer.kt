@@ -11,6 +11,7 @@ import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import org.fossify.commons.helpers.ensureBackgroundThread
 import org.fossify.gallery.R
+import org.fossify.gallery.family.FamilyInbox
 import org.fossify.gallery.helpers.TextNormalizer
 import java.io.File
 
@@ -49,7 +50,9 @@ object OcrIndexer {
                 // vylúčené a zamknuté priečinky sa nespracúvajú; ich staré riadky sa z indexu zmažú
                 val scope = IndexScope(appCtx)
                 val processed = scope.keepAllowed(dao.getIndexedPaths()) { dao.deletePaths(it) }
-                val todo = queryImages(appCtx).filter { it !in processed && scope.allows(it) }
+                val candidates = queryImages(appCtx).filter { it !in processed && scope.allows(it) }
+                // výsledky z prepojeného telefónu (F4) sa zapíšu hneď, fotka sa druhýkrát nespracúva
+                val todo = FamilyInbox.withoutSupplied(appCtx, candidates, FamilyInbox.OCR)
                 val total = todo.size
                 var done = 0
                 for (path in todo) {

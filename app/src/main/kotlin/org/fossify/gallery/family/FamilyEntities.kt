@@ -88,6 +88,27 @@ data class ProposalEntity(
     }
 }
 
+// Prijatý balík výsledkov k fotke (F4). id = "<deviceId odosielateľa>:<transferId>".
+// STATE_WAITING: fotka (bez súboru, prišla inak, napr. cez WhatsApp) tu zatiaľ nie je, výsledky sa aplikujú,
+// keď ju nájde spracovanie knižnice (FamilyInbox). STATE_APPLIED: hotové, riadok ostáva ako značka, aby sa
+// opakovane doručený balík nespracoval druhýkrát (payload sa vtedy vyprázdni). STATE_EXPIRED: fotka neprišla.
+@Entity(tableName = "bundle_inbox", indices = [Index("state"), Index("content_key")])
+data class BundleInboxEntity(
+    @PrimaryKey @ColumnInfo(name = "id") val id: String,
+    @ColumnInfo(name = "from_device_id") val fromDeviceId: String,
+    @ColumnInfo(name = "content_key") val contentKey: String,
+    @ColumnInfo(name = "payload_json") val payloadJson: String,
+    @ColumnInfo(name = "received_at") val receivedAt: Long,
+    @ColumnInfo(name = "state") val state: String,
+    @ColumnInfo(name = "applied_path") val appliedPath: String? = null,
+) {
+    companion object {
+        const val STATE_WAITING = "waiting"
+        const val STATE_APPLIED = "applied"
+        const val STATE_EXPIRED = "expired"
+    }
+}
+
 // Vlastný stav tohto zariadenia ako kľúč–hodnota: vlastné deviceId (UUID, vznikne raz), lamport hodiny,
 // názov zariadenia. Jedna tabuľka pre F2 (párovanie) aj F3 (op-log), aby verzia 1 schémy ostala jedna.
 @Entity(tableName = "meta")

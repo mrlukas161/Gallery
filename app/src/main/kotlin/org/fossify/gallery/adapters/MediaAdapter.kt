@@ -60,6 +60,8 @@ import org.fossify.gallery.databinding.VideoItemListBinding
 import org.fossify.gallery.dialogs.DeleteWithRememberDialog
 import org.fossify.gallery.extensions.config
 import org.fossify.gallery.extensions.fixDateTaken
+import org.fossify.gallery.family.FamilySend
+import org.fossify.gallery.family.sendToFamily
 import org.fossify.gallery.extensions.getShortcutImage
 import org.fossify.gallery.extensions.handleMediaManagementPrompt
 import org.fossify.gallery.extensions.launchResizeImageDialog
@@ -209,6 +211,8 @@ class MediaAdapter(
             findItem(R.id.cab_confirm_selection).isVisible = isAGetIntent && allowMultiplePicks && selectedKeys.isNotEmpty()
             findItem(R.id.cab_restore_recycle_bin_files).isVisible = selectedPaths.all { it.startsWith(activity.recycleBinPath) }
             findItem(R.id.cab_create_shortcut).isVisible = isOneItemSelected
+            // rodinné prepojenie (F4): len keď je prepojený telefón; kôš a výber pre inú appku nie
+            findItem(R.id.cab_send_family).isVisible = !isInRecycleBin && !isAGetIntent && FamilySend.isPaired(activity)
 
             checkHideBtnVisibility(this, selectedItems)
             checkFavoriteBtnVisibility(this, selectedItems)
@@ -243,6 +247,7 @@ class MediaAdapter(
             R.id.cab_set_as -> setAs()
             R.id.cab_resize -> resize()
             R.id.cab_delete -> checkDeleteConfirmation()
+            R.id.cab_send_family -> activity.sendToFamily(getSelectedPaths())
         }
     }
 
