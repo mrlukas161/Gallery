@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Stringy F4 (rodinné prepojenie: poslanie fotky s výsledkami do prepojeného telefónu) -->
+<resources>
+    <!-- akcia v prehliadači a vo výberovom režime -->
+    <string name="family_send_action">Poslať do prepojeného telefónu</string>
+    <string name="family_send_title">Poslať do prepojeného telefónu</string>
+    <!-- %s = názov prepojeného telefónu -->
+    <string name="family_send_with_file">Do telefónu „%s“: fotky aj výsledky</string>
+    <string name="family_send_results_only">Do telefónu „%s“: len výsledky (fotky už má, napr. z WhatsAppu)</string>
+    <string name="family_send_no_peer">Najprv prepoj telefón v Nastaveniach cez „Prepojiť telefón“</string>
+    <string name="family_send_nothing">Nič sa neposlalo. Fotky zo zamknutých, vylúčených a skrytých priečinkov ani z Koša sa neposielajú.</string>
+    <!-- %1$d = počet fotiek, %2$s = názov telefónu -->
+    <plurals name="family_send_queued">
+        <item quantity="one">Posielam %1$d fotku do telefónu „%2$s“…</item>
+        <item quantity="few">Posielam %1$d fotky do telefónu „%2$s“…</item>
+        <item quantity="many">Posielam %1$d fotky do telefónu „%2$s“…</item>
+        <item quantity="other">Posielam %1$d fotiek do telefónu „%2$s“…</item>
+    </plurals>
+    <!-- %s = názov telefónu -->
+    <string name="family_send_later">Telefón „%s“ teraz nie je dostupný. Fotky odídu, keď budú oba telefóny na rovnakej Wi-Fi.</string>
+
+    <!-- notifikácia po odoslaní; %1$d = počet fotiek, %2$s = názov telefónu -->
+    <string name="family_send_channel">Rodinné prepojenie</string>
+    <string name="family_send_done_title">Fotky sú odoslané</string>
+    <plurals name="family_send_done">
+        <item quantity="one">Do telefónu „%2$s“ odišla %1$d fotka</item>
+        <item quantity="few">Do telefónu „%2$s“ odišli %1$d fotky</item>
+        <item quantity="many">Do telefónu „%2$s“ odišlo %1$d fotky</item>
+        <item quantity="other">Do telefónu „%2$s“ odišlo %1$d fotiek</item>
+    </plurals>
+</resources>

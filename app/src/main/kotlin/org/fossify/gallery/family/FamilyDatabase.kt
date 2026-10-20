@@ -11,6 +11,7 @@ import androidx.room.RoomDatabase
 // id osôb, spárované telefóny, op-log, fronta). Pri nezhode verzie Room radšej vyhodí
 // IllegalStateException a dáta ostanú na disku nedotknuté. Pri KAŽDEJ zmene entít zvýš `version`
 // A pridaj .addMigrations(Migration(stará, nová) { … }), vzor: databases/GalleryDatabase.kt.
+// BundleInboxEntity (F4) pribudla ešte vo verzii 1: family.db zatiaľ nebola vydaná v žiadnom APK.
 // exportSchema ostáva predvolene zapnutý (rovnako ako PeopleDatabase/FacesDatabase/ExtrasDatabase).
 @Database(
     entities = [
@@ -21,6 +22,7 @@ import androidx.room.RoomDatabase
         OutboxEntity::class,
         ProposalEntity::class,
         MetaEntity::class,
+        BundleInboxEntity::class,
     ],
     version = 1,
 )
@@ -38,6 +40,8 @@ abstract class FamilyDatabase : RoomDatabase() {
     abstract fun proposalDao(): ProposalDao
 
     abstract fun metaDao(): MetaDao
+
+    abstract fun bundleInboxDao(): BundleInboxDao
 
     companion object {
         private const val DB_NAME = "family.db"

@@ -11,6 +11,7 @@ import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import org.fossify.commons.helpers.ensureBackgroundThread
 import org.fossify.gallery.R
+import org.fossify.gallery.family.FamilyInbox
 import java.io.File
 
 // Perceptuálny hash (average hash): každú fotku zmenší na PEVNÝCH 8x8, spočíta 64-bit hash (phash.db).
@@ -41,7 +42,9 @@ object PhashIndexer {
                 // vylúčené a zamknuté priečinky sa nespracúvajú; ich staré riadky sa z indexu zmažú
                 val scope = IndexScope(appCtx)
                 val processed = scope.keepAllowed(dao.getIndexedPaths()) { dao.deletePaths(it) }
-                val todo = queryImages(appCtx).filter { it !in processed && scope.allows(it) }
+                val candidates = queryImages(appCtx).filter { it !in processed && scope.allows(it) }
+                // výsledky z prepojeného telefónu (F4) sa zapíšu hneď, fotka sa druhýkrát nespracúva
+                val todo = FamilyInbox.withoutSupplied(appCtx, candidates, FamilyInbox.PHASH)
                 val total = todo.size
                 var done = 0
                 for (path in todo) {
@@ -77,7 +80,8 @@ object PhashIndexer {
     }
 
     // average hash na PEVNOM 8x8 (nie s pomerom strán) -> vždy 64 bitov, porovnateľné medzi fotkami
-    private fun computeHash(path: String): Long {
+    // (internal: rodinné prepojenie ním počíta záložnú zhodu fotky, family.BundleBuilder/FamilyInbox)
+    internal fun computeHash(path: String): Long {
         val bmp = decode8x8(path) ?: return 0L
         val n = bmp.width * bmp.height
         val px = IntArray(n)

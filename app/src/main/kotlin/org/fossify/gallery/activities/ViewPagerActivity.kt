@@ -134,6 +134,8 @@ import org.fossify.gallery.extensions.tryDeleteFileDirItem
 import org.fossify.gallery.extensions.updateDBMediaPath
 import org.fossify.gallery.extensions.updateFavorite
 import org.fossify.gallery.extensions.updateFavoritePaths
+import org.fossify.gallery.family.FamilySend
+import org.fossify.gallery.family.sendToFamily
 import org.fossify.gallery.fragments.PhotoFragment
 import org.fossify.gallery.fragments.VideoFragment
 import org.fossify.gallery.fragments.ViewPagerFragment
@@ -336,6 +338,9 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
 
                 findItem(R.id.menu_restore_file).isVisible = currentMedium.path.startsWith(recycleBinPath)
                 findItem(R.id.menu_create_shortcut).isVisible = true
+                val familyPaired = FamilySend.isPaired(this@ViewPagerActivity)
+                findItem(R.id.menu_send_family).isVisible =
+                    familyPaired && !currentMedium.getIsInRecycleBin() && !isExternalIntent()
                 findItem(R.id.menu_change_orientation).isVisible = rotationDegrees == 0 && visibleBottomActions and BOTTOM_ACTION_CHANGE_ORIENTATION == 0
                 findItem(R.id.menu_rotate).setShowAsAction(
                     if (rotationDegrees != 0) {
@@ -400,6 +405,7 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
                 R.id.menu_show_on_map -> showFileOnMap(getCurrentPath())
                 R.id.menu_ocr_text -> showOcrText(getCurrentPath())
                 R.id.menu_photo_info -> showPhotoInfo(getCurrentPath())
+                R.id.menu_send_family -> sendToFamily(listOf(getCurrentPath()))
                 R.id.menu_motion_photo -> playMotionPhoto(getCurrentPath())
                 R.id.menu_motion_auto -> {
                     val now = !motionAutoplay()

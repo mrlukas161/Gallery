@@ -162,7 +162,9 @@ class FamilyServer private constructor(
         private const val TAG = "FamilyServer"
         private const val MIME_BINARY = "application/octet-stream"
         private const val MAX_BODY_BYTES = 8L * 1024 * 1024
-        private const val MAX_BUNDLE_BYTES = 96L * 1024 * 1024
+        // Telo sa číta celé do pamäte ešte PRED overením rámca, preto žiadne veľké limity: súbory chodia
+        // po kúskoch BundleTransfer.CHUNK_SIZE (4 MB, F4), takže /f/bundle stačí rovnaký limit ako ostatné.
+        private const val MAX_BUNDLE_BYTES = MAX_BODY_BYTES
         private const val SESSION_TTL_MS = 10 * 60 * 1000L
 
         // jednorazový token práve zobrazeného QR kódu (PairingActivity)

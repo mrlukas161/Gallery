@@ -13,6 +13,10 @@ interface ClipDao {
     @Query("SELECT path FROM clip_index")
     fun getIndexedPaths(): List<String>
 
+    // jeden vektor (rodinné prepojenie F4) — getAll() by načítal celý index (~2 KB na fotku)
+    @Query("SELECT * FROM clip_index WHERE path = :path LIMIT 1")
+    fun getByPath(path: String): ClipEntity?
+
     // riadky fotiek mimo rozsahu spracovania (zamknutý/vylúčený priečinok) — IndexScope.keepAllowed
     @Query("DELETE FROM clip_index WHERE path IN (:paths)")
     fun deletePaths(paths: List<String>)
