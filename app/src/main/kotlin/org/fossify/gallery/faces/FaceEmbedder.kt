@@ -141,6 +141,11 @@ class FaceEmbedder(context: Context) {
     }
 
     companion object {
+        // Identifikátor modelu odtlačkov (asset face/mobilefacenet.tflite, vstup 112×112, L2-normalizovaný
+        // výstup). Prenáša sa s odtlačkami do druhého telefónu (family.AnchorsSet.faceModelId) — vektory
+        // rôznych modelov sa nesmú miešať. PRI VÝMENE MODELU ALEBO ZMENE PREDSPRACOVANIA ZMEŇ TÚTO HODNOTU.
+        const val MODEL_ID = "mobilefacenet-112-l2-v1"
+
         private val ARCFACE_TEMPLATE = floatArrayOf(
             38.2946f, 51.6963f,
             73.5318f, 51.5014f,
