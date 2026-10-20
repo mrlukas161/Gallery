@@ -398,6 +398,12 @@
             android:exported="true"
             android:permission="android.permission.BIND_JOB_SERVICE" />
 
+        <!-- rodinné prepojenie (F5): okno synchronizácie pri nabíjaní, beží len ako krátke behy jobu -->
+        <service
+            android:name=".jobs.FamilySyncJob"
+            android:exported="true"
+            android:permission="android.permission.BIND_JOB_SERVICE" />
+
         <activity-alias
             android:name=".activities.SplashActivity.Red"
             android:enabled="false"

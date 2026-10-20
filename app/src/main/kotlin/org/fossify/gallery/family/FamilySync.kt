@@ -77,6 +77,7 @@ class FamilySync(context: Context) {
         val people = PeopleDatabase.getInstance(app).PeopleDao()
         val persons = people.getPersons()
         persons.forEach { recorder.uuidFor(it.id) }
+        catchUpNames(recorder, persons.map { it.id to it.name })
         people.getAssignments().filter { it.isManual }.groupBy({ it.personId }, { it.faceId })
             .forEach { (personId, faceIds) -> recorder.facesAssigned(faceIds, personId) }
         ExtrasDatabase.getInstance(app).ExtrasDao().getGroups().forEach { recorder.groupChanged(it.id) }
@@ -85,10 +86,36 @@ class FamilySync(context: Context) {
         return true
     }
 
+    // čakajú v op-logu operácie, ktoré ešte nemohli prebehnúť (napr. z obnovy zálohy, kým chýbajú fotky)?
+    fun hasPendingOps(): Boolean = family.opDao().countUnappliedOps() > 0
+
     fun openProposalCount(): Int = family.proposalDao().countProposals(ProposalEntity.STATE_OPEN)
 
+    // Osoba mohla dostať rodinné UUID ešte pred spárovaním (záloha osôb F6) a potom ju premenovali, kým
+    // recorder nič nezapisoval (žiadny spárovaný telefón). Snapshot preto dorovná meno z posledného
+    // vlastného PersonCreate/PersonRename na aktuálne.
+    private fun catchUpNames(recorder: OpRecorder, persons: List<Pair<Long, String?>>) {
+        val self = deviceId()
+        val logged = HashMap<String, String?>()
+        val ops = family.opDao().getOpsOfType(self, OpType.PERSON_CREATE) +
+            family.opDao().getOpsOfType(self, OpType.PERSON_RENAME)
+        ops.sortedWith(compareBy<OpEntity> { it.lamport }.thenBy { it.opId }).forEach { e ->
+            when (val op = OpCodec.decode(e.type, e.payloadJson)) {
+                is PersonCreate -> logged[op.uuid] = op.name
+                is PersonRename -> logged[op.uuid] = op.name
+                else -> Unit
+            }
+        }
+        for ((localId, name) in persons) {
+            val uuid = recorder.existingUuid(localId)?.takeIf { logged.containsKey(it) }
+            if (uuid != null && !name.isNullOrBlank() && logged[uuid] != name) {
+                recorder.personRenamed(localId, logged[uuid], name)
+            }
+        }
+    }
+
     // Obsahové kľúče fotiek s tvárami (lenivo: len keď čaká operácia s tvárou; neskôr sa vráti z cache).
-    private fun prepareFaceKeys() {
+    internal fun prepareFaceKeys() {
         val keys = ContentKeyStore(family.contentKeyDao())
         FacesDatabase.getInstance(app).FaceDao().getPathsWithFaces().forEach { path ->
             if (File(path).isFile) keys.keyFor(path)

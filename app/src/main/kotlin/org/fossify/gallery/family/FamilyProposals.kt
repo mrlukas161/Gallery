@@ -24,9 +24,13 @@ class FamilyProposals(context: Context) {
 
     // Otvorené návrhy, ktoré sa dajú zobraziť (nepoškodené); najstaršie prvé.
     fun openItems(): List<Item> {
-        val names = family.peerDao().getPeers().associate { it.deviceId to it.name }
+        val names = HashMap<String, String?>(family.peerDao().getPeers().associate { it.deviceId to it.name })
         return family.proposalDao().getProposals(ProposalEntity.STATE_OPEN).mapNotNull { e ->
             val proposal = OpCodec.decodeProposal(e.type, e.payloadJson) ?: return@mapNotNull null
+            // návrhy z obnovy zálohy osôb (F6) nesú popis zálohy namiesto názvu telefónu
+            if (PeopleBackupFormat.isBackupDevice(e.fromDeviceId) && !names.containsKey(e.fromDeviceId)) {
+                names[e.fromDeviceId] = family.metaDao().get(PeopleBackup.labelKey(e.fromDeviceId))
+            }
             Item(e.id, proposal, e.fromDeviceId, names[e.fromDeviceId], e.createdAt)
         }
     }

@@ -202,5 +202,7 @@ dependencies {
     implementation("com.microsoft.onnxruntime:onnxruntime-android:1.20.0")
     ksp(libs.androidx.room.compiler)
     testImplementation("junit:junit:4.13.2")
+    // skutočné org.json pre JVM unit testy (v android.jar sú len prázdne náhrady)
+    testImplementation("org.json:json:20240303")
     detektPlugins(libs.compose.detekt)
 }

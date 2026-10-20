@@ -543,6 +543,16 @@ class IndexingService : Service() {
                 edit.putBoolean(KEY_DEFERRED, wait).apply()
             } catch (ignored: Throwable) {
             }
+            // odložené na nabíjanie → okno pri nabíjaní ho dobehne (FamilySyncJob)
+            if (wait) {
+                val app = applicationContext
+                org.fossify.commons.helpers.ensureBackgroundThread {
+                    try {
+                        org.fossify.gallery.jobs.FamilySyncJob.refresh(app)
+                    } catch (ignored: Throwable) {
+                    }
+                }
+            }
         }
         watched.clear()
         policyStopped.clear()
@@ -676,16 +686,27 @@ class IndexingService : Service() {
             }
         }
 
-        fun start(context: Context, task: String, allowMetered: Boolean = false) {
-            try {
+        // false = službu sa nepodarilo spustiť (napr. z pozadia na Androide 12+)
+        fun start(context: Context, task: String, allowMetered: Boolean = false): Boolean {
+            return try {
                 ContextCompat.startForegroundService(
                     context,
                     Intent(context, IndexingService::class.java)
                         .putExtra(EXTRA_TASK, task)
                         .putExtra(EXTRA_ALLOW_METERED, allowMetered),
                 )
+                true
             } catch (ignored: Throwable) {
+                false
             }
+        }
+
+        // F5: čaká niečo z automatického spracovania na nabíjanie? (okno pri nabíjaní, FamilySyncJob)
+        fun deferredWorkPending(context: Context): Boolean = try {
+            val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            prefs.getBoolean("auto_index", true) && prefs.getBoolean(KEY_DEFERRED, false)
+        } catch (ignored: Throwable) {
+            false
         }
     }
 }

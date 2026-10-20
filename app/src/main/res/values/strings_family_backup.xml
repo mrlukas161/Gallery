@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Stringy F6 (rodinné prepojenie: záloha a obnova osôb, súbor .galeria-family) -->
+<resources>
+    <!-- Nastavenia -->
+    <string name="fb_backup_title">Zálohovať osoby</string>
+    <string name="fb_backup_summary">Uloží osoby, mená, skupiny, ručné priradenia tvárí a odtlačky do súboru .galeria-family, napr. na SD kartu alebo do PC</string>
+    <string name="fb_restore_title">Obnoviť osoby</string>
+    <string name="fb_restore_summary">Doplní osoby zo zálohy. Nič neprepíše ani neodstráni, rozpory nájdeš ako návrhy v Ľuďoch</string>
+
+    <!-- záloha -->
+    <string name="fb_backup_running">Zálohujem osoby…</string>
+    <!-- %1$d = osoby, %2$d = ručné priradenia tvárí, %3$d = skupiny, %4$d = osoby s odtlačkami -->
+    <string name="fb_backup_done">Záloha je uložená. Osoby: %1$d · ručné priradenia: %2$d · skupiny: %3$d · osoby s odtlačkami: %4$d. Tváre zo zamknutých a vylúčených priečinkov sa nezálohujú.</string>
+    <string name="fb_backup_failed">Zálohu sa nepodarilo uložiť</string>
+
+    <!-- obnova; %1$s = popis zálohy (fb_source), %2$d = počet osôb v zálohe -->
+    <string name="fb_restore_confirm">Obnoviť osoby zo zálohy „%1$s“ (osoby: %2$d)? Chýbajúce osoby, mená, skupiny a priradenia sa doplnia. Nič sa neprepíše ani neodstráni, rozpory nájdeš ako návrhy v Ľuďoch.</string>
+    <string name="fb_restore_button">Obnoviť</string>
+    <string name="fb_restore_running">Obnovujem osoby…</string>
+    <string name="fb_restore_invalid">Tento súbor nie je záloha osôb Galérie+ alebo je z novšej verzie appky</string>
+    <string name="fb_restore_failed">Osoby sa nepodarilo obnoviť</string>
+    <!-- %1$d = doplnené zmeny, %2$d = nové návrhy, %3$d = čaká na fotky alebo tváre, %4$d = už bolo v appke -->
+    <string name="fb_restore_done">Obnova je hotová. Doplnené: %1$d · návrhy v Ľuďoch: %2$d · čaká na fotky: %3$d · už bolo v appke: %4$d. Priradenia k fotkám, ktoré ešte nemajú tváre, sa doplnia po ich spracovaní.</string>
+
+    <!-- popis zálohy, ukáže sa aj pri návrhoch v Ľuďoch namiesto názvu telefónu; %1$s = dátum, %2$s = názov telefónu -->
+    <string name="fb_source">záloha osôb z %1$s</string>
+    <string name="fb_source_device">záloha osôb z %1$s (%2$s)</string>
+</resources>
