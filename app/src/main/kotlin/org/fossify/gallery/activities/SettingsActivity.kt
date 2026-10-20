@@ -140,6 +140,8 @@ class SettingsActivity : SimpleActivity() {
         setupChangelog()
         setupPerfMode()
         setupAutoIndex()
+        setupProcessingProfile()
+        setupNewPhotosFirst()
         setupFaceIndexing()
         setupFaceAuto()
         setupPicasaImport()
@@ -1599,6 +1601,47 @@ class SettingsActivity : SimpleActivity() {
     private fun updateAutoIndexSummary() {
         val on = getSharedPreferences("galeria_faces", android.content.Context.MODE_PRIVATE).getBoolean("auto_index", true)
         binding.settingsAutoIndexSummary.text = getString(if (on) R.string.auto_index_on else R.string.auto_index_off)
+    }
+
+    // F5: profil spracovania knižnice — ťuk prepína Plný ↔ Ľahký
+    private fun setupProcessingProfile() {
+        updateProcessingProfileSummary()
+        binding.settingsProcessingProfileHolder.setOnClickListener {
+            config.processingProfile = if (config.processingProfile == ProcessingPolicy.PROFILE_LIGHT) {
+                ProcessingPolicy.PROFILE_FULL
+            } else {
+                ProcessingPolicy.PROFILE_LIGHT
+            }
+            updateProcessingProfileSummary()
+            updateNewPhotosFirstSummary()
+        }
+    }
+
+    private fun updateProcessingProfileSummary() {
+        val light = ProcessingPolicy.profileOf(config.processingProfile) == ProcessingPolicy.Profile.LIGHT
+        binding.settingsProcessingProfileSummary.text =
+            getString(if (light) R.string.f5_profile_light else R.string.f5_profile_full)
+    }
+
+    // F5: „Nové fotky hneď, zvyšok pri nabíjaní“ (predvolene vypnuté)
+    private fun setupNewPhotosFirst() {
+        updateNewPhotosFirstSummary()
+        binding.settingsNewFirstHolder.setOnClickListener {
+            config.processNewPhotosFirst = !config.processNewPhotosFirst
+            updateNewPhotosFirstSummary()
+        }
+    }
+
+    private fun updateNewPhotosFirstSummary() {
+        val light = ProcessingPolicy.profileOf(config.processingProfile) == ProcessingPolicy.Profile.LIGHT
+        binding.settingsNewFirstSummary.text = when {
+            light -> getString(R.string.f5_new_first_light)
+            config.processNewPhotosFirst -> getString(
+                R.string.f5_new_first_on, ProcessingPolicy.SMALL_BATCH_MAX, ProcessingPolicy.LOW_BATTERY_PCT,
+            )
+
+            else -> getString(R.string.f5_new_first_off)
+        }
     }
 
     private fun setupClearCache() {

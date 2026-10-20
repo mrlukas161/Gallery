@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Stringy F5 (rodinné prepojenie: profily a plánovanie spracovania knižnice) -->
+<resources>
+    <!-- Nastavenia → profil spracovania knižnice -->
+    <string name="f5_profile_title">Profil spracovania</string>
+    <string name="f5_profile_full">Plný — všetko: tváre, poloha, text (OCR), QR kódy, podobné fotky aj hľadanie predmetov</string>
+    <string name="f5_profile_light">Ľahký — len tváre a poloha, a len pri nabíjaní (šetrí batériu aj pamäť)</string>
+
+    <!-- Nastavenia → „Nové fotky hneď, zvyšok pri nabíjaní“; %1$d = max. počet fotiek, %2$d = percentá batérie -->
+    <string name="f5_new_first_title">Nové fotky hneď, zvyšok pri nabíjaní</string>
+    <string name="f5_new_first_on">Zapnuté — do %1$d nových fotiek spracujem hneď, väčšie dávky počkajú na nabíjanie. Pod %2$d %% batérie sa spracovanie zastaví.</string>
+    <string name="f5_new_first_off">Vypnuté — spracovanie knižnice beží ako doteraz</string>
+    <string name="f5_new_first_light">V ľahkom profile sa spracúva len pri nabíjaní</string>
+</resources>

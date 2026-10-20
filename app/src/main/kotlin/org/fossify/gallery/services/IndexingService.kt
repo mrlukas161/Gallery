@@ -4,8 +4,10 @@ import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.Service
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
@@ -19,7 +21,10 @@ import org.fossify.gallery.faces.GeoIndexer
 import org.fossify.gallery.faces.OcrIndexer
 import org.fossify.gallery.faces.PhashIndexer
 import org.fossify.gallery.faces.QrIndexer
+import org.fossify.gallery.extensions.config
 import org.fossify.gallery.helpers.IndexPerf
+import org.fossify.gallery.helpers.PendingCounter
+import org.fossify.gallery.helpers.ProcessingPolicy
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
 
@@ -46,6 +51,20 @@ class IndexingService : Service() {
     @Volatile
     private var timedOut = false
 
+    // F5: automaticky spustené úlohy pod dohľadom ProcessingPolicy (úloha -> veľkosť dávky pri štarte);
+    // pri zmene batérie/nabíjania sa rozhodnutie zopakuje a úloha sa prípadne zastaví
+    private val watched = ConcurrentHashMap<String, Int>()
+
+    // úlohy zastavené pravidlami spracovania (slabá batéria, odpojená nabíjačka) — nie sú to chyby
+    private val policyStopped: MutableSet<String> = ConcurrentHashMap.newKeySet()
+
+    // niečo z automatického spracovania počká na nabíjanie (autoScanIfStale to potom dobehne)
+    @Volatile
+    private var deferred = false
+
+    @Volatile
+    private var batteryReceiver: BroadcastReceiver? = null
+
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -58,9 +77,8 @@ class IndexingService : Service() {
         startForegroundCompat(buildInitial())
         when (val task = intent?.getStringExtra(EXTRA_TASK)) {
             null, TASK_AUTO -> {
-                // Nové fotky sa automaticky zaradia do VŠETKÉHO, čo už používaš: tváre/poloha/QR vždy,
-                // a navyše tie funkcie, ktoré už majú svoj index (OCR, duplikáty, CLIP) — aby nové
-                // fotky nezaostávali za zvyškom knižnice. Rozhodnutie beží mimo hlavného vlákna (Room).
+                // výber funkcií (autoTasks) aj pravidlá spracovania (applyPolicy) bežia mimo hlavného
+                // vlákna (Room, MediaStore)
                 autoRan = true
                 // rezervácia HNEĎ (synchrónne): kým sa na pozadí rozhodne, čo pobeží, počítadlo nesmie
                 // klesnúť na 0 — iné spustenie by medzitým zavolalo finish() a indexovanie by bežalo
@@ -68,22 +86,8 @@ class IndexingService : Service() {
                 active.incrementAndGet()
                 org.fossify.commons.helpers.ensureBackgroundThread {
                     try {
-                        val list = ArrayList<String>()
-                        list.add(TASK_FACES)
-                        list.add(TASK_GEO)
-                        list.add(TASK_QR)
-                        if (autoOcrEnabled() || hasData { org.fossify.gallery.faces.OcrDatabase.getInstance(this).OcrDao().count() }) {
-                            list.add(TASK_OCR)
-                        }
-                        if (hasData { org.fossify.gallery.faces.PhashDatabase.getInstance(this).PhashDao().count() }) {
-                            list.add(TASK_PHASH)
-                        }
-                        if (org.fossify.gallery.clip.ClipModels.bothPresent(this) &&
-                            hasData { org.fossify.gallery.clip.ClipDatabase.getInstance(this).ClipDao().count() }
-                        ) {
-                            list.add(TASK_CLIP)
-                        }
-                        launch(list, sequential = !IndexPerf.parallel(this))
+                        val tasks = applyPolicy(autoTasks(), ProcessingPolicy.Trigger.AUTO)
+                        launch(tasks, sequential = !IndexPerf.parallel(this))
                     } finally {
                         taskFinished()
                     }
@@ -91,32 +95,154 @@ class IndexingService : Service() {
             }
 
             TASK_ALL -> {
-                // jedným ťukom rozbehni VŠETKO naraz (podľa perf režimu paralelne/postupne)
-                val list = ArrayList<String>()
-                list.add(TASK_FACES)
-                list.add(TASK_GEO)
-                list.add(TASK_QR)
-                list.add(TASK_OCR)
-                list.add(TASK_PHASH)
-                // CLIP vždy — ak model chýba, stiahne sa (inak „hľadanie predmetov" nikdy nefunguje
-                // a používateľ nevie prečo). Na mobilných dátach sa ale model (~150 MB) bez
-                // výslovného potvrdenia NESŤAHUJE — namiesto tichého míňania dát sa zapíše
-                // viditeľná chyba; Nastavenia posielajú potvrdenie cez EXTRA_ALLOW_METERED.
+                // jedným ťukom rozbehni VŠETKO naraz (podľa perf režimu paralelne/postupne);
+                // ľahký profil z toho nechá len tváre a polohu
                 val allowMetered = intent?.getBooleanExtra(EXTRA_ALLOW_METERED, false) == true
-                if (org.fossify.gallery.clip.ClipModels.bothPresent(this) ||
-                    allowMetered ||
-                    !org.fossify.gallery.clip.ClipModels.isMeteredNetwork(this)
-                ) {
-                    list.add(TASK_CLIP)
-                } else {
-                    fail(TASK_CLIP, getString(R.string.a3_clip_metered_skipped))
-                }
-                launch(list, sequential = !IndexPerf.parallel(this))
+                val tasks = applyPolicy(allTasks(allowMetered), ProcessingPolicy.Trigger.MANUAL)
+                launch(tasks, sequential = !IndexPerf.parallel(this))
             }
 
+            // jedna konkrétna funkcia spustená ručne z Nastavení beží vždy (výslovná voľba používateľa)
             else -> launch(listOf(task), sequential = false)
         }
         return START_NOT_STICKY
+    }
+
+    // Nové fotky sa automaticky zaradia do VŠETKÉHO, čo už používaš: tváre/poloha/QR vždy,
+    // a navyše tie funkcie, ktoré už majú svoj index (OCR, duplikáty, CLIP) — aby nové
+    // fotky nezaostávali za zvyškom knižnice. Volá sa mimo hlavného vlákna (Room).
+    private fun autoTasks(): List<String> {
+        val list = arrayListOf(TASK_FACES, TASK_GEO, TASK_QR)
+        if (autoOcrEnabled() || hasData { org.fossify.gallery.faces.OcrDatabase.getInstance(this).OcrDao().count() }) {
+            list.add(TASK_OCR)
+        }
+        if (hasData { org.fossify.gallery.faces.PhashDatabase.getInstance(this).PhashDao().count() }) {
+            list.add(TASK_PHASH)
+        }
+        if (org.fossify.gallery.clip.ClipModels.bothPresent(this) &&
+            hasData { org.fossify.gallery.clip.ClipDatabase.getInstance(this).ClipDao().count() }
+        ) {
+            list.add(TASK_CLIP)
+        }
+        return list
+    }
+
+    private fun allTasks(allowMetered: Boolean): List<String> {
+        val list = arrayListOf(TASK_FACES, TASK_GEO, TASK_QR, TASK_OCR, TASK_PHASH)
+        // ľahký profil CLIP nespúšťa — netreba ani sťahovať model, ani hlásiť chybu na mobilných dátach
+        if (currentProfile() == ProcessingPolicy.Profile.LIGHT) return list
+        // CLIP vždy — ak model chýba, stiahne sa (inak „hľadanie predmetov" nikdy nefunguje
+        // a používateľ nevie prečo). Na mobilných dátach sa ale model (~150 MB) bez
+        // výslovného potvrdenia NESŤAHUJE — namiesto tichého míňania dát sa zapíše
+        // viditeľná chyba; Nastavenia posielajú potvrdenie cez EXTRA_ALLOW_METERED.
+        if (org.fossify.gallery.clip.ClipModels.bothPresent(this) ||
+            allowMetered ||
+            !org.fossify.gallery.clip.ClipModels.isMeteredNetwork(this)
+        ) {
+            list.add(TASK_CLIP)
+        } else {
+            fail(TASK_CLIP, getString(R.string.a3_clip_metered_skipped))
+        }
+        return list
+    }
+
+    // --- pravidlá spracovania (F5: profil, „Nové fotky hneď, zvyšok pri nabíjaní“, batéria) ---
+
+    private fun currentProfile(): ProcessingPolicy.Profile = ProcessingPolicy.profileOf(config.processingProfile)
+
+    // Vráti úlohy, ktoré smú bežať teraz. Automatické úlohy pri ľahkom profile alebo zapnutej voľbe
+    // „Nové fotky hneď…“ sa počas behu sledujú (batéria, nabíjanie).
+    // Pri AUTO volať mimo hlavného vlákna (PendingCounter číta MediaStore a Room).
+    private fun applyPolicy(tasks: List<String>, trigger: ProcessingPolicy.Trigger): List<String> {
+        val profile = currentProfile()
+        val newFirst = config.processNewPhotosFirst
+        val battery = IndexPerf.battery(this)
+        val pending = if (ProcessingPolicy.needsBatchSize(profile, newFirst, battery.charging, trigger)) {
+            PendingCounter.count(this, tasks)
+        } else {
+            emptyMap()
+        }
+        val watch = trigger == ProcessingPolicy.Trigger.AUTO && ProcessingPolicy.needsWatching(profile, newFirst)
+        val run = ArrayList<String>()
+        for (task in tasks) {
+            // už bežiacu úlohu preskočí launch(); nesledovať ju (mohla ju spustiť ručne iná cesta)
+            if (isTaskRunning(task)) continue
+            val batch = pending[task] ?: ProcessingPolicy.UNKNOWN
+            val decision = ProcessingPolicy.decide(
+                profile, newFirst, battery.charging, battery.percent, batch, kindOf(task), trigger,
+            )
+            when (decision) {
+                ProcessingPolicy.Decision.RUN -> {
+                    run.add(task)
+                    if (watch) watched[task] = batch
+                }
+
+                ProcessingPolicy.Decision.SKIP_PROFILE -> Unit
+                else -> deferred = true
+            }
+        }
+        if (watched.isNotEmpty()) registerBatteryWatch()
+        return run
+    }
+
+    // smie sledovaná úloha bežať aj teraz? (pred štartom ďalšej úlohy v postupnom poradí)
+    private fun allowedNow(task: String): Boolean {
+        val batch = watched[task] ?: return true
+        val battery = IndexPerf.battery(this)
+        val decision = ProcessingPolicy.decide(
+            currentProfile(), config.processNewPhotosFirst, battery.charging, battery.percent, batch, kindOf(task),
+        )
+        val ok = decision == ProcessingPolicy.Decision.RUN
+        if (!ok) deferred = true
+        return ok
+    }
+
+    private fun onBatteryChanged(battery: IndexPerf.Battery) {
+        val profile = currentProfile()
+        val newFirst = config.processNewPhotosFirst
+        for ((task, batch) in watched) {
+            if (task !in launched || task in policyStopped) continue
+            val decision = ProcessingPolicy.decide(
+                profile, newFirst, battery.charging, battery.percent, batch, kindOf(task),
+            )
+            if (decision != ProcessingPolicy.Decision.RUN) {
+                policyStopped.add(task)
+                deferred = true
+                stopTask(task)
+            }
+        }
+    }
+
+    @Synchronized
+    private fun registerBatteryWatch() {
+        if (batteryReceiver != null) return
+        val receiver = object : BroadcastReceiver() {
+            override fun onReceive(context: Context?, intent: Intent?) {
+                onBatteryChanged(IndexPerf.batteryFrom(intent))
+            }
+        }
+        try {
+            ContextCompat.registerReceiver(
+                this, receiver, IntentFilter(Intent.ACTION_BATTERY_CHANGED), ContextCompat.RECEIVER_NOT_EXPORTED,
+            )
+            batteryReceiver = receiver
+        } catch (ignored: Throwable) {
+        }
+    }
+
+    @Synchronized
+    private fun unregisterBatteryWatch() {
+        val receiver = batteryReceiver ?: return
+        batteryReceiver = null
+        try {
+            unregisterReceiver(receiver)
+        } catch (ignored: Throwable) {
+        }
+    }
+
+    override fun onDestroy() {
+        unregisterBatteryWatch()
+        super.onDestroy()
     }
 
     // --- orchestrácia (ref-counted, paralelne alebo postupne) ---
@@ -137,6 +263,12 @@ class IndexingService : Service() {
 
     private fun chain(tasks: List<String>, i: Int) {
         if (i >= tasks.size || timedOut) return
+        if (!allowedNow(tasks[i])) {
+            // pravidlá spracovania ju teraz nepustia (batéria / nabíjanie) — dobehne neskôr
+            taskFinished()
+            chain(tasks, i + 1)
+            return
+        }
         runOne(tasks[i]) {
             taskFinished()
             chain(tasks, i + 1)
@@ -299,8 +431,9 @@ class IndexingService : Service() {
     // --- notifikácia s per-task priebehom ---
 
     private fun fail(key: String, msg: String) {
-        // po prerušení systémom ostáva viditeľný dôvod prerušenia, nie následné „zastavené" z indexerov
-        if (timedOut) {
+        // po prerušení systémom ostáva viditeľný dôvod prerušenia, nie následné „zastavené" z indexerov;
+        // zastavenie pravidlami spracovania (batéria, nabíjanie) tiež nie je chyba
+        if (timedOut || key in policyStopped) {
             clearProg(key)
             return
         }
@@ -396,16 +529,23 @@ class IndexingService : Service() {
 
     private fun finish() {
         stopped = true
-        // auto-sken si po dobehnutí zapíše čas — autoScanIfStale ho potom 6 hodín nespúšťa znova
-        if (autoRan) {
+        unregisterBatteryWatch()
+        // auto-sken si po dobehnutí zapíše čas — autoScanIfStale ho potom 6 hodín nespúšťa znova;
+        // čo počká na nabíjanie, si poznačí (autoScanIfStale to pri nabíjaní spustí aj skôr)
+        if (autoRan || deferred) {
+            val ran = autoRan
+            val wait = deferred
             autoRan = false
+            deferred = false
             try {
-                getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
-                    .putLong(KEY_LAST_AUTO_SCAN, System.currentTimeMillis())
-                    .apply()
+                val edit = getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+                if (ran) edit.putLong(KEY_LAST_AUTO_SCAN, System.currentTimeMillis())
+                edit.putBoolean(KEY_DEFERRED, wait).apply()
             } catch (ignored: Throwable) {
             }
         }
+        watched.clear()
+        policyStopped.clear()
         progressMap.clear()
         stopForegroundCompat()
         stopSelf()
@@ -464,6 +604,7 @@ class IndexingService : Service() {
         private const val KEY_LAST_ERROR = "index_last_error"
         private const val KEY_LAST_ERROR_TASK = "index_last_error_task"
         private const val KEY_LAST_AUTO_SCAN = "last_auto_scan"
+        private const val KEY_DEFERRED = "auto_scan_deferred"
         private const val AUTO_SCAN_INTERVAL_MS = 6 * 60 * 60 * 1000L
 
         const val EXTRA_TASK = "task"
@@ -484,6 +625,16 @@ class IndexingService : Service() {
         @Volatile
         private var autoStarted = false
 
+        private fun kindOf(task: String): ProcessingPolicy.Indexer = when (task) {
+            TASK_FACES -> ProcessingPolicy.Indexer.FACES
+            TASK_GEO -> ProcessingPolicy.Indexer.GEO
+            TASK_QR -> ProcessingPolicy.Indexer.QR
+            TASK_OCR -> ProcessingPolicy.Indexer.OCR
+            TASK_PHASH -> ProcessingPolicy.Indexer.PHASH
+            TASK_CLIP -> ProcessingPolicy.Indexer.CLIP
+            else -> ProcessingPolicy.Indexer.OTHER
+        }
+
         fun startAutoOnce(context: Context) {
             if (autoStarted) return
             autoStarted = true
@@ -499,7 +650,10 @@ class IndexingService : Service() {
                 val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
                 if (!prefs.getBoolean("auto_index", true)) return
                 val last = prefs.getLong(KEY_LAST_AUTO_SCAN, 0L)
-                if (System.currentTimeMillis() - last <= AUTO_SCAN_INTERVAL_MS) return
+                val stale = System.currentTimeMillis() - last > AUTO_SCAN_INTERVAL_MS
+                // F5: spracovanie odložené na nabíjanie sa spustí hneď, keď je telefón na nabíjačke
+                val deferredNow = prefs.getBoolean(KEY_DEFERRED, false) && IndexPerf.battery(context).charging
+                if (!stale && !deferredNow) return
                 start(context, TASK_AUTO)
             } catch (ignored: Throwable) {
             }
