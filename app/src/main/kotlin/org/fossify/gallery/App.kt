@@ -9,6 +9,8 @@ import okhttp3.Response
 import org.fossify.commons.FossifyApp
 import org.fossify.commons.extensions.baseConfig
 import org.fossify.commons.helpers.SIDELOADING_FALSE
+import org.fossify.gallery.family.FamilyHandlers
+import org.fossify.gallery.family.OpLogHandler
 
 class App : FossifyApp() {
 
@@ -34,6 +36,8 @@ class App : FossifyApp() {
         baseConfig.appSideloadingStatus = SIDELOADING_FALSE
         super.onCreate()
         Reprint.initialize(this)
+        // rodinné prepojenie: op-log osôb sa aplikuje po prijatí z druhého telefónu
+        FamilyHandlers.register(OpLogHandler(this))
         Picasso.setSingletonInstance(Picasso.Builder(this).downloader(object : Downloader {
             override fun load(request: Request) = Response.Builder().build()
 

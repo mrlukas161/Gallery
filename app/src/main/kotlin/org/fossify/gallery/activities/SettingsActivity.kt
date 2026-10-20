@@ -153,6 +153,7 @@ class SettingsActivity : SimpleActivity() {
         setupClip()
         setupClipMl()
         setupPcServer()
+        setupFamilyPairing()
         setupCheckForUpdates()
         setupAutoUpdateCheck()
         setupExportFavorites()
@@ -1560,6 +1561,29 @@ class SettingsActivity : SimpleActivity() {
         binding.settingsPcServerHolder.setOnLongClickListener {
             if (org.fossify.gallery.services.HttpSyncService.isRunning) copyServerLink(silent = false)
             true
+        }
+    }
+
+    // Rodinné prepojenie (F2): párovanie a prepojené telefóny na samostatnej obrazovke
+    private fun setupFamilyPairing() {
+        binding.settingsFamilyPairingHolder.setOnClickListener {
+            startActivity(Intent(this, org.fossify.gallery.family.PairingActivity::class.java))
+        }
+        ensureBackgroundThread {
+            val names = try {
+                org.fossify.gallery.family.FamilyStore(applicationContext).peers().map { it.name }
+            } catch (ignored: IllegalStateException) {
+                emptyList()
+            }
+            runOnUiThread {
+                if (!isDestroyed) {
+                    binding.settingsFamilyPairingSummary.text = if (names.isEmpty()) {
+                        getString(R.string.family_settings_none)
+                    } else {
+                        getString(R.string.family_settings_paired, names.joinToString(", "))
+                    }
+                }
+            }
         }
     }
 

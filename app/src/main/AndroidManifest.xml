@@ -223,6 +223,29 @@
             android:label="@string/excluded_folders"
             android:parentActivityName=".activities.SettingsActivity" />
 
+        <!-- Rodinné prepojenie: párovanie QR kódom. exported kvôli odkazu galeriaplus://family/pair zo skenera
+             (HyperOS / systémový fotoaparát); spárovanie vždy potvrdí používateľ v dialógu. -->
+        <activity
+            android:name=".family.PairingActivity"
+            android:configChanges="orientation"
+            android:exported="true"
+            android:label="@string/family_pair_title"
+            android:launchMode="singleTop"
+            android:parentActivityName=".activities.SettingsActivity">
+
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+
+                <data
+                    android:host="family"
+                    android:pathPrefix="/pair"
+                    android:scheme="galeriaplus" />
+            </intent-filter>
+        </activity>
+
         <activity
             android:name=".activities.HiddenFoldersActivity"
             android:configChanges="orientation"

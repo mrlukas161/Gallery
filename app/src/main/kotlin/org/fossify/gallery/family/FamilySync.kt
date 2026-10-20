@@ -28,13 +28,19 @@ class FamilySync(context: Context) {
     // Pri prvom volaní po spárovaní zverejní doterajší stav (snapshotIfNeeded), potom vždy doplní
     // odtlačky (AnchorsSet) osôb, ktorých tváre sa medzičasom zmenili.
     fun opsSince(sinceLamport: Long, limit: Int = PAGE_SIZE): List<OpEntity> {
+        prepareOwnOps()
+        return family.opDao().getOpsSincePage(deviceId(), sinceLamport, limit).map { it.copy(appliedAt = null) }
+    }
+
+    // Pred odoslaním vlastných opov (aj z prenosu F2 cez FamilyHandler.beforeOwnOps): snapshot po
+    // spárovaní a odtlačky osôb, ktorých tváre sa zmenili.
+    fun prepareOwnOps() {
         try {
             snapshotIfNeeded()
             OpRecorder(app).anchors.flush()
         } catch (ignored: RuntimeException) {
             // odtlačky sú vedľajšie, operácie sa odovzdajú aj bez nich
         }
-        return family.opDao().getOpsSincePage(deviceId(), sinceLamport, limit).map { it.copy(appliedAt = null) }
     }
 
     // Prijme operácie druhého telefónu. Opakované doručenie (rovnaké opId) a vlastné operácie sa ignorujú,
