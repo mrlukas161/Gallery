@@ -87,3 +87,17 @@ data class ProposalEntity(
         const val STATE_REJECTED = "rejected"
     }
 }
+
+// Vlastný stav tohto zariadenia ako kľúč–hodnota: vlastné deviceId (UUID, vznikne raz), lamport hodiny,
+// názov zariadenia. Jedna tabuľka pre F2 (párovanie) aj F3 (op-log), aby verzia 1 schémy ostala jedna.
+@Entity(tableName = "meta")
+data class MetaEntity(
+    @PrimaryKey @ColumnInfo(name = "key") val key: String,
+    @ColumnInfo(name = "value") val value: String,
+) {
+    companion object {
+        const val KEY_DEVICE_ID = "device_id"
+        const val KEY_DEVICE_NAME = "device_name"
+        const val KEY_LAMPORT = "lamport"
+    }
+}

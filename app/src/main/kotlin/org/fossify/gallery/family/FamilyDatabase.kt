@@ -20,6 +20,7 @@ import androidx.room.RoomDatabase
         OpEntity::class,
         OutboxEntity::class,
         ProposalEntity::class,
+        MetaEntity::class,
     ],
     version = 1,
 )
@@ -35,6 +36,8 @@ abstract class FamilyDatabase : RoomDatabase() {
     abstract fun outboxDao(): OutboxDao
 
     abstract fun proposalDao(): ProposalDao
+
+    abstract fun metaDao(): MetaDao
 
     companion object {
         private const val DB_NAME = "family.db"
