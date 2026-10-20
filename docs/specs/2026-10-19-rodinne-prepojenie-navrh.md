@@ -15,6 +15,7 @@ Lukáš (Xiaomi 15) ↔ manželka (pravdepodobne POCO F8, HyperOS). Cieľ: loká
 ## Časť 1 — Prepojenie a spojenie (SCHVÁLENÉ 19.10.)
 - Samostatný modul „Rodinné prepojenie“ s vlastnou malou DB `family.db`. Do people.db, faces.db ani extras.db nezasahuje, ich schéma sa nemení.
 - Párovanie sa robí raz: Nastavenia → „Prepojiť telefón“ → QR kód (identita zariadenia + 256-bitový tajný kľúč) → druhá appka ho naskenuje. Prepojenie sa dá zrušiť.
+- QR obsahuje len **jednorazový token** (platí 5 min). Trvalý kľúč páru vznikne výmenou ECDH overenou týmto tokenom, takže v QR nikdy nie je. QR otvorí appku priamo zo skenera HyperOS (odkaz `galeriaplus://`).
 - Telefóny sa nájdu na Wi-Fi bez zadávania IP (Android NSD/mDNS). Komunikácia je šifrovaná kľúčom z QR (AES-GCM), takže nikto iný na sieti nič neprečíta ani nepošle.
 - Kedy sa synchronizuje:
   1. pri otvorení appky krátky pokus;
