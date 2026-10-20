@@ -101,6 +101,7 @@ android {
 
     sourceSets {
         getByName("main").java.directories.add("src/main/kotlin")
+        getByName("test").java.directories.add("src/test/kotlin")
     }
 
     compileOptions {
@@ -200,6 +201,7 @@ dependencies {
     implementation("org.nanohttpd:nanohttpd:2.3.1")
     implementation("com.microsoft.onnxruntime:onnxruntime-android:1.20.0")
     ksp(libs.androidx.room.compiler)
+    testImplementation("junit:junit:4.13.2")
     detektPlugins(libs.compose.detekt)
     testImplementation("junit:junit:4.13.2")
 }

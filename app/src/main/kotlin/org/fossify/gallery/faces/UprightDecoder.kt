@@ -4,7 +4,9 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Matrix
 import androidx.exifinterface.media.ExifInterface
+import org.fossify.gallery.family.RelBox
 import java.io.File
+import java.io.IOException
 
 // Dekódovanie fotky VŽDY „na stojato" (podľa EXIF orientácie).
 //
@@ -72,6 +74,23 @@ object UprightDecoder {
         } catch (e: Throwable) {
             Result(raw, 0, false) // pri nedostatku pamäte radšej neotočená než žiadna
         }
+    }
+
+    // Rozmery [šírka, výška] bitmapy, ktorú by vrátil decode(path, maxSize), bez dekódovania pixelov
+    // (len hlavička + EXIF orientácia). V tomto priestore sú uložené rámčeky tvárí, takže slúži na
+    // prevod do relatívnych súradníc (family.RelBox). decode() sa tým nemení. null = súbor sa nedá prečítať.
+    fun uprightSize(path: String, maxSize: Int): IntArray? {
+        if (!File(path).exists()) return null
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeFile(path, bounds)
+        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
+        val orientation = try {
+            ExifInterface(path).getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL)
+        } catch (ignored: IOException) {
+            ExifInterface.ORIENTATION_NORMAL // rovnako ako decode(): bez čitateľného EXIF sa neotáča
+        }
+        val transform = RelBox.exifTransform(orientation)
+        return RelBox.decodedUprightSize(bounds.outWidth, bounds.outHeight, maxSize, transform.rotationDegrees)
     }
 
     // prepočet starého bboxu (v neotočenom priestore W×H) do upright priestoru — používa sa LEN ako
