@@ -1,6 +1,8 @@
 # Rodinné prepojenie dvoch telefónov — návrh (spec, 20.10.2026)
 
-Stav: **všetky časti prebraté s Lukášom, čaká na finálne schválenie** → potom implementačný plán.
+Stav: **schválené 20.10.2026, implementované v 0.66 (F1–F6, vetva rodina-0.66)** — čaká na lokálny test (emulátor + Xiaomi).
+
+Odchýlky z implementácie: tváre detegované pred 31. 8. 2026 s nejasným priestorom rámčeka sa neposielajú (príjemca ich spočíta sám); kvalita fotky sa neprenáša (nikde sa neukladá); návrh „zlúčiť?“ zatiaľ len pri rovnakom mene (nie pri podobnej tvári); skupiny sa párujú podľa názvu.
 
 Lukáš (Xiaomi 15) ↔ manželka (pravdepodobne POCO F8, HyperOS). Cieľ: lokálne zdieľanie fotiek, prenos tvárí a mien. Lukášov pokyn: **„nech nemusia procesory robiť dvakrát“**, appka ľahká a spoľahlivá na oboch telefónoch.
 
