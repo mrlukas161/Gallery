@@ -36,6 +36,16 @@ class Config(context: Context) : BaseConfig(context) {
         get() = prefs.getBoolean(SHOW_SMART_ALBUMS, false)
         set(value) = prefs.edit().putBoolean(SHOW_SMART_ALBUMS, value).apply()
 
+    // Profil spracovania knižnice (F5): ProcessingPolicy.PROFILE_FULL (ako doteraz) / PROFILE_LIGHT
+    var processingProfile: Int
+        get() = prefs.getInt("processing_profile", ProcessingPolicy.PROFILE_FULL)
+        set(value) = prefs.edit().putInt("processing_profile", value).apply()
+
+    // „Nové fotky hneď, zvyšok pri nabíjaní“ (F5) — predvolene vypnuté = správanie ako doteraz
+    var processNewPhotosFirst: Boolean
+        get() = prefs.getBoolean("process_new_photos_first", false)
+        set(value) = prefs.edit().putBoolean("process_new_photos_first", value).apply()
+
     fun saveFolderGrouping(path: String, value: Int) {
         if (path.isEmpty()) {
             groupBy = value

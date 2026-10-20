@@ -1124,6 +1124,52 @@
             </RelativeLayout>
 
             <RelativeLayout
+                android:id="@+id/settings_processing_profile_holder"
+                style="@style/SettingsHolderTextViewStyle"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content">
+
+                <org.fossify.commons.views.MyTextView
+                    android:id="@+id/settings_processing_profile_label"
+                    style="@style/SettingsTextLabelStyle"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/f5_profile_title" />
+
+                <org.fossify.commons.views.MyTextView
+                    android:id="@+id/settings_processing_profile_summary"
+                    style="@style/SettingsTextValueStyle"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_below="@+id/settings_processing_profile_label"
+                    tools:text="Plný" />
+
+            </RelativeLayout>
+
+            <RelativeLayout
+                android:id="@+id/settings_new_first_holder"
+                style="@style/SettingsHolderTextViewStyle"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content">
+
+                <org.fossify.commons.views.MyTextView
+                    android:id="@+id/settings_new_first_label"
+                    style="@style/SettingsTextLabelStyle"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/f5_new_first_title" />
+
+                <org.fossify.commons.views.MyTextView
+                    android:id="@+id/settings_new_first_summary"
+                    style="@style/SettingsTextValueStyle"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_below="@+id/settings_new_first_label"
+                    tools:text="Vypnuté" />
+
+            </RelativeLayout>
+
+            <RelativeLayout
                 android:id="@+id/settings_adv_toggle_holder"
                 style="@style/SettingsHolderTextViewStyle"
                 android:layout_width="match_parent"

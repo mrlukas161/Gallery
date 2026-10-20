@@ -1,7 +1,10 @@
 package org.fossify.gallery.helpers
 
 import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.os.BatteryManager
+import androidx.core.content.ContextCompat
 
 // Režim výkonu indexovania. Default MAX (prvý beh nech ide naplno, všetko naraz).
 object IndexPerf {
@@ -33,5 +36,32 @@ object IndexPerf {
         } catch (e: Throwable) {
             false
         }
+    }
+
+    // Stav batérie pre ProcessingPolicy: percentá (alebo ProcessingPolicy.UNKNOWN) a či je telefón
+    // pripojený na nabíjačku (aj keď je už nabitý — isCharging vtedy na niektorých telefónoch vracia false).
+    data class Battery(val charging: Boolean, val percent: Int)
+
+    private const val PERCENT = 100
+
+    fun battery(context: Context): Battery = try {
+        // sticky broadcast: bez prijímača sa len prečíta posledný stav
+        batteryFrom(
+            ContextCompat.registerReceiver(
+                context.applicationContext, null,
+                IntentFilter(Intent.ACTION_BATTERY_CHANGED), ContextCompat.RECEIVER_NOT_EXPORTED,
+            )
+        )
+    } catch (ignored: Throwable) {
+        Battery(isCharging(context), ProcessingPolicy.UNKNOWN)
+    }
+
+    fun batteryFrom(intent: Intent?): Battery {
+        if (intent == null) return Battery(false, ProcessingPolicy.UNKNOWN)
+        val level = intent.getIntExtra(BatteryManager.EXTRA_LEVEL, -1)
+        val scale = intent.getIntExtra(BatteryManager.EXTRA_SCALE, -1)
+        val percent = if (level >= 0 && scale > 0) level * PERCENT / scale else ProcessingPolicy.UNKNOWN
+        val plugged = intent.getIntExtra(BatteryManager.EXTRA_PLUGGED, 0) != 0
+        return Battery(plugged, percent)
     }
 }
