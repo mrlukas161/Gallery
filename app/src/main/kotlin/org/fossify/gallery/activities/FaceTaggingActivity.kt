@@ -34,6 +34,7 @@ import org.fossify.gallery.faces.FaceFilter
 import org.fossify.gallery.faces.FaceMediaMeta
 import org.fossify.gallery.faces.IgnoredFaceEntity
 import org.fossify.gallery.faces.FaceSorter
+import org.fossify.gallery.faces.FaceVisibility
 import org.fossify.gallery.faces.FacesDatabase
 import org.fossify.gallery.faces.PeopleDatabase
 import org.fossify.gallery.faces.PersonGrouper
@@ -58,6 +59,10 @@ class FaceTaggingActivity : SimpleActivity() {
     private var showContext = false
     private var mediaPathFilter: String? = null
     private val prefs by lazy { getSharedPreferences(PREFS, Context.MODE_PRIVATE) }
+
+    // tváre presunutých/zmazaných fotiek a fotiek mimo rozsahu (zamknuté/vylúčené priečinky) sa
+    // na označovanie ani v návrhoch neponúkajú — len v UI, DB ostáva bez zmeny; cache na dobu otvorenia obrazovky
+    private val faceVisibility by lazy { FaceVisibility(this) }
 
     // posuvník podobnosti volá onProgressChanged na každý pixel ťahu — mriežka sa prekresľuje najviac raz za
     // THRESHOLD_THROTTLE_MS (živý náhľad ostane, ale bez trhania); po pustení posuvníka sa prekreslí hneď
@@ -320,15 +325,17 @@ class FaceTaggingActivity : SimpleActivity() {
         val path = mediaPathFilter
         val all = facesDao.getAllFaces()
             .filter { FaceFilter.isGood(it) && (path == null || it.mediaFullPath == path) }
-        return if (showingIgnored) {
+        val wanted = if (showingIgnored) {
             all.filter { val id = it.id; id != null && ignored.contains(id) }
-                .sortedByDescending { it.score }
-                .take(UNLABELED_CAP)
         } else {
             all.filter { val id = it.id; id != null && !assigned.contains(id) && !ignored.contains(id) }
-                .sortedByDescending { it.score }
-                .take(UNLABELED_CAP)
         }
+        // viditeľnosť (disk) sa zisťuje až po zoradení a len kým sa nenaplní limit
+        return wanted.sortedByDescending { it.score }
+            .asSequence()
+            .filter { faceVisibility.isVisible(it.mediaFullPath) }
+            .take(UNLABELED_CAP)
+            .toList()
     }
 
     private fun computeCandidates(): List<Pair<FaceEntity, Float>> {
@@ -348,10 +355,16 @@ class FaceTaggingActivity : SimpleActivity() {
         if (centroids.isEmpty()) return emptyList()
         val cannot = peopleDao.getCannotLinks().filter { it.personId == personId }.map { it.faceId }.toHashSet()
         val ignored = ExtrasDatabase.getInstance(this).ExtrasDao().getIgnoredIds().toHashSet()
+        // applyThreshold ukáže najviac SUGGEST_MAX najpodobnejších nad prahom = vždy začiatok tohto
+        // zoradeného zoznamu, preto stačí zistiť viditeľnosť (disk) len pre prvých SUGGEST_MAX viditeľných
         return pool
             .filter { val id = it.id; id != null && !assigned.contains(id) && !cannot.contains(id) && !ignored.contains(id) }
             .mapNotNull { f -> f.embedding?.let { b -> f to PersonGrouper.maxCosine(FaceEmbedder.toFloats(b), centroids) } }
             .sortedByDescending { it.second }
+            .asSequence()
+            .filter { faceVisibility.isVisible(it.first.mediaFullPath) }
+            .take(SUGGEST_MAX)
+            .toList()
     }
 
     private fun confirmSelected() {

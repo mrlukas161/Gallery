@@ -30,6 +30,7 @@ import org.fossify.gallery.databinding.ActivityPeopleBinding
 import org.fossify.gallery.faces.ExtrasDatabase
 import org.fossify.gallery.faces.FaceEmbedder
 import org.fossify.gallery.faces.FaceFilter
+import org.fossify.gallery.faces.FaceVisibility
 import org.fossify.gallery.faces.GroupMemberEntity
 import org.fossify.gallery.faces.FacesDatabase
 import org.fossify.gallery.faces.PeopleDatabase
@@ -45,6 +46,10 @@ class PeopleActivity : SimpleActivity() {
     private val prefs by lazy { getSharedPreferences("galeria_faces", android.content.Context.MODE_PRIVATE) }
     private var filterGroupId: Long = -1L
     private var filterGroupName: String? = null
+
+    // tváre presunutých/zmazaných fotiek a fotiek mimo rozsahu (zamknuté/vylúčené priečinky) sa
+    // v zozname nerátajú ani neukazujú — len v UI, DB ostáva bez zmeny; cache na dobu otvorenia obrazovky
+    private val faceVisibility by lazy { FaceVisibility(this) }
 
     private val peopleAdapter: PeopleAdapter?
         get() = binding.peopleGrid.adapter as? PeopleAdapter
@@ -137,7 +142,7 @@ class PeopleActivity : SimpleActivity() {
     }
 
     private fun buildItems(): List<Person> {
-        val all = loadPersons(this)
+        val all = faceVisibility.filterPersons(loadPersons(this))
         if (filterGroupId < 0) return all
         val members = ExtrasDatabase.getInstance(this).ExtrasDao().getMembers(filterGroupId).toHashSet()
         return all.filter { p -> p.id != null && members.contains(p.id) }
