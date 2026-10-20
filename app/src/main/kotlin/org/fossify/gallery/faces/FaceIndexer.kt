@@ -53,7 +53,10 @@ object FaceIndexer {
                 if (notify) ensureChannel(appCtx)
 
                 val processed = dao.getProcessedPaths().toHashSet()
-                val todo = queryImages(appCtx).filter { it.second !in processed }
+                // vylúčené a zamknuté priečinky sa nespracúvajú (rozhodnutie Lukáša 20.10.2026);
+                // už uložené tváre odtiaľ sa NEmažú — UI ich len skryje
+                val scope = IndexScope(appCtx)
+                val todo = queryImages(appCtx).filter { it.second !in processed && scope.allows(it.second) }
                 // fotka bez značky „spracovaná", ale s tvárami v DB (značku zmazalo staré denné
                 // upratovanie pri dočasne nedostupnom súbore, alebo pád medzi zápisom tvárí a značky):
                 // tváre NEdetegovať nanovo, len doplniť značku — inak by vznikli nové id a menovky

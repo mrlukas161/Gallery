@@ -13,7 +13,7 @@ Build tipy: KSP padá „different roots" (projekt D:, gradle cache C:) → `-Pk
 
 ## Otvorené body (na rozhodnutie / ďalšiu fázu)
 1. **Manifest:** `ACCESS_NETWORK_STATE` má `tools:node="remove"` → `ClipModels.isMeteredNetwork()` vždy false → CLIP (150–580 MB) sa stiahne aj na mobilných dátach. Opraviť.
-2. **Súkromie (rozhodne Lukáš):** FaceIndexer spracúva aj zamknuté/vylúčené priečinky (tváre v Ľuďoch bez PIN-u); PC server sprístupní celý MediaStore vrátane zamknutých.
+2. **Súkromie — ROZHODNUTÉ 20.10.: zamknuté/vylúčené vôbec nespracúvať.** FaceIndexer a PC server filtrujú cez IndexScope; tváre sa nemažú, UI ich skryje (q2). Pôvodne: FaceIndexer spracúva aj zamknuté/vylúčené priečinky (tváre v Ľuďoch bez PIN-u); PC server sprístupní celý MediaStore vrátane zamknutých.
 3. Tváre presunutých/zmazaných fotiek ostávajú na starej ceste → UI (FaceTagging/Person/People) má skryť neexistujúce súbory; trvalé riešenie = identita fotky podľa obsahu (súvisí s rodinným prepojením).
 4. Žiadna záloha people.db → periodický export osôb a priradení (súvisí s rodinným prepojením — rovnaký formát).
 5. `AppUpdater`: zlyhaná sieť ukáže „Máš najnovšiu verziu".

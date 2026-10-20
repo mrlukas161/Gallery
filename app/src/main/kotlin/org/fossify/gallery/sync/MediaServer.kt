@@ -20,6 +20,7 @@ import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.InputStream
 import java.net.URLDecoder
+import org.fossify.gallery.faces.IndexScope
 
 // Telefónny LAN media server (NanoHTTPD). Sprístupní LEN MediaStore Images+Videos, adresované cez
 // nepriehľadné MediaStore _ID (žiadne cesty od klienta -> ../ traversal je nemožný). Chránené PIN tokenom.
@@ -396,12 +397,14 @@ class MediaServer(
 
     private fun rebuildIndex() {
         val map = LinkedHashMap<Long, Item>()
-        collect(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, false, map)
-        collect(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, true, map)
+        // zamknuté a vylúčené priečinky PC nevidí (rozhodnutie Lukáša 20.10.2026)
+        val scope = IndexScope(appContext)
+        collect(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, false, map, scope)
+        collect(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, true, map, scope)
         index = map
     }
 
-    private fun collect(base: Uri, isVideo: Boolean, into: MutableMap<Long, Item>) {
+    private fun collect(base: Uri, isVideo: Boolean, into: MutableMap<Long, Item>, scope: IndexScope) {
         val proj = arrayOf(
             MediaStore.MediaColumns._ID,
             MediaStore.MediaColumns.DISPLAY_NAME,
@@ -423,6 +426,9 @@ class MediaServer(
             val iDt = c.getColumnIndex(MediaStore.MediaColumns.DATA)
             while (c.moveToNext()) {
                 val id = c.getLong(iId)
+                val path = (if (iDt >= 0) c.getString(iDt) else null) ?: ""
+                // bez cesty sa nedá overiť priečinok -> radšej nesprístupniť (súkromie má prednosť)
+                if (path.isEmpty() || !scope.allows(path)) continue
                 val name = c.getString(iNm) ?: "$id"
                 val bucket = c.getString(iBk) ?: "Camera"
                 val mime = c.getString(iMm) ?: if (isVideo) "video/*" else "image/*"
@@ -433,7 +439,7 @@ class MediaServer(
                     id = id, name = name, relpath = "$bucket/$name",
                     size = c.getLong(iSz), mtime = mtime, taken = taken,
                     bucket = bucket, mime = mime, uri = uri,
-                    path = (if (iDt >= 0) c.getString(iDt) else null) ?: "",
+                    path = path,
                 )
             }
         }
