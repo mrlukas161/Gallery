@@ -94,7 +94,7 @@ class PeopleBackupTest {
     fun opsUseSameJsonAsPeerSync() {
         val json = PeopleBackupFormat.toJson(backup())
         val first = json.getJSONArray("ops").getJSONObject(0)
-        assertEquals(setOf("id", "lamport", "type", "payload"), first.keySet())
+        assertEquals(setOf("id", "lamport", "type", "payload"), first.keys().asSequence().toSet())
         assertEquals("b1:1", first.getString("id"))
         assertEquals(1L, first.getLong("lamport"))
         assertEquals(OpCodec.encode(PersonCreate("u1", "Mama")), first.getString("payload"))
