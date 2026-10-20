@@ -25,5 +25,11 @@ Build tipy: KSP padá „different roots" (projekt D:, gradle cache C:) → `-Pk
 11. **Slovník pojmov:** spracovanie knižnice · rozpoznávanie tvárí/textu (OCR) · Ľudia/osoba/tvár · Dokumenty · Pohyblivé fotky · Spomienky · Miesta · Preskúmať · Podobné a duplikáty (Série, Duplikáty) · Kôš · výber textu · Wi-Fi · Server pre PC · úvodzovky „…“ · tykanie.
 12. `D:\tmp\gradle_home_c4` (~1 GB, vytvoril agent C4) — zmazať len so súhlasom Lukáša.
 
+## Po q2 (20.10.2026) — nové otvorené body
+13. **Otočenie fotky zneplatní rámčeky tvárí** (výrezy mimo). Platí v albume, prehliadači aj nových zoznamoch. Rieši sa prepočtom rámčekov pri otočení alebo neskôr contentKey + RelBox.
+14. Premenovanie a skrytie fotky odpojí tváre a OCR od cesty (ako presun). Trvalo to vyrieši contentKey (rodinné prepojenie F1/F4).
+15. Dialógy výberu osoby (zlúčiť/priradiť) ukazujú aj osoby so samými skrytými tvárami.
+16. „Zmenšiť" v zoznamoch Posledné/Dokumenty/Osoba zámerne chýba (prepíše originál bez Koša, rozbije rámčeky).
+
 ## Test na zariadení/emulátore (od agentov, skrátene)
 Inštalácia cez 0.64 (Ľudia, skupiny celé) · presun pomenovanej fotky + vynútené upratovanie (pref `index_cleanup_at`) · Prepracovať tváre 2× · zamknutý priečinok s dokladom zmizne z Dokumentov · porovnávač: mazanie s/bez koša, Enter · pohyblivá fotka po Domov · výber textu po otočení · Posledné/Dokumenty: zmazanie s košom zmaže originál · Nastavenia: hľadanie „ocr" a zmazanie · SD/OTG dialóg prístupu · svetlá/tmavá téma všetkých obrazoviek.
