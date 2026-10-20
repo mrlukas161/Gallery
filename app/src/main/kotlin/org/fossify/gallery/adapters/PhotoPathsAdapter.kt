@@ -3,25 +3,34 @@ package org.fossify.gallery.adapters
 import android.os.Looper
 import android.view.Menu
 import android.view.ViewGroup
+import android.widget.Toast
 import com.bumptech.glide.Glide
 import com.qtalk.recyclerviewfastscroller.RecyclerViewFastScroller
 import org.fossify.commons.activities.BaseSimpleActivity
 import org.fossify.commons.adapters.MyRecyclerViewAdapter
 import org.fossify.commons.dialogs.ConfirmationDialog
 import org.fossify.commons.dialogs.PropertiesDialog
+import org.fossify.commons.dialogs.RenameItemDialog
 import org.fossify.commons.extensions.applyColorFilter
 import org.fossify.commons.extensions.beVisibleIf
 import org.fossify.commons.extensions.deleteFiles
 import org.fossify.commons.extensions.formatDate
 import org.fossify.commons.extensions.getFileSignature
 import org.fossify.commons.extensions.getFilenameFromPath
+import org.fossify.commons.extensions.getParentPath
 import org.fossify.commons.extensions.getTimeFormat
 import org.fossify.commons.extensions.handleDeletePasswordProtection
+import org.fossify.commons.extensions.internalStoragePath
+import org.fossify.commons.extensions.isAStorageRootFolder
+import org.fossify.commons.extensions.isExternalStorageManager
+import org.fossify.commons.extensions.isImageFast
 import org.fossify.commons.extensions.isVideoFast
+import org.fossify.commons.extensions.needsStupidWritePermissions
 import org.fossify.commons.extensions.recycleBinPath
 import org.fossify.commons.extensions.rescanPaths
 import org.fossify.commons.extensions.toast
 import org.fossify.commons.helpers.ensureBackgroundThread
+import org.fossify.commons.helpers.isRPlus
 import org.fossify.commons.models.FileDirItem
 import org.fossify.commons.views.MyRecyclerView
 import org.fossify.gallery.R
@@ -34,19 +43,27 @@ import org.fossify.gallery.extensions.movePathsInRecycleBin
 import org.fossify.gallery.extensions.openEditor
 import org.fossify.gallery.extensions.openPath
 import org.fossify.gallery.extensions.rescanFolderMedia
+import org.fossify.gallery.extensions.saveRotatedImageToFile
 import org.fossify.gallery.extensions.setAs
 import org.fossify.gallery.extensions.shareMediaPaths
+import org.fossify.gallery.extensions.toggleFileVisibility
 import org.fossify.gallery.extensions.tryCopyMoveFilesTo
 import org.fossify.gallery.extensions.tryDeleteFileDirItem
+import org.fossify.gallery.extensions.updateDBMediaPath
 import org.fossify.gallery.extensions.updateFavorite
 import org.fossify.gallery.extensions.updateFavoritePaths
 import java.io.File
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicInteger
 
 // Jednotná mriežka fotiek s VÝBEROVÝM REŽIMOM pre všetky obrazovky mimo hlavného albumu
 // (Posledné, Osoba, Dokumenty, Špeciálne, Hľadanie, mriežka z mapy...). Dlhé podržanie = výber
 // viacerých (aj ťahaním), potom zdieľať / zmazať (kôš) / obľúbené (pridať aj odobrať) / kopírovať /
-// presunúť / info / vybrať všetko (pri jednej fotke aj otvoriť v, upraviť, nastaviť ako) —
-// ROVNAKÉ ovládanie ako v albume priečinka. Nahrádza starý PersonPhotosAdapter bez výberu.
+// presunúť / otočiť / skryť a odkryť / opraviť dátum / info / vybrať všetko (pri jednej fotke aj
+// premenovať, otvoriť v, upraviť, nastaviť ako) — ROVNAKÉ ovládanie ako v albume priečinka
+// (MediaAdapter, rovnaké dialógy a pomocné funkcie). Nahrádza starý PersonPhotosAdapter bez výberu.
+// „Zmenšiť" tu ZÁMERNE nie je: nevratne prepíše originál (bez Koša) a zneplatní uložené rámčeky tvárí
+// a textu, ktoré sú v priestore závislom od rozlíšenia — práve z nich sú tieto zoznamy (Osoba, Dokumenty).
 class PhotoPathsAdapter(
     activity: BaseSimpleActivity,
     val paths: MutableList<String>,
@@ -54,6 +71,9 @@ class PhotoPathsAdapter(
     val onClick: (String) -> Unit,
     // zavolá sa po zmazaní (alebo presune) fotiek, nech si obrazovka obnoví svoje dáta/cache
     val onDeleted: ((List<String>) -> Unit)? = null,
+    // zavolá sa po zmene fotiek na disku, ktoré v mriežke ostávajú (premenovanie, odkrytie: mapa stará ->
+    // nová cesta; otočenie, oprava dátumu: prázdna mapa). Mriežka sa obnoví sama, obrazovka si zosúladí dáta.
+    val onChanged: ((Map<String, String>) -> Unit)? = null,
     // doplnková akcia obrazovky vo výberovom menu (napr. „Toto nie je on" pri osobe)
     val extraAction: ExtraAction? = null,
 ) : MyRecyclerViewAdapter(activity, recyclerView, { any -> onClick(any as String) }),
@@ -116,6 +136,9 @@ class PhotoPathsAdapter(
     override fun prepareActionMode(menu: Menu) {
         val selection = getSelectedPaths()
         val isOneImage = selection.size == 1 && !selection.first().isVideoFast()
+        val isInRecycleBin = selection.any { it.startsWith(activity.recycleBinPath) }
+        // skrývanie premenuje súbor na „.meno" — na Androide 11+ len s prístupom ku všetkým súborom (ako v albume)
+        val canToggleVisibility = (!isRPlus() || isExternalStorageManager()) && !isInRecycleBin
         menu.apply {
             findItem(R.id.cab_extra_action)?.apply {
                 isVisible = extraAction != null
@@ -128,6 +151,11 @@ class PhotoPathsAdapter(
             findItem(R.id.cab_open_with)?.isVisible = selection.size == 1
             findItem(R.id.cab_edit)?.isVisible = isOneImage
             findItem(R.id.cab_set_as)?.isVisible = isOneImage
+            findItem(R.id.cab_rename)?.isVisible = selection.size == 1 && !isInRecycleBin
+            findItem(R.id.cab_rotate)?.isVisible = selection.any { it.isImageFast() }
+            findItem(R.id.cab_hide)?.isVisible = canToggleVisibility && selection.any { !it.isHiddenFile() }
+            findItem(R.id.cab_unhide)?.isVisible = canToggleVisibility && selection.any { it.isHiddenFile() }
+            findItem(R.id.cab_fix_date_taken)?.isVisible = !isInRecycleBin
         }
     }
 
@@ -151,6 +179,13 @@ class PhotoPathsAdapter(
             R.id.cab_open_with -> getSelectedPaths().firstOrNull()?.let { activity.openPath(it, true) }
             R.id.cab_edit -> getSelectedPaths().firstOrNull()?.let { activity.openEditor(it) }
             R.id.cab_set_as -> getSelectedPaths().firstOrNull()?.let { activity.setAs(it) }
+            R.id.cab_rename -> activity.handleMediaManagementPrompt { renameFile() }
+            R.id.cab_rotate_right -> rotateSelection(DEGREES_RIGHT)
+            R.id.cab_rotate_left -> rotateSelection(DEGREES_LEFT)
+            R.id.cab_rotate_one_eighty -> rotateSelection(DEGREES_HALF)
+            R.id.cab_hide -> toggleFileVisibility(true)
+            R.id.cab_unhide -> toggleFileVisibility(false)
+            R.id.cab_fix_date_taken -> fixDateTaken()
             R.id.cab_extra_action -> {
                 val selection = getSelectedPaths()
                 finishActMode()
@@ -381,6 +416,134 @@ class PhotoPathsAdapter(
         }
     }
 
+    // premenovanie — rovnaký postup a dialóg ako v albume (MediaAdapter.renameFile); premenúva sa po jednej
+    // fotke, lebo hromadný RenameDialog nevracia nové cesty a obrazovka by ich nevedela zosúladiť
+    private fun renameFile() {
+        val path = getSelectedPaths().singleOrNull() ?: return
+        val isSDOrOtgRootFolder = activity.isAStorageRootFolder(path.getParentPath()) &&
+            !path.startsWith(activity.internalStoragePath)
+        if (isRPlus() && isSDOrOtgRootFolder && !isExternalStorageManager()) {
+            activity.toast(org.fossify.commons.R.string.rename_in_sd_card_system_restriction, Toast.LENGTH_LONG)
+            finishActMode()
+            return
+        }
+
+        RenameItemDialog(activity, path) { newPath ->
+            ensureBackgroundThread {
+                activity.updateDBMediaPath(path, newPath)
+                activity.runOnUiThread { applyChanges(mapOf(path to newPath)) }
+            }
+        }
+    }
+
+    // otočenie — rovnako ako v albume (MediaAdapter.rotateSelection/handleRotate); videá sa preskočia
+    private fun rotateSelection(degrees: Int) {
+        val selection = getSelectedPaths().filter { it.isImageFast() }
+        if (selection.isEmpty()) {
+            return
+        }
+
+        val safPath = selection.firstOrNull { activity.needsStupidWritePermissions(it) }
+        if (safPath != null) {
+            activity.handleSAFDialog(safPath) { granted ->
+                if (granted) {
+                    handleRotate(selection, degrees)
+                }
+            }
+        } else {
+            handleRotate(selection, degrees)
+        }
+    }
+
+    private fun handleRotate(selection: List<String>, degrees: Int) {
+        val remaining = AtomicInteger(selection.size)
+        activity.toast(org.fossify.commons.R.string.saving)
+        ensureBackgroundThread {
+            selection.forEach { path ->
+                activity.saveRotatedImageToFile(path, path, degrees, true) {
+                    if (remaining.decrementAndGet() == 0) {
+                        activity.runOnUiThread { applyChanges(emptyMap()) }
+                    }
+                }
+            }
+        }
+    }
+
+    // skryť / odkryť — rovnaká pomocná funkcia ako v albume (premenovanie na „.meno" a späť).
+    // Skryté fotky z mriežky odídu (ako presunuté), odkryté ostanú s novou cestou.
+    private fun toggleFileVisibility(hide: Boolean) {
+        val selection = getSelectedPaths().filter { it.isHiddenFile() != hide }
+        if (selection.isEmpty()) {
+            finishActMode()
+            return
+        }
+
+        val results = ConcurrentHashMap<String, String>()
+        val remaining = AtomicInteger(selection.size)
+        ensureBackgroundThread {
+            selection.forEach { path ->
+                activity.toggleFileVisibility(path, hide) { newPath ->
+                    results[path] = newPath
+                    if (remaining.decrementAndGet() == 0) {
+                        finishToggleVisibility(HashMap(results), hide)
+                    }
+                }
+            }
+        }
+    }
+
+    // callback pomocnej funkcie príde aj pri neúspešnom premenovaní — za zmenenú sa ráta len fotka,
+    // ktorá je naozaj na novej ceste (kontrola disku na pozadí)
+    private fun finishToggleVisibility(results: Map<String, String>, hide: Boolean) {
+        ensureBackgroundThread {
+            val changed = results.filter { (oldPath, newPath) ->
+                oldPath != newPath && !File(oldPath).exists() && File(newPath).exists()
+            }
+            activity.runOnUiThread {
+                if (changed.size < results.size) {
+                    activity.toast(org.fossify.commons.R.string.unknown_error_occurred)
+                }
+
+                when {
+                    changed.isEmpty() -> finishActMode()
+                    hide -> removeFromList(changed.keys.toList())
+                    else -> applyChanges(changed)
+                }
+            }
+        }
+    }
+
+    // oprava dátumu podľa EXIF — rovnaká pomocná funkcia ako v albume (MediaAdapter.fixDateTaken)
+    private fun fixDateTaken() {
+        val selection = getSelectedPaths()
+        ensureBackgroundThread {
+            activity.fixDateTaken(selection, true) {
+                activity.runOnUiThread { applyChanges(emptyMap()) }
+            }
+        }
+    }
+
+    // fotky v mriežke ostávajú, ale zmenili sa na disku: premenované dostanú novú cestu, miniatúry a dátumy
+    // sa načítajú nanovo (signatúra podľa lastModified) a obrazovka sa dozvie, čo sa zmenilo. Len hlavné vlákno.
+    private fun applyChanges(renamed: Map<String, String>) {
+        if (activity.isDestroyed) {
+            return
+        }
+
+        finishActMode()
+        renamed.forEach { (oldPath, newPath) ->
+            val index = paths.indexOf(oldPath)
+            if (index >= 0) {
+                paths[index] = newPath
+            }
+        }
+        lastModifiedCache.clear()
+        notifyDataSetChanged()
+        onChanged?.invoke(renamed)
+    }
+
+    private fun String.isHiddenFile() = getFilenameFromPath().startsWith('.')
+
     // odoberie cesty z mriežky; volať len na hlavnom vlákne
     private fun removeFromList(deleted: List<String>) {
         val deletedSet = deleted.toHashSet()
@@ -396,5 +559,11 @@ class PhotoPathsAdapter(
         descending.forEach { paths.removeAt(it) }
         removeSelectedItems(descending)
         onDeleted?.invoke(deleted)
+    }
+
+    companion object {
+        private const val DEGREES_RIGHT = 90
+        private const val DEGREES_HALF = 180
+        private const val DEGREES_LEFT = 270
     }
 }

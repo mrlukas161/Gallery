@@ -1057,6 +1057,9 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
                         binding.pageRecent.recentGrid.post { invalidateRecent() }
                         refreshHome(force = true)
                     },
+                    // premenovanie / odkrytie / otočenie / oprava dátumu — Posledné sa načítajú nanovo
+                    // (zmenená cesta aj dátum môžu zmeniť poradie)
+                    onChanged = { binding.pageRecent.recentGrid.post { invalidateRecent() } },
                 )
             }
         }

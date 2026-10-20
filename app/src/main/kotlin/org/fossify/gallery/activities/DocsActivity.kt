@@ -110,6 +110,14 @@ class DocsActivity : SimpleActivity() {
         }
     }
 
+    // premenované / odkryté fotky (stará cesta -> nová) — len v pamäti obrazovky; OCR index ostáva na starej
+    // ceste, kým ho neprepočíta ďalšie spracovanie knižnice
+    private fun onDocsRenamed(renamed: Map<String, String>) {
+        if (renamed.isEmpty()) return
+        all = all.map { doc -> renamed[doc.path]?.let { doc.copy(path = it) } ?: doc }
+        applyFilter()
+    }
+
     private fun applyFilter() {
         val f = filter
         val qTokens = query.split(Regex("""\s+"""))
@@ -128,6 +136,7 @@ class DocsActivity : SimpleActivity() {
                 this, shown, binding.docsGrid,
                 onClick = { path -> openPhoto(path) },
                 onDeleted = { deleted -> all = all.filter { it.path !in deleted }; applyFilter() },
+                onChanged = { renamed -> onDocsRenamed(renamed) },
             )
         } else {
             existing.updateItems(shown)

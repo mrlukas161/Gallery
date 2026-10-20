@@ -309,6 +309,7 @@ class PeopleSearchActivity : SimpleActivity() {
                 this, ArrayList(paths), binding.searchGrid,
                 onClick = { path -> openPhoto(path) },
                 onDeleted = { deleted -> onResultsDeleted(deleted) },
+                onChanged = { renamed -> onResultsRenamed(renamed) },
             )
             searchAdapter = adapter
             binding.searchGrid.adapter = adapter
@@ -337,6 +338,14 @@ class PeopleSearchActivity : SimpleActivity() {
         deletedPaths.addAll(gone)
         lastResults = lastResults.filter { !gone.contains(it) }
         updateResultsHeader(lastResults.size, false)
+    }
+
+    // premenované / odkryté fotky (stará cesta -> nová): mapa a prehliadač dostanú novú cestu; index
+    // (osoby, text, QR) ju pozná pod starou, preto si starú zapamätáme ako zmiznutú — ďalšie hľadanie ju nevzkriesi
+    private fun onResultsRenamed(renamed: Map<String, String>) {
+        if (renamed.isEmpty()) return
+        deletedPaths.addAll(renamed.keys)
+        lastResults = lastResults.map { renamed[it] ?: it }
     }
 
     private fun openPhoto(path: String) {

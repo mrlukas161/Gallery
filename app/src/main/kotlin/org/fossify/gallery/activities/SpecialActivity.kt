@@ -168,6 +168,19 @@ class SpecialActivity : SimpleActivity() {
         return list
     }
 
+    // premenované / odkryté fotky (stará cesta -> nová) — nech ich ďalší applyFilter nevráti na starú cestu
+    private fun onSpecialRenamed(renamed: Map<String, String>) {
+        if (renamed.isEmpty()) return
+        synchronized(found) {
+            found.values.forEach { list ->
+                for (i in list.indices) {
+                    renamed[list[i]]?.let { list[i] = it }
+                }
+            }
+        }
+        applyFilter()
+    }
+
     private fun applyFilter(deferWhileSelecting: Boolean = false) {
         val existing = binding.docsGrid.adapter as? PhotoPathsAdapter
         if (deferWhileSelecting && existing?.hasSelection() == true) {
@@ -189,6 +202,7 @@ class SpecialActivity : SimpleActivity() {
                     synchronized(found) { found.values.forEach { it.removeAll(deleted.toSet()) } }
                     applyFilter()
                 },
+                onChanged = { renamed -> onSpecialRenamed(renamed) },
             )
         } else {
             existing.updateItems(shown)

@@ -25,6 +25,7 @@ import org.fossify.gallery.extensions.config
 import org.fossify.gallery.faces.FaceEntity
 import org.fossify.gallery.faces.FaceMediaMeta
 import org.fossify.gallery.faces.FaceSorter
+import org.fossify.gallery.faces.FaceVisibility
 import org.fossify.gallery.faces.FacesDatabase
 import org.fossify.gallery.faces.PeopleDatabase
 import org.fossify.gallery.helpers.GridZoom
@@ -45,6 +46,10 @@ class PersonActivity : SimpleActivity() {
     private var showFullPhotos = false
     private var resumedOnce = false
     private val prefs by lazy { getSharedPreferences("galeria_faces", android.content.Context.MODE_PRIVATE) }
+
+    // tváre presunutých/zmazaných fotiek a fotiek mimo rozsahu (zamknuté/vylúčené priečinky) sa na karte
+    // neukazujú — len v UI, DB ostáva bez zmeny; cache na dobu otvorenia obrazovky
+    private val faceVisibility by lazy { FaceVisibility(this) }
 
     private fun sortPath() = "person_$personId"
 
@@ -111,7 +116,7 @@ class PersonActivity : SimpleActivity() {
         ensureBackgroundThread {
             val faces = try {
                 if (faceIds.isEmpty()) emptyList()
-                else FacesDatabase.getInstance(this).FaceDao().getFacesByIds(faceIds)
+                else faceVisibility.filterFaces(FacesDatabase.getInstance(this).FaceDao().getFacesByIds(faceIds))
             } catch (e: Throwable) {
                 emptyList()
             }
@@ -138,18 +143,19 @@ class PersonActivity : SimpleActivity() {
             } catch (e: Throwable) {
                 null
             } ?: return@ensureBackgroundThread
-            val newIds = person.faces.mapNotNullTo(HashSet()) { it.id }
+            val visibleFaces = faceVisibility.filterFaces(person.faces)
+            val newIds = visibleFaces.mapNotNullTo(HashSet()) { it.id }
             val newMeta = if (newIds == knownIds) {
                 emptyMap()
             } else {
-                FaceMediaMeta.load(this, person.faces.map { it.mediaFullPath }.distinct())
+                FaceMediaMeta.load(this, visibleFaces.map { it.mediaFullPath }.distinct())
             }
             runOnUiThread {
                 if (isDestroyed || isFinishing) return@runOnUiThread
                 manualIds = person.manualFaceIds
                 personName = person.name ?: personName
                 if (newIds == knownIds) return@runOnUiThread
-                loadedFaces = person.faces
+                loadedFaces = visibleFaces
                 meta = newMeta
                 render()
             }
@@ -180,6 +186,7 @@ class PersonActivity : SimpleActivity() {
                             this, ArrayList(photoPaths), binding.personGrid,
                             onClick = { path -> openPhoto(path) },
                             onDeleted = { deleted -> onPhotosDeleted(deleted) },
+                            onChanged = { renamed -> onPhotosRenamed(renamed) },
                             extraAction = if (personId >= 0) {
                                 PhotoPathsAdapter.ExtraAction(R.string.action_not_this_person) { selection ->
                                     confirmNotThisPersonPhotos(selection)
@@ -215,9 +222,23 @@ class PersonActivity : SimpleActivity() {
     // po zmazaní fotiek vo výberovom režime — adaptér si mriežku upravil sám, tu len zosúladíme
     // lokálne dáta osoby, aby ďalší render()/prepnutie zobrazenia zmazané fotky nevzkriesilo
     private fun onPhotosDeleted(deleted: List<String>) {
+        faceVisibility.forget(deleted)
         val gone = deleted.toHashSet()
         loadedFaces = loadedFaces.filter { !gone.contains(it.mediaFullPath) }
         photoPaths = ArrayList(photoPaths.filter { !gone.contains(it) })
+    }
+
+    // fotky premenované / odkryté vo výberovom režime (stará cesta -> nová). LEN v pamäti obrazovky:
+    // faces.db ostáva na starej ceste, preto sa pri ďalšom otvorení karty takáto fotka skryje
+    // (trvalé riešenie príde s identitou fotky podľa obsahu — contentKey)
+    private fun onPhotosRenamed(renamed: Map<String, String>) {
+        if (renamed.isEmpty()) return
+        faceVisibility.forget(renamed.keys)
+        loadedFaces = loadedFaces.map { face ->
+            renamed[face.mediaFullPath]?.let { face.copy(mediaFullPath = it) } ?: face
+        }
+        photoPaths = ArrayList(photoPaths.map { renamed[it] ?: it })
+        meta = meta.mapKeys { (path, _) -> renamed[path] ?: path }
     }
 
     // tváre odišli z karty (presun / „nie je táto osoba") — zosúladí lokálne dáta aj mriežku

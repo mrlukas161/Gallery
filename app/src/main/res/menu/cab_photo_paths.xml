@@ -38,6 +38,50 @@
         android:showAsAction="never"
         android:title="@string/properties"
         app:showAsAction="never" />
+    <!-- otočiť / premenovať / skryť / odkryť / opraviť dátum — rovnako ako v albume (cab_media);
+         viditeľnosť podľa výberu rieši kód -->
+    <item
+        android:id="@+id/cab_rotate"
+        android:showAsAction="never"
+        android:title="@string/rotate"
+        android:visible="false"
+        app:showAsAction="never">
+        <menu>
+            <item
+                android:id="@+id/cab_rotate_right"
+                android:title="@string/rotate_right" />
+            <item
+                android:id="@+id/cab_rotate_left"
+                android:title="@string/rotate_left" />
+            <item
+                android:id="@+id/cab_rotate_one_eighty"
+                android:title="@string/rotate_one_eighty" />
+        </menu>
+    </item>
+    <item
+        android:id="@+id/cab_rename"
+        android:showAsAction="never"
+        android:title="@string/rename"
+        android:visible="false"
+        app:showAsAction="never" />
+    <item
+        android:id="@+id/cab_hide"
+        android:showAsAction="never"
+        android:title="@string/hide"
+        android:visible="false"
+        app:showAsAction="never" />
+    <item
+        android:id="@+id/cab_unhide"
+        android:showAsAction="never"
+        android:title="@string/unhide"
+        android:visible="false"
+        app:showAsAction="never" />
+    <item
+        android:id="@+id/cab_fix_date_taken"
+        android:showAsAction="never"
+        android:title="@string/fix_date_taken"
+        android:visible="false"
+        app:showAsAction="never" />
     <item
         android:id="@+id/cab_copy_to"
         android:showAsAction="never"
