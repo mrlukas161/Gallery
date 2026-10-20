@@ -291,6 +291,8 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
             removeTempFolder()
             checkRecycleBinItems()
             startNewPhotoFetcher()
+            // rodinné prepojenie (F5): okno synchronizácie a dobehnutia spracovania pri nabíjaní
+            org.fossify.gallery.family.FamilyAutoSync.onAppStarted(this)
         }
 
         mIsPickImageIntent = isPickImageIntent(intent)
@@ -1274,6 +1276,11 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
         try {
             org.fossify.gallery.services.IndexingService.autoScanIfStale(this)
         } catch (e: Throwable) {
+        }
+
+        // rodinné prepojenie (F5): krátky pokus o synchronizáciu so spárovaným telefónom (na pozadí)
+        if (!mIsThirdPartyIntent) {
+            org.fossify.gallery.family.FamilyAutoSync.onAppResumed(this)
         }
     }
 

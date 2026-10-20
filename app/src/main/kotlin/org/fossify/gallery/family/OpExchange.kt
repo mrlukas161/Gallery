@@ -55,33 +55,11 @@ internal class OpExchange(private val db: FamilyDatabase) {
         const val VERSION = 1
         const val BATCH_LIMIT = 200
 
-        fun opsToJson(ops: List<OpEntity>): JSONArray = JSONArray().apply {
-            for (op in ops) {
-                put(
-                    JSONObject()
-                        .put("id", op.opId)
-                        .put("lamport", op.lamport)
-                        .put("type", op.type)
-                        .put("payload", op.payloadJson),
-                )
-            }
-        }
+        // tvar zoznamu opov je spoločný s zálohou osôb (OpJson)
+        fun opsToJson(ops: List<OpEntity>): JSONArray = OpJson.toJson(ops)
 
         // opy z JSON, deviceId doplní podľa overeného odosielateľa (rámec), nie podľa obsahu
-        fun opsFromJson(array: JSONArray?, deviceId: String): List<OpEntity> {
-            if (array == null) return emptyList()
-            return (0 until array.length()).mapNotNull { i -> array.optJSONObject(i)?.let { opFromJson(it, deviceId) } }
-        }
-
-        private fun opFromJson(o: JSONObject, deviceId: String): OpEntity? {
-            val id = o.optString("id")
-            val lamport = o.optLong("lamport", -1)
-            return if (id.isNotEmpty() && lamport > 0) {
-                OpEntity(id, deviceId, lamport, o.optString("type"), o.optString("payload"))
-            } else {
-                null
-            }
-        }
+        fun opsFromJson(array: JSONArray?, deviceId: String): List<OpEntity> = OpJson.fromJson(array, deviceId)
 
         fun parse(bytes: ByteArray): JSONObject? = try {
             JSONObject(String(bytes, Charsets.UTF_8))

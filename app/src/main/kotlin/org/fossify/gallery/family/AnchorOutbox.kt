@@ -20,21 +20,8 @@ class AnchorOutbox(context: Context, private val recorder: OpRecorder) {
     fun flush() {
         val dirty = dirtyIds()
         if (dirty.isEmpty()) return
-        val people = PeopleDatabase.getInstance(app).PeopleDao()
-        val faceDao = FacesDatabase.getInstance(app).FaceDao()
-        val scope = IndexScope(app)
-        val manual = people.getAssignments().filter { it.isManual }.groupBy({ it.personId }, { it.faceId })
-        val anchors = people.getAllAnchors()
-        for (localId in dirty) {
+        for ((localId, picked) in pick(app, dirty)) {
             val uuid = recorder.existingUuid(localId) ?: continue
-            // len tváre z povolených priečinkov (spec 2.5) + vlastné vzory (napr. Picasa), nie prijaté z rodiny
-            val own = faceDao.getFacesByIds(manual[localId].orEmpty())
-                .filter { scope.allows(it.mediaFullPath) }
-                .mapNotNull { f -> f.embedding?.let { FaceEmbedder.toFloats(it) } }
-            val extra = anchors
-                .filter { it.personId == localId && !it.source.startsWith(OpApplier.ANCHOR_SOURCE_PREFIX) }
-                .map { FaceEmbedder.toFloats(it.embedding) }
-            val picked = AnchorPicker.pick(own + extra)
             if (picked.isNotEmpty()) recorder.append(AnchorsSet(uuid, FaceEmbedder.MODEL_ID, picked))
         }
         // medzičasom označené osoby ostanú na ďalšie odovzdanie
@@ -49,5 +36,26 @@ class AnchorOutbox(context: Context, private val recorder: OpRecorder) {
     companion object {
         // kľúč v tabuľke meta: osoby, ktorých odtlačky treba znova poslať
         const val KEY_ANCHORS_DIRTY = "f3_anchors_dirty"
+
+        // Do AnchorsSet.MAX_ANCHORS reprezentatívnych odtlačkov pre každú osobu (aj pre zálohu osôb F6):
+        // len ručne potvrdené tváre z povolených priečinkov (spec 2.5) + vlastné vzory (napr. Picasa),
+        // nie odtlačky prijaté z rodiny.
+        fun pick(context: Context, localIds: Collection<Long>): Map<Long, List<FloatArray>> {
+            val app = context.applicationContext
+            val people = PeopleDatabase.getInstance(app).PeopleDao()
+            val faceDao = FacesDatabase.getInstance(app).FaceDao()
+            val scope = IndexScope(app)
+            val manual = people.getAssignments().filter { it.isManual }.groupBy({ it.personId }, { it.faceId })
+            val anchors = people.getAllAnchors()
+            return localIds.associateWith { localId ->
+                val own = faceDao.getFacesByIds(manual[localId].orEmpty())
+                    .filter { scope.allows(it.mediaFullPath) }
+                    .mapNotNull { f -> f.embedding?.let { FaceEmbedder.toFloats(it) } }
+                val extra = anchors
+                    .filter { it.personId == localId && !it.source.startsWith(OpApplier.ANCHOR_SOURCE_PREFIX) }
+                    .map { FaceEmbedder.toFloats(it.embedding) }
+                AnchorPicker.pick(own + extra)
+            }
+        }
     }
 }

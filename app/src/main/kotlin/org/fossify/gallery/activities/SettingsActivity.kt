@@ -154,6 +154,7 @@ class SettingsActivity : SimpleActivity() {
         setupClipMl()
         setupPcServer()
         setupFamilyPairing()
+        setupPeopleBackup()
         setupCheckForUpdates()
         setupAutoUpdateCheck()
         setupExportFavorites()
@@ -1583,6 +1584,39 @@ class SettingsActivity : SimpleActivity() {
                         getString(R.string.family_settings_paired, names.joinToString(", "))
                     }
                 }
+            }
+        }
+    }
+
+    // F6: záloha a obnova osôb (súbor .galeria-family cez SAF)
+    private val peopleBackupUi by lazy { org.fossify.gallery.family.PeopleBackupUi(this) }
+
+    private val peopleBackupCreator = registerForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.CreateDocument(
+            org.fossify.gallery.family.PeopleBackupFormat.MIME_TYPE,
+        ),
+    ) { uri: android.net.Uri? ->
+        if (uri != null) peopleBackupUi.export(uri)
+    }
+
+    private val peopleBackupOpener =
+        registerForActivityResult(androidx.activity.result.contract.ActivityResultContracts.OpenDocument()) { uri: android.net.Uri? ->
+            if (uri != null) peopleBackupUi.confirmRestore(uri)
+        }
+
+    private fun setupPeopleBackup() {
+        binding.settingsPeopleBackupHolder.setOnClickListener {
+            try {
+                peopleBackupCreator.launch(peopleBackupUi.suggestedFileName())
+            } catch (ignored: android.content.ActivityNotFoundException) {
+                toast(org.fossify.commons.R.string.system_service_disabled, android.widget.Toast.LENGTH_LONG)
+            }
+        }
+        binding.settingsPeopleRestoreHolder.setOnClickListener {
+            try {
+                peopleBackupOpener.launch(arrayOf("*/*"))
+            } catch (ignored: android.content.ActivityNotFoundException) {
+                toast(org.fossify.commons.R.string.system_service_disabled, android.widget.Toast.LENGTH_LONG)
             }
         }
     }

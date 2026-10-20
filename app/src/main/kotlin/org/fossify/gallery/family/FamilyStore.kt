@@ -49,6 +49,7 @@ class FamilyStore(context: Context) {
                 lastLamportSeen = previous?.lastLamportSeen ?: 0,
             ),
         )
+        refreshSchedule(appContext)
         return true
     }
 
@@ -65,6 +66,8 @@ class FamilyStore(context: Context) {
         keys.delete(FamilyKeys.aliasFor(deviceId))
         prefs.setPendingUnpair(deviceId, false)
         prefs.rememberAddress(deviceId, null)
+        // posledné prepojenie zaniklo → okno synchronizácie sa zruší (ak nečaká spracovanie)
+        refreshSchedule(appContext)
     }
 
     // prepojenie zrušil druhý telefón → zmaž všetko hneď
@@ -73,5 +76,15 @@ class FamilyStore(context: Context) {
         db.peerDao().deletePeer(deviceId)
         finishUnpair(deviceId)
         if (known) FamilyHandlers.unpaired(deviceId)
+    }
+}
+
+// F5: okno synchronizácie pri nabíjaní má zmysel len so spárovaným telefónom (alebo pri odloženom spracovaní)
+@Suppress("TooGenericExceptionCaught")
+private fun refreshSchedule(context: Context) {
+    try {
+        org.fossify.gallery.jobs.FamilySyncJob.refresh(context)
+    } catch (e: RuntimeException) {
+        android.util.Log.w("FamilyStore", "plánovanie synchronizácie zlyhalo", e)
     }
 }
