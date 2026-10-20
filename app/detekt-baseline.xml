@@ -1478,6 +1478,7 @@
     <ID>TooManyFunctions:SearchActivity.kt$SearchActivity : SimpleActivityMediaOperationsListener</ID>
     <ID>TooManyFunctions:SettingsActivity.kt$SettingsActivity : SimpleActivity</ID>
     <ID>TooManyFunctions:SimpleActivity.kt$SimpleActivity : BaseSimpleActivity</ID>
+    <ID>TooManyFunctions:SpecialActivity.kt$SpecialActivity : SimpleActivity</ID>
     <ID>TooManyFunctions:VideoFragment.kt$VideoFragment : ViewPagerFragmentSurfaceTextureListenerOnSeekBarChangeListenerPlaybackSpeedListener</ID>
     <ID>TooManyFunctions:VideoPlayerActivity.kt$VideoPlayerActivity : BaseViewerActivityOnSeekBarChangeListenerSurfaceTextureListenerPlaybackSpeedListener</ID>
     <ID>TooManyFunctions:ViewPagerActivity.kt$ViewPagerActivity : BaseViewerActivityOnPageChangeListenerFragmentListener</ID>
