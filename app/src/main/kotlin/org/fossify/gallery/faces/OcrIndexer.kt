@@ -10,6 +10,7 @@ import android.provider.MediaStore
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import org.fossify.commons.helpers.ensureBackgroundThread
+import org.fossify.gallery.R
 import org.fossify.gallery.helpers.TextNormalizer
 import java.io.File
 
@@ -45,8 +46,10 @@ object OcrIndexer {
                 // Pri už dekódovanej bitmape rovno skontroluj aj QR/čiarové kódy (zápis do qr.db).
                 val qrDecoder = ZxingDecoder()
 
-                val processed = dao.getIndexedPaths().toHashSet()
-                val todo = queryImages(appCtx).filter { it !in processed }
+                // vylúčené a zamknuté priečinky sa nespracúvajú; ich staré riadky sa z indexu zmažú
+                val scope = IndexScope(appCtx)
+                val processed = scope.keepAllowed(dao.getIndexedPaths()) { dao.deletePaths(it) }
+                val todo = queryImages(appCtx).filter { it !in processed && scope.allows(it) }
                 val total = todo.size
                 var done = 0
                 for (path in todo) {
@@ -127,6 +130,9 @@ object OcrIndexer {
     // z boxov slov nesmie prepísať plný text z indexera).
     fun saveResult(context: Context, path: String, text: String, overwrite: Boolean = true): Boolean {
         return try {
+            // fotka zo zamknutého/vylúčeného priečinka: text sa ukáže, ale do ocr.db (Dokumenty,
+            // hľadanie) sa NEULOŽÍ — inak by bol čitateľný bez odomknutia
+            if (!IndexScope(context).allows(path)) return false
             val dao = OcrDatabase.getInstance(context.applicationContext).OcrDao()
             if (!overwrite && dao.getText(path) != null) return true
             val cleaned = OcrText.clean(text)
@@ -163,11 +169,10 @@ object OcrIndexer {
     private fun ensureChannel(context: Context) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val nm = context.getSystemService(NotificationManager::class.java) ?: return
-            if (nm.getNotificationChannel(CHANNEL_ID) == null) {
-                nm.createNotificationChannel(
-                    NotificationChannel(CHANNEL_ID, "OCR textu", NotificationManager.IMPORTANCE_LOW)
-                )
-            }
+            // vždy (aj keď kanál existuje) — systém tak premenuje kanál vytvorený staršou verziou
+            nm.createNotificationChannel(
+                NotificationChannel(CHANNEL_ID, context.getString(R.string.q1_channel_ocr), NotificationManager.IMPORTANCE_LOW)
+            )
         }
     }
 
@@ -175,13 +180,15 @@ object OcrIndexer {
         try {
             val notification = NotificationCompat.Builder(context, CHANNEL_ID)
                 .setSmallIcon(android.R.drawable.stat_notify_sync)
-                .setContentTitle("Čítam text z fotiek")
+                .setContentTitle(context.getString(R.string.q1_notif_ocr))
                 .setContentText("$done / $total")
                 .setProgress(total, done, false)
                 .setOngoing(true)
                 .setOnlyAlertOnce(true)
                 .build()
             NotificationManagerCompat.from(context).notify(NOTIF_ID, notification)
+        } catch (ignored: SecurityException) {
+            // bez povolenia na notifikácie (Android 13+) — priebeh len nezobrazíme
         } catch (ignored: Throwable) {
         }
     }

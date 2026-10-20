@@ -13,6 +13,10 @@ interface ClipDao {
     @Query("SELECT path FROM clip_index")
     fun getIndexedPaths(): List<String>
 
+    // riadky fotiek mimo rozsahu spracovania (zamknutý/vylúčený priečinok) — IndexScope.keepAllowed
+    @Query("DELETE FROM clip_index WHERE path IN (:paths)")
+    fun deletePaths(paths: List<String>)
+
     @Query("SELECT * FROM clip_index")
     fun getAll(): List<ClipEntity>
 

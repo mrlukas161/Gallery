@@ -1,14 +1,19 @@
 package org.fossify.gallery.clip
 
+import android.annotation.SuppressLint
 import android.content.Context
 
 // CLIP sémantické hľadanie: text dopyt -> 512-dim vektor -> kosínus voči uloženým obrázkovým vektorom.
 // Enkodér (text session) sa drží cachovaný (rýchle opakované hľadanie). Vektory sa načítajú raz a
 // obnovia, keď pribudnú nové (podľa počtu). Ak modely nie sú stiahnuté, vráti prázdne (bez záťaže).
 object ClipSearch {
+    // enkodér drží len applicationContext, nie Activity — nie je to únik
+    @SuppressLint("StaticFieldLeak")
     @Volatile
     private var enc: ClipEncoder? = null
 
+    // enkodér drží len applicationContext, nie Activity — nie je to únik
+    @SuppressLint("StaticFieldLeak")
     @Volatile
     private var mlEnc: ClipMlEncoder? = null
 

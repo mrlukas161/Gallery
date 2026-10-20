@@ -34,6 +34,18 @@ class IndexingService : Service() {
     @Volatile
     private var autoRan = false
 
+    // úlohy, ktoré táto služba práve spustila (pri časovom limite systému sa zastavia práve tie)
+    private val launched: MutableSet<String> = ConcurrentHashMap.newKeySet()
+
+    // po finish() už neposielať notifikáciu priebehu — oneskorený callback indexera by inak
+    // vyvesil „trvalú" notifikáciu, ktorú už nikto nezruší
+    @Volatile
+    private var stopped = false
+
+    // systém vyčerpal časový limit služby (Android 15+) — ďalšie úlohy v poradí už nespúšťať
+    @Volatile
+    private var timedOut = false
+
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -41,6 +53,7 @@ class IndexingService : Service() {
         // zmazal skôr, než ju používateľ stihne vidieť) — maže sa až pri štarte rovnakého typu
         // úlohy v runOne(); tu sa len obnoví prípadná chyba uložená pred reštartom appky
         lastErrorPersisted(this)
+        stopped = false
         ensureChannel()
         startForegroundCompat(buildInitial())
         when (val task = intent?.getStringExtra(EXTRA_TASK)) {
@@ -49,23 +62,31 @@ class IndexingService : Service() {
                 // a navyše tie funkcie, ktoré už majú svoj index (OCR, duplikáty, CLIP) — aby nové
                 // fotky nezaostávali za zvyškom knižnice. Rozhodnutie beží mimo hlavného vlákna (Room).
                 autoRan = true
+                // rezervácia HNEĎ (synchrónne): kým sa na pozadí rozhodne, čo pobeží, počítadlo nesmie
+                // klesnúť na 0 — iné spustenie by medzitým zavolalo finish() a indexovanie by bežalo
+                // bez foreground ochrany; rezerváciu uvoľní finally až po launch()
+                active.incrementAndGet()
                 org.fossify.commons.helpers.ensureBackgroundThread {
-                    val list = ArrayList<String>()
-                    list.add(TASK_FACES)
-                    list.add(TASK_GEO)
-                    list.add(TASK_QR)
-                    if (autoOcrEnabled() || hasData { org.fossify.gallery.faces.OcrDatabase.getInstance(this).OcrDao().count() }) {
-                        list.add(TASK_OCR)
+                    try {
+                        val list = ArrayList<String>()
+                        list.add(TASK_FACES)
+                        list.add(TASK_GEO)
+                        list.add(TASK_QR)
+                        if (autoOcrEnabled() || hasData { org.fossify.gallery.faces.OcrDatabase.getInstance(this).OcrDao().count() }) {
+                            list.add(TASK_OCR)
+                        }
+                        if (hasData { org.fossify.gallery.faces.PhashDatabase.getInstance(this).PhashDao().count() }) {
+                            list.add(TASK_PHASH)
+                        }
+                        if (org.fossify.gallery.clip.ClipModels.bothPresent(this) &&
+                            hasData { org.fossify.gallery.clip.ClipDatabase.getInstance(this).ClipDao().count() }
+                        ) {
+                            list.add(TASK_CLIP)
+                        }
+                        launch(list, sequential = !IndexPerf.parallel(this))
+                    } finally {
+                        taskFinished()
                     }
-                    if (hasData { org.fossify.gallery.faces.PhashDatabase.getInstance(this).PhashDao().count() }) {
-                        list.add(TASK_PHASH)
-                    }
-                    if (org.fossify.gallery.clip.ClipModels.bothPresent(this) &&
-                        hasData { org.fossify.gallery.clip.ClipDatabase.getInstance(this).ClipDao().count() }
-                    ) {
-                        list.add(TASK_CLIP)
-                    }
-                    launch(list, sequential = !IndexPerf.parallel(this))
                 }
             }
 
@@ -115,7 +136,7 @@ class IndexingService : Service() {
     }
 
     private fun chain(tasks: List<String>, i: Int) {
-        if (i >= tasks.size) return
+        if (i >= tasks.size || timedOut) return
         runOne(tasks[i]) {
             taskFinished()
             chain(tasks, i + 1)
@@ -143,10 +164,15 @@ class IndexingService : Service() {
         else -> false
     }
 
-    private fun runOne(task: String, done: () -> Unit) {
+    private fun runOne(task: String, finished: () -> Unit) {
         // chyba z minula sa maže až keď sa ROVNAKÝ typ úlohy reálne spúšťa znova — ak zlyhá
         // opäť, fail() ju nastaví nanovo; iné úlohy ju nechávajú viditeľnú
         if (task == lastErrorTask) clearLastError()
+        launched.add(task)
+        val done = {
+            launched.remove(task)
+            finished()
+        }
         when (task) {
             TASK_FACES -> runFaces(done)
             TASK_GEO -> runGeo(done)
@@ -168,8 +194,8 @@ class IndexingService : Service() {
         }
         FaceIndexer.index(
             applicationContext, notify = false,
-            onProgress = { d, t -> prog("faces", "Tváre $d/$t") },
-            onDone = { _, _, _ -> clearProg("faces"); next() },
+            onProgress = { d, t -> prog("faces", getString(R.string.q1_prog_faces, d, t)) },
+            onDone = { _, _ -> clearProg("faces"); next() },
             onError = { fail("faces", it); next() },
         )
     }
@@ -180,7 +206,7 @@ class IndexingService : Service() {
         }
         GeoIndexer.index(
             applicationContext,
-            onProgress = { d, t -> prog("geo", "Poloha $d/$t") },
+            onProgress = { d, t -> prog("geo", getString(R.string.q1_prog_geo, d, t)) },
             onDone = { _, _ -> clearProg("geo"); next() },
             onError = { fail("geo", it); next() },
         )
@@ -192,7 +218,7 @@ class IndexingService : Service() {
         }
         QrIndexer.index(
             applicationContext, notify = false,
-            onProgress = { d, t -> prog("qr", "QR kódy $d/$t") },
+            onProgress = { d, t -> prog("qr", getString(R.string.q1_prog_qr, d, t)) },
             onDone = { _, _ -> clearProg("qr"); next() },
             onError = { fail("qr", it); next() },
         )
@@ -204,7 +230,7 @@ class IndexingService : Service() {
         }
         OcrIndexer.index(
             applicationContext, notify = false,
-            onProgress = { d, t -> prog("ocr", "OCR text $d/$t") },
+            onProgress = { d, t -> prog("ocr", getString(R.string.q1_prog_ocr, d, t)) },
             onDone = { _, _ -> clearProg("ocr"); next() },
             onError = { fail("ocr", it); next() },
         )
@@ -216,7 +242,7 @@ class IndexingService : Service() {
         }
         PhashIndexer.index(
             applicationContext, notify = false,
-            onProgress = { d, t -> prog("phash", "Podobné $d/$t") },
+            onProgress = { d, t -> prog("phash", getString(R.string.q1_prog_phash, d, t)) },
             onDone = { _ -> clearProg("phash"); next() },
             onError = { fail("phash", it); next() },
         )
@@ -240,7 +266,7 @@ class IndexingService : Service() {
         }
         org.fossify.gallery.clip.ClipMlModels.download(
             applicationContext,
-            onProgress = { phase, d, t -> prog("clipml", "SK model: $phase $d/$t") },
+            onProgress = { phase, d, t -> prog("clipml", getString(R.string.q1_prog_clip_ml, phase, d, t)) },
             onDone = { org.fossify.gallery.clip.ClipSearch.releaseMl(); clearProg("clipml"); next() },
             onError = { fail("clipml", it); next() },
         )
@@ -254,7 +280,7 @@ class IndexingService : Service() {
         }
         org.fossify.gallery.faces.RefreshFaces.run(
             applicationContext,
-            onProgress = { d, t -> prog("reembed", "Prepracovanie tvárí $d/$t") },
+            onProgress = { d, t -> prog("reembed", getString(R.string.q1_prog_reembed, d, t)) },
             onDone = { _, _ -> clearProg("reembed"); next() },
             onError = { fail("reembed", it); next() },
         )
@@ -273,7 +299,12 @@ class IndexingService : Service() {
     // --- notifikácia s per-task priebehom ---
 
     private fun fail(key: String, msg: String) {
-        lastError = "$key: ${msg.take(160)}"
+        // po prerušení systémom ostáva viditeľný dôvod prerušenia, nie následné „zastavené" z indexerov
+        if (timedOut) {
+            clearProg(key)
+            return
+        }
+        lastError ="$key: ${msg.take(160)}"
         lastErrorTask = key
         // chyba prežije aj reštart appky (Nastavenia/Domov ju vedia zobraziť aj neskôr)
         try {
@@ -311,6 +342,7 @@ class IndexingService : Service() {
     }
 
     private fun refreshNotification() {
+        if (stopped) return
         try {
             val lines = progressMap.values.toList()
             val big = if (lines.isEmpty()) getString(R.string.indexing_running) else lines.joinToString("\n")
@@ -336,7 +368,34 @@ class IndexingService : Service() {
             .setOnlyAlertOnce(true)
             .build()
 
+    // Android 15+: služba typu dataSync smie bežať ~6 h za 24 h. Po vyčerpaní systém zavolá
+    // onTimeout a službu treba do pár sekúnd zastaviť, inak appku ukončí s chybou. Zastav bežiace
+    // spracovanie, nechaj viditeľný dôvod a NEzapisuj čas auto-skenu — pri ďalšom otvorení appky
+    // (to limit vynuluje) sa pokračuje, indexery sú resumovateľné.
+    override fun onTimeout(startId: Int, fgsType: Int) {
+        val running = launched.toList()
+        fail(running.firstOrNull() ?: TASK_AUTO, getString(R.string.c1_indexing_timeout))
+        timedOut = true
+        running.forEach { stopTask(it) }
+        autoRan = false
+        finish()
+    }
+
+    private fun stopTask(task: String) {
+        when (task) {
+            TASK_FACES -> FaceIndexer.stop()
+            TASK_GEO -> GeoIndexer.stop()
+            TASK_QR -> QrIndexer.stop()
+            TASK_OCR -> OcrIndexer.stop()
+            TASK_PHASH -> PhashIndexer.stop()
+            TASK_CLIP -> ClipIndexer.stop()
+            TASK_CLIP_ML -> org.fossify.gallery.clip.ClipMlModels.stop()
+            TASK_REEMBED -> org.fossify.gallery.faces.RefreshFaces.stop()
+        }
+    }
+
     private fun finish() {
+        stopped = true
         // auto-sken si po dobehnutí zapíše čas — autoScanIfStale ho potom 6 hodín nespúšťa znova
         if (autoRan) {
             autoRan = false
@@ -382,11 +441,10 @@ class IndexingService : Service() {
     private fun ensureChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val nm = getSystemService(NotificationManager::class.java) ?: return
-            if (nm.getNotificationChannel(CHANNEL_ID) == null) {
-                nm.createNotificationChannel(
-                    NotificationChannel(CHANNEL_ID, "Indexovanie", NotificationManager.IMPORTANCE_LOW)
-                )
-            }
+            // vždy (aj keď kanál existuje) — systém tak premenuje kanál vytvorený staršou verziou
+            nm.createNotificationChannel(
+                NotificationChannel(CHANNEL_ID, getString(R.string.q1_channel_indexing), NotificationManager.IMPORTANCE_LOW)
+            )
         }
     }
 

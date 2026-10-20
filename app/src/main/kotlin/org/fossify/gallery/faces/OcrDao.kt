@@ -13,6 +13,10 @@ interface OcrDao {
     @Query("SELECT path FROM ocr_text")
     fun getIndexedPaths(): List<String>
 
+    // riadky fotiek mimo rozsahu spracovania (zamknutý/vylúčený priečinok) — IndexScope.keepAllowed
+    @Query("DELETE FROM ocr_text WHERE path IN (:paths)")
+    fun deletePaths(paths: List<String>)
+
     @Query("SELECT COUNT(*) FROM ocr_text")
     fun count(): Int
 

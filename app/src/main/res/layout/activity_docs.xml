@@ -20,36 +20,46 @@
 
     </org.fossify.commons.views.MyAppBarLayout>
 
-    <org.fossify.commons.views.MyEditText
-        android:id="@+id/docs_search"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginStart="@dimen/normal_margin"
-        android:layout_marginEnd="@dimen/normal_margin"
-        android:hint="@string/docs_search_hint"
-        android:imeOptions="actionSearch"
-        android:inputType="text"
-        android:maxLines="1"
-        android:visibility="gone"
-        app:layout_behavior="@string/appbar_scrolling_view_behavior" />
-
-    <com.qtalk.recyclerviewfastscroller.RecyclerViewFastScroller
-        android:id="@+id/docs_fastscroller"
+    <!-- pole hľadania a mriežka pod sebou v jednom stĺpci: obe pod lištou by sa inak prekrývali
+         (mriežka vyplní celú plochu a pokryla by pole hľadania) -->
+    <LinearLayout
+        android:id="@+id/docs_content"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
+        android:orientation="vertical"
         app:layout_behavior="@string/appbar_scrolling_view_behavior">
 
-        <org.fossify.commons.views.MyRecyclerView
-            android:id="@+id/docs_grid"
+        <org.fossify.commons.views.MyEditText
+            android:id="@+id/docs_search"
             android:layout_width="match_parent"
-            android:layout_height="match_parent"
-            android:clipToPadding="false"
-            android:padding="1dp"
-            android:scrollbars="none"
-            app:layoutManager="org.fossify.commons.views.MyGridLayoutManager"
-            app:spanCount="3" />
+            android:layout_height="wrap_content"
+            android:layout_marginStart="@dimen/normal_margin"
+            android:layout_marginEnd="@dimen/normal_margin"
+            android:hint="@string/docs_search_hint"
+            android:imeOptions="actionSearch"
+            android:inputType="text"
+            android:maxLines="1"
+            android:visibility="gone" />
 
-    </com.qtalk.recyclerviewfastscroller.RecyclerViewFastScroller>
+        <com.qtalk.recyclerviewfastscroller.RecyclerViewFastScroller
+            android:id="@+id/docs_fastscroller"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1">
+
+            <!-- layoutManager MUSÍ byť v XML (fast-scroller si ho vypýta skôr, než ho nastaví kód) -->
+            <org.fossify.commons.views.MyRecyclerView
+                android:id="@+id/docs_grid"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:clipToPadding="false"
+                android:padding="1dp"
+                android:scrollbars="none"
+                app:layoutManager="org.fossify.commons.views.MyGridLayoutManager"
+                app:spanCount="3" />
+
+        </com.qtalk.recyclerviewfastscroller.RecyclerViewFastScroller>
+    </LinearLayout>
 
     <org.fossify.commons.views.MyTextView
         android:id="@+id/docs_placeholder"

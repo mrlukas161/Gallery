@@ -29,6 +29,35 @@ object FaceAligner {
         }
     }
 
+    // Odtlačok jednej detegovanej tváre z celej (upright) fotky ako bajty do DB, alebo null.
+    // Výrez sa uvoľní VŽDY, aj keď embedCrop vyhodí výnimku (predtým v tom prípade unikal), a nikdy
+    // sa neuvoľní samotná fotka (createBitmap vráti tú istú inštanciu, keď výrez pokryje celú fotku —
+    // recycle by ju zničil a ďalšie tváre na nej by ostali bez odtlačku). Keď zarovnaný výrez zlyhá,
+    // skúsi sa ešte 2-bodové zarovnanie nad celou fotkou: tvár bez odtlačku je v appke neviditeľná.
+    fun embedDetected(
+        bmp: Bitmap,
+        face: FaceDetectionHelper.DetectedFace,
+        landmarker: FaceLandmarkHelper,
+        embedder: FaceEmbedder,
+        detector: FaceDetectionHelper?,
+    ): ByteArray? {
+        val crop = cropRegion(bmp, face.left, face.top, face.right, face.bottom, 0.3f)
+        if (crop != null) {
+            try {
+                return FaceEmbedder.toBytes(embedCrop(crop, landmarker, embedder, detector).vec)
+            } catch (ignored: Throwable) {
+                // pokračuj náhradnou cestou nižšie
+            } finally {
+                if (crop !== bmp) crop.recycle()
+            }
+        }
+        return try {
+            FaceEmbedder.toBytes(embedder.embed(bmp, face))
+        } catch (e: Throwable) {
+            null
+        }
+    }
+
     fun embedCrop(
         crop: Bitmap,
         landmarker: FaceLandmarkHelper,

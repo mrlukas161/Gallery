@@ -19,6 +19,7 @@ import android.content.res.Configuration
 import android.graphics.Bitmap
 import android.graphics.Color
 import android.graphics.drawable.Icon
+import android.graphics.drawable.LayerDrawable
 import android.os.Bundle
 import android.os.Handler
 import android.provider.MediaStore
@@ -27,6 +28,7 @@ import android.view.View
 import android.view.WindowManager
 import android.view.animation.DecelerateInterpolator
 import android.widget.Toast
+import androidx.core.content.res.ResourcesCompat
 import androidx.core.graphics.drawable.toDrawable
 import androidx.exifinterface.media.ExifInterface
 import androidx.print.PrintHelper
@@ -84,6 +86,7 @@ import org.fossify.commons.extensions.showErrorToast
 import org.fossify.commons.extensions.toast
 import org.fossify.commons.extensions.tryGenericMimeType
 import org.fossify.commons.extensions.updateBrightness
+import org.fossify.commons.extensions.updateTextColors
 import org.fossify.commons.extensions.viewBinding
 import org.fossify.commons.helpers.FAVORITES
 import org.fossify.commons.helpers.IS_FROM_GALLERY
@@ -95,6 +98,8 @@ import org.fossify.commons.helpers.SORT_BY_RANDOM
 import org.fossify.commons.helpers.ensureBackgroundThread
 import org.fossify.commons.helpers.isRPlus
 import org.fossify.commons.models.FileDirItem
+import org.fossify.commons.views.MyButton
+import org.fossify.commons.views.MyTextView
 import org.fossify.gallery.BuildConfig
 import org.fossify.gallery.R
 import org.fossify.gallery.adapters.MyPagerAdapter
@@ -191,6 +196,9 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
     companion object {
         private const val REQUEST_VIEW_VIDEO = 1
         private const val SAVED_PATH = "current_path"
+
+        // cesta fotky, ku ktorej sa „Označiť tváre" otvára (FaceTaggingActivity ju môže použiť ako filter)
+        const val EXTRA_TAG_MEDIA_PATH = "media_path"
     }
 
     private var mPath = ""
@@ -265,6 +273,8 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
     override fun onPause() {
         super.onPause()
         stopSlideshow()
+        // pohyblivá fotka sa nesmie prehrávať na pozadí (batéria, zvuk ponad inú appku)
+        stopMotionInline()
     }
 
     override fun onDestroy() {
@@ -539,11 +549,7 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
             mRestricted = true
             mShowAll = false
             mMediaFiles.clear()
-            restrictPaths.forEach { p ->
-                mMediaFiles.add(
-                    Medium(null, p.getFilenameFromPath(), p, p.getParentPath(), 0, 0, File(p).length(), getTypeFromPath(p), 0, false, 0L, 0L)
-                )
-            }
+            restrictPaths.forEach { p -> mMediaFiles.add(restrictedMedium(p)) }
         }
 
         binding.viewPager.onGlobalLayout {
@@ -633,6 +639,8 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
     }
 
     private fun updatePagerItems(media: MutableList<Medium>) {
+        // prehrávané video patrilo fotke zo starého zoznamu — po výmene stránok by sa odhalila iná fotka
+        stopMotionInline()
         val pagerAdapter = MyPagerAdapter(this, supportFragmentManager, media)
         if (!isDestroyed) {
             pagerAdapter.shouldInitFragment = mPos < 5
@@ -1372,7 +1380,12 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
     }
 
     private fun refreshViewPager(refetchPosition: Boolean = false) {
-        if (mRestricted) return // uzavretý set — nepreberať celý priečinok
+        if (mRestricted) {
+            // uzavretý set — nepreberať celý priečinok, obnoviť len vlastný zoznam; úvodné načítanie
+            // (refetchPosition = true) nechať na onGlobalLayout, zoznam je v tom momente už naplnený
+            if (!refetchPosition) refreshRestrictedSet()
+            return
+        }
         val isRandomSorting = config.getFolderSorting(mDirectory) and SORT_BY_RANDOM != 0
         if (!isRandomSorting || isExternalIntent()) {
             GetMediaAsynctask(applicationContext, mDirectory, isPickImage = false, isPickVideo = false, showAll = mShowAll) {
@@ -1380,6 +1393,31 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
             }.execute()
         }
     }
+
+    // Uzavretý set (Ľudia, hľadanie, mapa, Posledné…) nemá priečinok, z ktorého by sa dal znova načítať.
+    // Po presune, obnove z Koša alebo úprave v editore preto prefiltruje vlastný zoznam: cesty, ktoré už
+    // neexistujú, vypadnú, ostatným sa obnoví veľkosť (upravená fotka sa načíta znova) a pozícia ostane.
+    private fun refreshRestrictedSet() {
+        val current = ArrayList(mMediaFiles)
+        ensureBackgroundThread {
+            val remaining = ArrayList(current.filter { getDoesFilePathExist(it.path) }.map { restrictedMedium(it.path) })
+            runOnUiThread {
+                if (isDestroyed || isFinishing) return@runOnUiThread
+                if (remaining.isEmpty()) {
+                    finish()
+                    return@runOnUiThread
+                }
+
+                // po návrate z editora je mPos -1 — ostať na tej istej stránke; po presune ostane index (nastúpi ďalšia fotka)
+                val pos = if (mPos == -1) binding.viewPager.currentItem else mPos
+                mPos = pos.coerceIn(0, remaining.lastIndex)
+                refreshUI(remaining, false)
+            }
+        }
+    }
+
+    private fun restrictedMedium(path: String) =
+        Medium(null, path.getFilenameFromPath(), path, path.getParentPath(), 0, 0, File(path).length(), getTypeFromPath(path), 0, false, 0L, 0L)
 
     private fun gotMedia(thumbnailItems: ArrayList<ThumbnailItem>, ignorePlayingVideos: Boolean = false, refetchViewPagerPosition: Boolean = false) {
         val media = thumbnailItems.asSequence().filter {
@@ -1531,6 +1569,8 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
             }
             runOnUiThread {
                 if (isDestroyed || isFinishing) return@runOnUiThread
+                // používateľ medzitým odišiel z appky — nespúšťať prehrávanie na pozadí
+                if (!lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED)) return@runOnUiThread
                 if (!ok) {
                     android.widget.Toast.makeText(this, R.string.motion_not_found, android.widget.Toast.LENGTH_SHORT).show()
                     return@runOnUiThread
@@ -1561,7 +1601,9 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
         }
     }
 
+    // zastaví a uvoľní prehrávač; ak overlay nie je zobrazený, nerobí nič (bezpečné volať z onPause/zmeny stránky)
     private fun stopMotionInline() {
+        if (binding.motionOverlay.visibility != android.view.View.VISIBLE) return
         try {
             binding.motionVideo.stopPlayback()
         } catch (ignored: Throwable) {
@@ -1588,6 +1630,8 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
                         Intent(this, TextSelectActivity::class.java).apply {
                             putExtra(TextSelectActivity.EXTRA_PATH, path)
                             putExtra(TextSelectActivity.EXTRA_QUERY, org.fossify.gallery.helpers.SmartSearch.lastQuery)
+                            // ešte neuložené otočenie fotky vo vieweri — výber textu ukáže fotku tak, ako ju vidno
+                            putExtra(TextSelectActivity.EXTRA_ROTATION, getCurrentPhotoFragment()?.mCurrentRotationDegrees ?: 0)
                         }
                     )
                 }
@@ -1610,7 +1654,7 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
                 try {
                     val cm = getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
                     cm.setPrimaryClip(android.content.ClipData.newPlainText("OCR", text))
-                    android.widget.Toast.makeText(this, org.fossify.commons.R.string.value_copied_to_clipboard, android.widget.Toast.LENGTH_SHORT).show()
+                    android.widget.Toast.makeText(this, R.string.ocr_copied, android.widget.Toast.LENGTH_SHORT).show()
                 } catch (ignored: Throwable) {
                 }
             }
@@ -1772,8 +1816,9 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
             orientation = android.widget.LinearLayout.VERTICAL
             setPadding(px(20), px(16), px(20), px(20))
         }
+        // MyTextView/MyButton namiesto holých widgetov — farby textu a tlačidiel im dá updateTextColors
         fun addText(text: CharSequence, bold: Boolean = false, size: Float = 15f) {
-            root.addView(android.widget.TextView(this).apply {
+            root.addView(MyTextView(this).apply {
                 this.text = text
                 textSize = size
                 if (bold) setTypeface(typeface, android.graphics.Typeface.BOLD)
@@ -1783,7 +1828,7 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
         addText(path.substringAfterLast('/'), bold = true, size = 16f)
         if (geo != null) {
             addText("📍 %.5f, %.5f".format(geo.lat, geo.lon))
-            root.addView(android.widget.Button(this).apply {
+            root.addView(MyButton(this).apply {
                 text = getString(R.string.info_show_on_map)
                 setOnClickListener { showFileOnMap(path) }
             })
@@ -1795,21 +1840,30 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
         } else {
             addText(getString(R.string.info_no_people, faceCount))
         }
-        root.addView(android.widget.Button(this).apply {
+        root.addView(MyButton(this).apply {
             text = getString(R.string.info_tag_people)
-            setOnClickListener { openTagFaces() }
+            setOnClickListener { openTagFaces(path) }
         })
-        val scroll = android.widget.ScrollView(this).apply { addView(root) }
-        com.google.android.material.bottomsheet.BottomSheetDialog(this).apply {
+        updateTextColors(root)
+
+        // pozadie panela podľa témy appky (rovnaký vzor ako PlaybackSpeedFragment), nie predvolená farba Material témy
+        val sheetBackground = ResourcesCompat.getDrawable(resources, org.fossify.commons.R.drawable.bottom_sheet_bg, theme) as LayerDrawable
+        sheetBackground.findDrawableByLayerId(org.fossify.commons.R.id.bottom_sheet_background).applyColorFilter(getProperBackgroundColor())
+        val scroll = android.widget.ScrollView(this).apply {
+            addView(root)
+            background = sheetBackground
+        }
+        com.google.android.material.bottomsheet.BottomSheetDialog(this, R.style.CustomBottomSheetDialogTheme).apply {
             setContentView(scroll)
             show()
         }
     }
 
-    private fun openTagFaces() {
+    private fun openTagFaces(path: String) {
         startActivity(
             Intent(this, FaceTaggingActivity::class.java)
                 .putExtra(FaceTaggingActivity.MODE, FaceTaggingActivity.MODE_UNLABELED)
+                .putExtra(EXTRA_TAG_MEDIA_PATH, path)
         )
     }
 
@@ -1835,6 +1889,8 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
 
     override fun onPageSelected(position: Int) {
         if (mPos != position) {
+            // video pohyblivej fotky patrí predchádzajúcej stránke (šípky, swipe, listovanie z klávesnice)
+            stopMotionInline()
             mPos = position
             updateActionbarTitle()
             refreshMenuItems()

@@ -10,6 +10,7 @@ import android.provider.MediaStore
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import org.fossify.commons.helpers.ensureBackgroundThread
+import org.fossify.gallery.R
 import java.io.File
 
 // CLIP indexovanie: stiahne modely (ak treba) a pre každú fotku spočíta 512-dim vektor (clip.db).
@@ -22,6 +23,9 @@ object ClipIndexer {
     private const val MAX_DECODE = 512
     private const val CHANNEL_ID = "clip_indexing"
     private const val NOTIF_ID = 49235
+
+    // chyba so zrozumiteľnou správou pre používateľa (bez názvu triedy výnimky)
+    private class UserError(message: String) : Exception(message)
 
     fun index(
         context: Context,
@@ -39,19 +43,21 @@ object ClipIndexer {
                 if (notify) ensureChannel(appCtx)
                 // 1) modely (stiahnutie pri prvom behu)
                 val ok = ClipModels.ensure(appCtx, { isRunning }) { phase, pct ->
-                    onProgress("Sťahujem $phase", pct, 100)
-                    if (notify) notifyProgress(appCtx, "Sťahujem CLIP $phase", pct, 100)
+                    onProgress(appCtx.getString(R.string.q1_clip_phase_download, phase), pct, 100)
+                    if (notify) notifyProgress(appCtx, appCtx.getString(R.string.q1_notif_clip_download, phase), pct, 100)
                 }
-                if (!isRunning) throw InterruptedException("zastavené")
-                if (!ok) throw IllegalStateException("CLIP model sa nestiahol (skontroluj WiFi/pripojenie)")
+                if (!isRunning) throw UserError(appCtx.getString(R.string.q1_stopped))
+                if (!ok) throw UserError(appCtx.getString(R.string.q1_clip_download_failed))
 
                 // 2) indexovanie fotiek
                 val dao = ClipDatabase.getInstance(appCtx).ClipDao()
                 encoder = ClipEncoder(appCtx)
-                if (!encoder.visualReady()) throw IllegalStateException("Vizuálny model sa nenačítal")
+                if (!encoder.visualReady()) throw UserError(appCtx.getString(R.string.q1_clip_load_failed))
 
-                val processed = dao.getIndexedPaths().toHashSet()
-                val todo = queryImages(appCtx).filter { it !in processed }
+                // vylúčené a zamknuté priečinky sa nespracúvajú; ich staré riadky sa z indexu zmažú
+                val scope = org.fossify.gallery.faces.IndexScope(appCtx)
+                val processed = scope.keepAllowed(dao.getIndexedPaths()) { dao.deletePaths(it) }
+                val todo = queryImages(appCtx).filter { it !in processed && scope.allows(it) }
                 val total = todo.size
                 var done = 0
                 for (path in todo) {
@@ -69,15 +75,15 @@ object ClipIndexer {
                     }
                     done++
                     if (done % 5 == 0 || done == total) {
-                        onProgress("CLIP", done, total)
-                        if (notify) notifyProgress(appCtx, "CLIP indexujem", done, total)
+                        onProgress(appCtx.getString(R.string.q1_clip_phase_index), done, total)
+                        if (notify) notifyProgress(appCtx, appCtx.getString(R.string.q1_notif_clip_index), done, total)
                     }
                 }
                 cancelNotification(appCtx)
                 onDone(safeCount(dao))
             } catch (e: Throwable) {
                 cancelNotification(appCtx)
-                onError(e.javaClass.simpleName + (e.message?.let { ": " + it.take(140) } ?: ""))
+                if (e is UserError) onError(e.message ?: "") else onError(e.javaClass.simpleName + (e.message?.let { ": " + it.take(140) } ?: ""))
             } finally {
                 encoder?.close()
                 isRunning = false
@@ -94,11 +100,10 @@ object ClipIndexer {
     private fun ensureChannel(context: Context) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val nm = context.getSystemService(NotificationManager::class.java) ?: return
-            if (nm.getNotificationChannel(CHANNEL_ID) == null) {
-                nm.createNotificationChannel(
-                    NotificationChannel(CHANNEL_ID, "CLIP hľadanie", NotificationManager.IMPORTANCE_LOW)
-                )
-            }
+            // vždy (aj keď kanál existuje) — systém tak premenuje kanál vytvorený staršou verziou
+            nm.createNotificationChannel(
+                NotificationChannel(CHANNEL_ID, context.getString(R.string.q1_channel_clip), NotificationManager.IMPORTANCE_LOW)
+            )
         }
     }
 
@@ -113,6 +118,8 @@ object ClipIndexer {
                 .setOnlyAlertOnce(true)
                 .build()
             NotificationManagerCompat.from(context).notify(NOTIF_ID, notification)
+        } catch (ignored: SecurityException) {
+            // bez povolenia na notifikácie (Android 13+) — priebeh len nezobrazíme
         } catch (ignored: Throwable) {
         }
     }

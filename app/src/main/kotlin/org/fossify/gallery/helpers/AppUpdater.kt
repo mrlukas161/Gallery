@@ -24,7 +24,14 @@ object AppUpdater {
 
     data class Update(val versionName: String, val versionCode: Int, val apkUrl: String)
 
-    fun checkForUpdate(activity: Activity, force: Boolean, onResult: (Update?) -> Unit) {
+    // onError = kontrola sa nepodarila (sieť, GitHub API, poškodená odpoveď) — inak by sa to tvárilo
+    // ako „Máš najnovšiu verziu". Ak onError chýba (automatická kontrola), zlyhanie sa ticho ignoruje.
+    fun checkForUpdate(
+        activity: Activity,
+        force: Boolean,
+        onError: (() -> Unit)? = null,
+        onResult: (Update?) -> Unit,
+    ) {
         val config = activity.config
         if (!force) {
             if (!config.checkForAppUpdates) {
@@ -38,14 +45,18 @@ object AppUpdater {
         }
 
         ensureBackgroundThread {
+            var failed = false
             val update = try {
                 fetchLatest()
             } catch (e: Exception) {
+                failed = true
                 null
             }
             config.lastAppUpdateCheckTS = System.currentTimeMillis()
             activity.runOnUiThread {
-                if (update != null && update.versionCode > BuildConfig.VERSION_CODE) {
+                if (failed && onError != null) {
+                    onError()
+                } else if (update != null && update.versionCode > BuildConfig.VERSION_CODE) {
                     onResult(update)
                 } else {
                     onResult(null)

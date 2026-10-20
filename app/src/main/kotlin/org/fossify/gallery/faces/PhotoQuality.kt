@@ -2,12 +2,10 @@ package org.fossify.gallery.faces
 
 import android.content.Context
 import android.graphics.Bitmap
-import android.graphics.BitmapFactory
 import com.google.mediapipe.framework.image.BitmapImageBuilder
 import com.google.mediapipe.tasks.core.BaseOptions
 import com.google.mediapipe.tasks.vision.core.RunningMode
 import com.google.mediapipe.tasks.vision.facelandmarker.FaceLandmarker
-import java.io.File
 
 // Hodnotenie kvality fotky pre komparátor: expozícia (clipnuté tiene/svetlá) + tváre — zavreté oči
 // a úsmev cez MediaPipe blendshapes (eyeBlink*, mouthSmile*); ak model blendshapes nevráti,
@@ -127,20 +125,9 @@ class PhotoQuality(context: Context) {
         }
     }
 
-    private fun decode(path: String): Bitmap? {
-        if (!File(path).exists()) return null
-        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-        BitmapFactory.decodeFile(path, bounds)
-        val w = bounds.outWidth
-        val h = bounds.outHeight
-        if (w <= 0 || h <= 0) return null
-        var sample = 1
-        while (w / sample > 800 || h / sample > 800) sample *= 2
-        return BitmapFactory.decodeFile(path, BitmapFactory.Options().apply {
-            inSampleSize = sample
-            inPreferredConfig = Bitmap.Config.ARGB_8888
-        })
-    }
+    // VŽDY „na stojato" podľa EXIF (ako indexer tvárí) — landmarker zvláda náklon len ~±30–45°,
+    // takže na neotočenej fotke na výšku tváre nenašiel a zavreté oči/úsmev sa nikdy nezapočítali
+    private fun decode(path: String): Bitmap? = UprightDecoder.decode(path, 800)?.bitmap
 
     fun close() {
         try {

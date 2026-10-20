@@ -6,8 +6,12 @@ import android.os.Bundle
 import android.text.Editable
 import android.text.TextWatcher
 import androidx.recyclerview.widget.GridLayoutManager
+import org.fossify.commons.extensions.applyColorFilter
 import org.fossify.commons.extensions.beGone
 import org.fossify.commons.extensions.beVisible
+import org.fossify.commons.extensions.getDatePickerDialogTheme
+import org.fossify.commons.extensions.getProperTextColor
+import org.fossify.commons.extensions.updateTextColors
 import org.fossify.commons.extensions.viewBinding
 import org.fossify.commons.helpers.NavigationIcon
 import org.fossify.commons.helpers.ensureBackgroundThread
@@ -39,6 +43,16 @@ class PeopleSearchActivity : SimpleActivity() {
     private var timeTo = Long.MAX_VALUE
     private var lastResults: List<String> = emptyList()
     private var qrOnly = false
+    private var searchAdapter: PhotoPathsAdapter? = null
+
+    // poradové číslo hľadania (len UI vlákno) — výsledok staršieho, pomalšieho hľadania
+    // nesmie prepísať výsledky novšieho (napr. pri rýchlom písaní)
+    private var searchGeneration = 0
+
+    // fotky zmazané z výsledkov (kôš) — OCR/osobný index o nich ešte vie, no do výsledkov sa vrátiť nesmú
+    private val deletedPaths = HashSet<String>()
+    private var indexLoaded = false
+    private var resumedOnce = false
     private val prefs by lazy { getSharedPreferences("galeria_faces", android.content.Context.MODE_PRIVATE) }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -47,6 +61,11 @@ class PeopleSearchActivity : SimpleActivity() {
         val lm = GridLayoutManager(this, prefs.getInt("search_columns", COLUMNS))
         binding.searchGrid.layoutManager = lm
         GridZoom.setup(binding.searchGrid, lm, prefs, "search_columns")
+        setupEdgeToEdge(
+            padTopSystem = listOf(binding.searchAppbar),
+            padBottomImeAndSystem = listOf(binding.searchGrid),
+        )
+        setupMaterialScrollListener(binding.searchGrid, binding.searchAppbar)
         binding.searchInput.addTextChangedListener(object : TextWatcher {
             override fun afterTextChanged(s: Editable?) = runSearch()
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
@@ -71,7 +90,6 @@ class PeopleSearchActivity : SimpleActivity() {
 
     override fun onResume() {
         super.onResume()
-        setupTopAppBar(binding.searchAppbar, NavigationIcon.Arrow)
         binding.searchToolbar.menu.clear()
         binding.searchToolbar.inflateMenu(R.menu.menu_people_search)
         binding.searchToolbar.menu.findItem(R.id.toggle_qr_filter)?.isChecked = qrOnly
@@ -90,6 +108,15 @@ class PeopleSearchActivity : SimpleActivity() {
                 else -> false
             }
         }
+        // až po naplnení menu — setupTopAppBar farbí ikony, ktoré v lište práve sú
+        setupTopAppBar(binding.searchAppbar, NavigationIcon.Arrow)
+        // panel pod lištou (pole hľadania, prepínače, dátumy) a placeholder vo farbách témy
+        updateTextColors(binding.searchAppbar)
+        binding.searchTimeClear.applyColorFilter(getProperTextColor())
+        binding.searchPlaceholder.setTextColor(getProperTextColor())
+        // návrat z prehliadača / značenia tvárí: osoby priradené medzitým sa musia prejaviť vo výsledkoch
+        // (prvé zobrazenie index načítal onCreate)
+        if (resumedOnce) loadIndex() else resumedOnce = true
     }
 
     override fun onDestroy() {
@@ -121,6 +148,7 @@ class PeopleSearchActivity : SimpleActivity() {
         if (cur in 1 until Long.MAX_VALUE) cal.timeInMillis = cur
         DatePickerDialog(
             this,
+            getDatePickerDialogTheme(),
             { _, y, m, d ->
                 val c = Calendar.getInstance()
                 if (isFrom) {
@@ -174,15 +202,19 @@ class PeopleSearchActivity : SimpleActivity() {
             val m = FaceMediaMeta.load(this, pp.keys)
             runOnUiThread {
                 if (isDestroyed || isFinishing) return@runOnUiThread
+                // výsledky sa prepočítajú len pri prvom načítaní alebo keď sa index naozaj zmenil
+                val changed = !indexLoaded || pers != persons || pp != photoPersons
+                indexLoaded = true
                 persons = pers
                 photoPersons = pp
                 meta = m
-                runSearch()
+                if (changed) runSearch()
             }
         }
     }
 
     private fun runSearch() {
+        val generation = ++searchGeneration
         val rawQuery = binding.searchInput.text?.toString().orEmpty().trim()
         // zapamätaj dopyt aj z tohto hľadania — TextSelectActivity ním predznačí nájdené
         // slová priamo na fotke (rovnako ako hlavná lupa); prázdny dopyt zvýraznenie zruší
@@ -190,11 +222,16 @@ class PeopleSearchActivity : SimpleActivity() {
         val tokens = rawQuery.split(Regex("\\s+")).filter { it.isNotBlank() }
         val onlyQr = qrOnly
         if (tokens.isEmpty() && !onlyQr) {
+            lastResults = emptyList()
             showResults(emptyList(), hint = true)
             return
         }
         val textMode = binding.searchScopeSwitch.isChecked
         val and = binding.searchAndSwitch.isChecked
+        // stav obrazovky sa číta na UI vlákne — pozadie pracuje so snímkou z času spustenia
+        val from = timeFrom
+        val to = timeTo
+        val metaSnapshot = meta
         ensureBackgroundThread {
             val qrSet: HashSet<String>? = if (onlyQr) {
                 try {
@@ -217,16 +254,19 @@ class PeopleSearchActivity : SimpleActivity() {
             if (qrSet != null && tokens.isNotEmpty()) {
                 rawPaths = rawPaths.filter { qrSet.contains(it) }
             }
-            val missing = rawPaths.filter { !meta.containsKey(it) }
+            val missing = rawPaths.filter { !metaSnapshot.containsKey(it) }
             val extra = if (missing.isNotEmpty()) FaceMediaMeta.load(this, missing) else emptyMap()
-            fun taken(p: String) = meta[p]?.taken ?: extra[p]?.taken ?: 0L
+            fun taken(p: String) = metaSnapshot[p]?.taken ?: extra[p]?.taken ?: 0L
             val filtered = rawPaths
-                .filter { val t = taken(it); t in timeFrom..timeTo }
+                .filter { val t = taken(it); t in from..to }
                 .sortedByDescending { taken(it) }
             runOnUiThread {
                 if (isDestroyed || isFinishing) return@runOnUiThread
-                lastResults = filtered
-                showResults(filtered, hint = false)
+                if (generation != searchGeneration) return@runOnUiThread // medzitým beží novšie hľadanie
+                // fotky zmazané v tejto obrazovke sa do výsledkov nevrátia, kým o nich vie starý index
+                val shown = filtered.filter { !deletedPaths.contains(it) }
+                lastResults = shown
+                showResults(shown, hint = false)
             }
         }
     }
@@ -262,19 +302,50 @@ class PeopleSearchActivity : SimpleActivity() {
     }
 
     private fun showResults(paths: List<String>, hint: Boolean) {
-        if (paths.isEmpty()) {
+        updateResultsHeader(paths.size, hint)
+        val existing = searchAdapter
+        if (existing == null) {
+            val adapter = PhotoPathsAdapter(
+                this, ArrayList(paths), binding.searchGrid,
+                onClick = { path -> openPhoto(path) },
+                onDeleted = { deleted -> onResultsDeleted(deleted) },
+                onChanged = { renamed -> onResultsRenamed(renamed) },
+            )
+            searchAdapter = adapter
+            binding.searchGrid.adapter = adapter
+        } else if (existing.paths != paths) {
+            // adaptér vzniká len RAZ — pri písaní do hľadania sa mení len obsah (updateItems), mriežka
+            // neskáče na začiatok; rovnaké výsledky sa nedotknú vôbec (ostane scroll aj prebiehajúci výber)
+            existing.updateItems(paths)
+        }
+    }
+
+    private fun updateResultsHeader(count: Int, hint: Boolean) {
+        if (count == 0) {
             binding.searchPlaceholder.text =
                 getString(if (hint) R.string.search_hint_people else R.string.search_no_results)
             binding.searchPlaceholder.beVisible()
         } else {
             binding.searchPlaceholder.beGone()
         }
-        binding.searchCount.text = getString(R.string.search_count, paths.size)
-        val list = ArrayList(paths)
-        binding.searchGrid.adapter = PhotoPathsAdapter(
-            this, list, binding.searchGrid,
-            onClick = { path -> openPhoto(path) },
-        )
+        binding.searchCount.text = getString(R.string.search_count, count)
+    }
+
+    // fotky zmazané vo výberovom režime: adaptér si mriežku upravil sám, tu zosúladíme dáta obrazovky
+    // (mapa a prehliadač berú lastResults, počet výsledkov) a zapamätáme si ich, nech ich nevzkriesi ďalšie hľadanie
+    private fun onResultsDeleted(deleted: List<String>) {
+        val gone = deleted.toHashSet()
+        deletedPaths.addAll(gone)
+        lastResults = lastResults.filter { !gone.contains(it) }
+        updateResultsHeader(lastResults.size, false)
+    }
+
+    // premenované / odkryté fotky (stará cesta -> nová): mapa a prehliadač dostanú novú cestu; index
+    // (osoby, text, QR) ju pozná pod starou, preto si starú zapamätáme ako zmiznutú — ďalšie hľadanie ju nevzkriesi
+    private fun onResultsRenamed(renamed: Map<String, String>) {
+        if (renamed.isEmpty()) return
+        deletedPaths.addAll(renamed.keys)
+        lastResults = lastResults.map { renamed[it] ?: it }
     }
 
     private fun openPhoto(path: String) {

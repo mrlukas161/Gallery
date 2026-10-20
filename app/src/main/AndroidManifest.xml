@@ -30,9 +30,8 @@
         android:name="android.permission.MANAGE_MEDIA"
         tools:ignore="ProtectedPermissions" />
 
-    <uses-permission
-        android:name="android.permission.ACCESS_NETWORK_STATE"
-        tools:node="remove" />
+    <!-- potrebné pre ClipModels.isMeteredNetwork() - CLIP model sa nesťahuje na mobilných dátach -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
     <uses-permission
         android:name="android.permission.CAMERA"
@@ -194,27 +193,20 @@
             android:configChanges="orientation"
             android:exported="false"
             android:label="@string/memories_title"
-            android:parentActivityName=".activities.ExploreActivity" />
+            android:parentActivityName=".activities.MainActivity" />
 
         <activity
             android:name=".activities.SpecialActivity"
             android:configChanges="orientation"
             android:exported="false"
             android:label="@string/special_title"
-            android:parentActivityName=".activities.ExploreActivity" />
+            android:parentActivityName=".activities.MainActivity" />
 
         <activity
             android:name=".activities.DocsActivity"
             android:configChanges="orientation"
             android:exported="false"
             android:label="@string/docs_title"
-            android:parentActivityName=".activities.ExploreActivity" />
-
-        <activity
-            android:name=".activities.ExploreActivity"
-            android:configChanges="orientation"
-            android:exported="false"
-            android:label="@string/explore_title"
             android:parentActivityName=".activities.MainActivity" />
 
         <activity
@@ -345,10 +337,6 @@
                 android:name="android.support.FILE_PROVIDER_PATHS"
                 android:resource="@xml/provider_paths" />
         </provider>
-
-        <receiver
-            android:name=".receivers.UpdateResultReceiver"
-            android:exported="false" />
 
         <receiver
             android:name=".receivers.RefreshMediaReceiver"

@@ -26,8 +26,10 @@ object GeoIndexer {
         ensureBackgroundThread {
             try {
                 val dao = GeoDatabase.getInstance(appCtx).GeoDao()
-                val processed = dao.getIndexedPaths().toHashSet()
-                val todo = (queryImages(appCtx) + queryVideos(appCtx)).filter { it !in processed }
+                // vylúčené a zamknuté priečinky sa nespracúvajú; ich staré riadky sa z indexu zmažú
+                val scope = IndexScope(appCtx)
+                val processed = scope.keepAllowed(dao.getIndexedPaths()) { dao.deletePaths(it) }
+                val todo = (queryImages(appCtx) + queryVideos(appCtx)).filter { it !in processed && scope.allows(it) }
                 val total = todo.size
                 var done = 0
                 for (path in todo) {

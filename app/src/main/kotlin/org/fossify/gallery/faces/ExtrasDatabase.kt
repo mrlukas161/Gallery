@@ -7,6 +7,8 @@ import androidx.room.RoomDatabase
 
 // Samostatná databáza pre "extra" metadáta (ignorované tváre + skupiny osôb).
 // Oddelená od people.db, aby pridanie týchto funkcií NIKDY nevynútilo reset labelov/anchorov.
+// ⛔ ŽIADNY fallbackToDestructiveMigration (skupiny osôb a odložené tváre by zmizli potichu) —
+// pri zmene entít zvýš `version` A pridaj Migration, pozri PeopleDatabase.
 @Database(
     entities = [IgnoredFaceEntity::class, PersonGroupEntity::class, GroupMemberEntity::class],
     version = 1,
@@ -22,7 +24,6 @@ abstract class ExtrasDatabase : RoomDatabase() {
                 synchronized(ExtrasDatabase::class) {
                     if (db == null) {
                         db = Room.databaseBuilder(context.applicationContext, ExtrasDatabase::class.java, "extras.db")
-                            .fallbackToDestructiveMigration()
                             .build()
                     }
                 }

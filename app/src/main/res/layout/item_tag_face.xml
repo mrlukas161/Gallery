@@ -10,16 +10,17 @@
         android:layout_height="wrap_content"
         android:scaleType="centerCrop" />
 
+    <!-- fajka vybranej tváre — rovnaký vzhľad ako v mriežke fotiek (farby témy sa nastavia v adaptéri) -->
     <ImageView
         android:id="@+id/tag_face_check"
-        android:layout_width="26dp"
-        android:layout_height="26dp"
+        android:layout_width="@dimen/selection_check_size"
+        android:layout_height="@dimen/selection_check_size"
         android:layout_gravity="top|end"
-        android:layout_margin="4dp"
-        android:background="#CC1976D2"
+        android:layout_margin="@dimen/medium_margin"
+        android:background="@drawable/circle_background"
         android:contentDescription="@string/tag_faces_title"
-        android:padding="3dp"
-        android:src="@android:drawable/checkbox_on_background"
+        android:padding="@dimen/tiny_margin"
+        android:src="@drawable/ic_check_vector"
         android:visibility="gone" />
 
 </FrameLayout>

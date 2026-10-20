@@ -10,10 +10,11 @@ import android.provider.MediaStore
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import org.fossify.commons.helpers.ensureBackgroundThread
+import org.fossify.gallery.R
 import java.io.File
 
-// B2: indexovanie = detekcia + ODTLAČOK pre každú tvár (faces.db). Po dokončení sa odtlačky
-// zoskupia a vráti sa počet osôb. Beží na bežnom vlákne (robustnosť FGS/WorkManager = B4).
+// B2: indexovanie = detekcia + ODTLAČOK pre každú tvár (faces.db); po dokončení vráti počet tvárí
+// a fotiek s tvárami. Beží na bežnom vlákne (robustnosť FGS/WorkManager = B4).
 object FaceIndexer {
     @Volatile
     var isRunning = false
@@ -22,12 +23,15 @@ object FaceIndexer {
     private const val MAX_DECODE_SIZE = 1024
     private const val CHANNEL_ID = "face_indexing"
     private const val NOTIF_ID = 49231
+    private const val KEY_REPAIR_AT = "faces_embed_repair_at"
+    private const val REPAIR_INTERVAL_MS = 24 * 60 * 60 * 1000L
+    private const val REPAIR_MAX_PHOTOS = 100
 
     fun index(
         context: Context,
         notify: Boolean = true,
         onProgress: (done: Int, total: Int) -> Unit,
-        onDone: (faces: Int, photos: Int, info: String) -> Unit,
+        onDone: (faces: Int, photos: Int) -> Unit,
         onError: (message: String) -> Unit,
     ) {
         if (isRunning) return
@@ -39,47 +43,61 @@ object FaceIndexer {
             var landmarker: FaceLandmarkHelper? = null
             try {
                 val dao = FacesDatabase.getInstance(appCtx).FaceDao()
+                // nové tváre len s id nad všetkými odkazmi z people.db/extras.db (poistka proti posunu id)
+                if (!FacesDatabase.ensureIdsAboveReferences(appCtx)) {
+                    throw IllegalStateException(appCtx.getString(R.string.c1_faces_refs_unreadable))
+                }
                 detector = FaceDetectionHelper(appCtx)
                 embedder = FaceEmbedder(appCtx)
                 landmarker = FaceLandmarkHelper(appCtx)
                 if (notify) ensureChannel(appCtx)
 
                 val processed = dao.getProcessedPaths().toHashSet()
-                val todo = queryImages(appCtx).filter { it.second !in processed }
+                // vylúčené a zamknuté priečinky sa nespracúvajú (rozhodnutie Lukáša 20.10.2026);
+                // už uložené tváre odtiaľ sa NEmažú — UI ich len skryje
+                val scope = IndexScope(appCtx)
+                val todo = queryImages(appCtx).filter { it.second !in processed && scope.allows(it.second) }
+                // fotka bez značky „spracovaná", ale s tvárami v DB (značku zmazalo staré denné
+                // upratovanie pri dočasne nedostupnom súbore, alebo pád medzi zápisom tvárí a značky):
+                // tváre NEdetegovať nanovo, len doplniť značku — inak by vznikli nové id a menovky
+                // v people.db by ukazovali do prázdna
+                val withFaces = if (todo.isEmpty()) emptySet() else dao.getPathsWithFaces().toHashSet()
                 val total = todo.size
                 var done = 0
                 for ((mediaStoreId, path) in todo) {
                     if (!isRunning) break
+                    if (path in withFaces) {
+                        try {
+                            dao.insertIndexedPhoto(IndexedPhotoEntity(path, dao.getFaceCountForPath(path), System.currentTimeMillis()))
+                        } catch (ignored: Throwable) {
+                        }
+                        done++
+                        if (done % 5 == 0 || done == total) onProgress(done, total)
+                        continue
+                    }
                     var faceCount = 0
                     try {
                         val bmp = decodeDownscaled(path)
                         if (bmp != null) {
-                            val detected = detector.detect(bmp)
-                            faceCount = detected.size
-                            if (detected.isNotEmpty()) {
-                                val theEmbedder = embedder
-                                val theLandmarker = landmarker
-                                dao.insertFaces(detected.mapIndexed { i, f ->
-                                    val embedding = try {
-                                        val crop = FaceAligner.cropRegion(bmp, f.left, f.top, f.right, f.bottom, 0.3f)
-                                        if (crop != null) {
-                                            val e = FaceEmbedder.toBytes(FaceAligner.embedCrop(crop, theLandmarker, theEmbedder, detector).vec)
-                                            crop.recycle()
-                                            e
-                                        } else {
-                                            FaceEmbedder.toBytes(theEmbedder.embed(bmp, f))
-                                        }
-                                    } catch (e: Throwable) {
-                                        null
-                                    }
-                                    FaceEntity(
-                                        id = null, mediaFullPath = path, mediaStoreId = mediaStoreId, faceIndex = i,
-                                        bboxLeft = f.left, bboxTop = f.top, bboxRight = f.right, bboxBottom = f.bottom,
-                                        score = f.score, embedding = embedding, detectedAt = System.currentTimeMillis(),
-                                    )
-                                })
+                            try {
+                                val detected = detector.detect(bmp)
+                                faceCount = detected.size
+                                if (detected.isNotEmpty()) {
+                                    val theEmbedder = embedder
+                                    val theLandmarker = landmarker
+                                    dao.insertFaces(detected.mapIndexed { i, f ->
+                                        FaceEntity(
+                                            id = null, mediaFullPath = path, mediaStoreId = mediaStoreId, faceIndex = i,
+                                            bboxLeft = f.left, bboxTop = f.top, bboxRight = f.right, bboxBottom = f.bottom,
+                                            score = f.score,
+                                            embedding = FaceAligner.embedDetected(bmp, f, theLandmarker, theEmbedder, detector),
+                                            detectedAt = System.currentTimeMillis(),
+                                        )
+                                    })
+                                }
+                            } finally {
+                                bmp.recycle()
                             }
-                            bmp.recycle()
                         }
                         dao.insertIndexedPhoto(IndexedPhotoEntity(path, faceCount, System.currentTimeMillis()))
                     } catch (ignored: Throwable) {
@@ -92,15 +110,10 @@ object FaceIndexer {
                     }
                 }
                 cancelNotification(appCtx)
-                val info = try {
-                    val embs = dao.getAllEmbeddings().map { FaceEmbedder.toFloats(it) }
-                    val thresholds = floatArrayOf(0.35f, 0.40f, 0.45f, 0.50f, 0.55f, 0.60f, 0.65f, 0.70f)
-                    val counts = FaceClusterer.countPersonsAtThresholds(embs, thresholds)
-                    thresholds.indices.joinToString("  ") { "${thresholds[it]}->${counts[it]}" }
-                } catch (e: Throwable) {
-                    "?"
-                }
-                onDone(safeFaceCount(dao), safePhotoCount(dao), info)
+                if (isRunning) maybeRepairUnembedded(appCtx, dao, detector, embedder, landmarker)
+                // (predtým sa tu po KAŽDOM behu zhlukovali všetky odtlačky pri 8 prahoch len pre
+                // diagnostický reťazec, ktorý nikto nečítal — zbytočná záťaž CPU a batérie)
+                onDone(safeFaceCount(dao), safePhotoCount(dao))
             } catch (e: Throwable) {
                 cancelNotification(appCtx)
                 onError(describe(e))
@@ -115,6 +128,25 @@ object FaceIndexer {
 
     fun stop() {
         isRunning = false
+    }
+
+    // Raz denne skús doplniť odtlačok tváram, ktorým ho indexovanie nevypočítalo — bez neho sú
+    // v appke neviditeľné a nedajú sa označiť. Obmedzené počtom fotiek, aby to nezaťažovalo
+    // bežné (automatické) spracovanie knižnice; neopraviteľné sa skúsia znova o deň.
+    private fun maybeRepairUnembedded(
+        context: Context,
+        dao: FaceDao,
+        detector: FaceDetectionHelper,
+        embedder: FaceEmbedder,
+        landmarker: FaceLandmarkHelper,
+    ) {
+        try {
+            val prefs = context.getSharedPreferences("galeria_faces", Context.MODE_PRIVATE)
+            if (System.currentTimeMillis() - prefs.getLong(KEY_REPAIR_AT, 0L) < REPAIR_INTERVAL_MS) return
+            prefs.edit().putLong(KEY_REPAIR_AT, System.currentTimeMillis()).apply()
+            RefreshFaces.repairUnembedded(dao, detector, embedder, landmarker, REPAIR_MAX_PHOTOS) { isRunning }
+        } catch (ignored: Throwable) {
+        }
     }
 
     // Zostaví reťazec príčin (root-first), aby sme videli, čo presne zlyhalo.
@@ -136,11 +168,10 @@ object FaceIndexer {
     private fun ensureChannel(context: Context) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val nm = context.getSystemService(NotificationManager::class.java) ?: return
-            if (nm.getNotificationChannel(CHANNEL_ID) == null) {
-                nm.createNotificationChannel(
-                    NotificationChannel(CHANNEL_ID, "Rozpoznávanie tvárí", NotificationManager.IMPORTANCE_LOW)
-                )
-            }
+            // vždy (aj keď kanál existuje) — systém tak premenuje kanál vytvorený staršou verziou
+            nm.createNotificationChannel(
+                NotificationChannel(CHANNEL_ID, context.getString(R.string.q1_channel_faces), NotificationManager.IMPORTANCE_LOW)
+            )
         }
     }
 
@@ -148,13 +179,15 @@ object FaceIndexer {
         try {
             val notification = NotificationCompat.Builder(context, CHANNEL_ID)
                 .setSmallIcon(android.R.drawable.stat_notify_sync)
-                .setContentTitle("Hľadám tváre")
+                .setContentTitle(context.getString(R.string.q1_notif_faces))
                 .setContentText("$done / $total")
                 .setProgress(total, done, false)
                 .setOngoing(true)
                 .setOnlyAlertOnce(true)
                 .build()
             NotificationManagerCompat.from(context).notify(NOTIF_ID, notification)
+        } catch (ignored: SecurityException) {
+            // bez povolenia na notifikácie (Android 13+) — priebeh len nezobrazíme
         } catch (ignored: Throwable) {
         }
     }

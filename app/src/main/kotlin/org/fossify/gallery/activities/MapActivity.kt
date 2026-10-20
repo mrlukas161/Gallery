@@ -53,6 +53,9 @@ class MapActivity : SimpleActivity() {
     private var filterQrOnly = false
     private var showPhotos = true
     private var showVideos = true
+
+    // beží indexovanie polohy (jeho stavový text má prednosť pred hlásením o prázdnej mape)
+    private var indexing = false
     private val iconCache = HashMap<Int, BitmapDrawable>()
     private val thumbCache = HashMap<String, BitmapDrawable>()
 
@@ -61,6 +64,12 @@ class MapActivity : SimpleActivity() {
         Configuration.getInstance().load(this, getSharedPreferences("osmdroid", Context.MODE_PRIVATE))
         Configuration.getInstance().userAgentValue = packageName
         setContentView(binding.root)
+        setupOptionsMenu()
+        // mapa sa kreslí aj pod systémové lišty; odsadiť treba hornú lištu a spodný stavový text
+        setupEdgeToEdge(
+            padTopSystem = listOf(binding.mapAppbar),
+            padBottomSystem = listOf(binding.mapStatusHolder)
+        )
         filterPaths = org.fossify.gallery.helpers.PathTransfer.forMap?.toHashSet()
         org.fossify.gallery.helpers.PathTransfer.forMap = null
         binding.mapView.setTileSource(TileSourceFactory.MAPNIK)
@@ -87,10 +96,17 @@ class MapActivity : SimpleActivity() {
 
     override fun onResume() {
         super.onResume()
+        // menu je naplnené už z onCreate, takže setupTopAppBar prefarbí aj jeho ikony
         setupTopAppBar(binding.mapAppbar, NavigationIcon.Arrow)
         // POZOR: sem nepridávať plošné updateTextColors — jediný text (map_status) je zámerne
         // biely na tmavom prekrytí nad mapou a prefarbenie by ho vo svetlej téme rozbilo
         if (filterPaths != null) binding.mapToolbar.title = getString(R.string.map_selection)
+        binding.mapView.onResume()
+        binding.mapView.postDelayed(zoomWatcher, 300)
+    }
+
+    // menu sa napĺňa raz v onCreate — PRED setupTopAppBar (ten prefarbí ikony len v už naplnenom menu)
+    private fun setupOptionsMenu() {
         binding.mapToolbar.menu.clear()
         binding.mapToolbar.inflateMenu(R.menu.menu_map)
         binding.mapToolbar.setOnMenuItemClickListener { item ->
@@ -101,8 +117,6 @@ class MapActivity : SimpleActivity() {
                 false
             }
         }
-        binding.mapView.onResume()
-        binding.mapView.postDelayed(zoomWatcher, 300)
     }
 
     override fun onPause() {
@@ -113,15 +127,22 @@ class MapActivity : SimpleActivity() {
 
     private fun load() {
         ensureBackgroundThread {
-            points = loadPoints()
+            // načítanie bodov nesmie zhodiť appku — pri chybe ostane prázdna mapa s hlásením
+            points = try {
+                loadPoints()
+            } catch (e: Throwable) {
+                emptyList()
+            }
             runOnUiThread {
                 if (!isDestroyed) {
                     redraw()
                     fitToPoints()
+                    updateEmptyState()
                 }
             }
         }
         if (filterPaths == null && !GeoIndexer.isRunning) {
+            indexing = true
             binding.mapStatus.text = getString(R.string.map_indexing, 0, 0)
             binding.mapStatus.beVisible()
             GeoIndexer.index(
@@ -131,14 +152,38 @@ class MapActivity : SimpleActivity() {
                 },
                 onDone = { _, _ ->
                     runOnUiThread {
+                        indexing = false
                         if (!isDestroyed) {
                             binding.mapStatus.beGone()
                             reloadPoints()
                         }
                     }
                 },
-                onError = { runOnUiThread { if (!isDestroyed) binding.mapStatus.beGone() } },
+                onError = {
+                    runOnUiThread {
+                        indexing = false
+                        if (!isDestroyed) {
+                            binding.mapStatus.beGone()
+                            updateEmptyState()
+                        }
+                    }
+                },
             )
+        }
+    }
+
+    // prázdny stav mapy: stavový text (rovnaký ako pri indexovaní) povie, že sa nenašlo nič na zobrazenie;
+    // kým beží indexovanie polohy, má stavový text prednosť a prázdny stav sa nehlási
+    private fun updateEmptyState() {
+        if (indexing) {
+            return
+        }
+
+        if (points.isEmpty()) {
+            binding.mapStatus.text = getString(R.string.c4_map_empty)
+            binding.mapStatus.beVisible()
+        } else {
+            binding.mapStatus.beGone()
         }
     }
 
@@ -262,12 +307,17 @@ class MapActivity : SimpleActivity() {
 
     private fun reloadPoints() {
         ensureBackgroundThread {
-            val p = loadPoints()
+            val p = try {
+                loadPoints()
+            } catch (e: Throwable) {
+                emptyList()
+            }
             runOnUiThread {
                 if (!isDestroyed) {
                     points = p
                     redraw()
                     if (p.isNotEmpty()) fitToPoints()
+                    updateEmptyState()
                 }
             }
         }

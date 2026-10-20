@@ -13,6 +13,10 @@ interface QrDao {
     @Query("SELECT path FROM qr_codes")
     fun getIndexedPaths(): List<String>
 
+    // riadky fotiek mimo rozsahu spracovania (zamknutý/vylúčený priečinok) — IndexScope.keepAllowed
+    @Query("DELETE FROM qr_codes WHERE path IN (:paths)")
+    fun deletePaths(paths: List<String>)
+
     @Query("SELECT COUNT(*) FROM qr_codes")
     fun count(): Int
 

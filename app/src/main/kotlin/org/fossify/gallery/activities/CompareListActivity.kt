@@ -3,9 +3,11 @@ package org.fossify.gallery.activities
 import android.content.Intent
 import android.os.Bundle
 import android.provider.MediaStore
+import androidx.core.graphics.ColorUtils
 import androidx.recyclerview.widget.GridLayoutManager
 import org.fossify.commons.extensions.beGone
 import org.fossify.commons.extensions.beVisible
+import org.fossify.commons.extensions.getProperPrimaryColor
 import org.fossify.commons.extensions.getProperTextColor
 import org.fossify.commons.extensions.viewBinding
 import org.fossify.commons.helpers.NavigationIcon
@@ -26,6 +28,12 @@ class CompareListActivity : SimpleActivity() {
         super.onCreate(savedInstanceState)
         setContentView(binding.root)
         binding.compareListGrid.layoutManager = GridLayoutManager(this, COLUMNS)
+        // jednotne s ostatnými obrazovkami: obsah nezasahuje pod stavový/navigačný pruh, lišta sa pri scrolle prefarbí
+        setupEdgeToEdge(
+            padTopSystem = listOf(binding.compareListAppbar),
+            padBottomSystem = listOf(binding.compareListGrid)
+        )
+        setupMaterialScrollListener(binding.compareListGrid, binding.compareListAppbar)
         val tabs = binding.compareListTabs
         tabs.addTab(tabs.newTab().setText(R.string.tab_bursts))
         tabs.addTab(tabs.newTab().setText(R.string.tab_duplicates))
@@ -44,6 +52,11 @@ class CompareListActivity : SimpleActivity() {
     override fun onResume() {
         super.onResume()
         setupTopAppBar(binding.compareListAppbar, NavigationIcon.Arrow)
+        // záložky pod lištou: pozadie preberajú od lišty (tá sa prefarbuje podľa témy), farby textu a
+        // indikátora dopočítať z témy — nie pevná zelená/biela z XML
+        val textColor = getProperTextColor()
+        binding.compareListTabs.setTabTextColors(ColorUtils.setAlphaComponent(textColor, TAB_UNSELECTED_ALPHA), textColor)
+        binding.compareListTabs.setSelectedTabIndicatorColor(getProperPrimaryColor())
         // len placeholder — dlaždice skupín majú vlastný biely počet na tmavom prekrytí,
         // plošné updateTextColors by ho vo svetlej téme prefarbilo na tmavý (nečitateľný)
         binding.compareListPlaceholder.setTextColor(getProperTextColor())
@@ -91,7 +104,10 @@ class CompareListActivity : SimpleActivity() {
     private fun buildGroups(): List<List<String>> {
         return if (duplicatesMode) {
             val hashes = PhashDatabase.getInstance(this).PhashDao().getAllHashes()
+            // index podobnosti môže držať aj fotky, ktoré medzitým zmizli (zmazané, presunuté do Koša)
             PhashGrouper.groupBySimilarity(hashes)
+                .map { group -> group.filter { java.io.File(it).exists() } }
+                .filter { it.size >= 2 }
         } else {
             buildBurstGroups()
         }
@@ -177,6 +193,7 @@ class CompareListActivity : SimpleActivity() {
     companion object {
         private const val COLUMNS = 3
         private const val GROUP_GAP_MS = 3000L
+        private const val TAB_UNSELECTED_ALPHA = 179 // ~70 %
 
         // názvy typu IMG_1234.BURST001 / IMG_20240101_120000_BURST2 -> spoločný kľúč série
         private val BURST_NAME = Regex("""^(.*?)[._-]?BURST\d+""", RegexOption.IGNORE_CASE)

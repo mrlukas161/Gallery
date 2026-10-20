@@ -42,6 +42,15 @@ class SettingsActivity : SimpleActivity() {
     private var mRecycleBinContentSize = 0L
     private val binding by viewBinding(ActivitySettingsBinding::inflate)
 
+    // hľadanie v nastaveniach: kým je aktívne, filterEligible drží riadky, ktoré smie zobraziť
+    private var settingsFilterActive = false
+    private val filterEligible = HashSet<View>()
+
+    // posledný počet fotiek v knižnici (dotaz na MediaStore je drahý, prehľad sa obnovuje každé 1,5 s)
+    private var cachedPhotoCount = 0
+    private var cachedPhotoCountAt = 0L
+    private val overviewRefreshing = java.util.concurrent.atomic.AtomicBoolean(false)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(binding.root)
@@ -51,6 +60,8 @@ class SettingsActivity : SimpleActivity() {
             padBottomSystem = listOf(binding.settingsNestedScrollview)
         )
         setupMaterialScrollListener(binding.settingsNestedScrollview, binding.settingsAppbar)
+        // jediný poslucháč na celý život obrazovky (setupSettingItems beží pri každom onResume)
+        setupSettingsSearch()
     }
 
     override fun onResume() {
@@ -67,6 +78,8 @@ class SettingsActivity : SimpleActivity() {
     }
 
     private fun setupSettingItems() {
+        // hľadanie dočasne skrýva riadky — pred novým nastavením riadkov ho zruš, nižšie sa znova použije
+        releaseSettingsFilter()
         setupCustomizeColors()
         setupUseEnglish()
         setupLanguage()
@@ -126,7 +139,6 @@ class SettingsActivity : SimpleActivity() {
         setupAdvancedToggle()
         setupChangelog()
         setupPerfMode()
-        setupIndexAll()
         setupAutoIndex()
         setupFaceIndexing()
         setupFaceAuto()
@@ -140,7 +152,7 @@ class SettingsActivity : SimpleActivity() {
         setupClipMl()
         setupPcServer()
         setupCheckForUpdates()
-        setupSettingsSearch()
+        setupAutoUpdateCheck()
         setupExportFavorites()
         setupImportFavorites()
         setupExportSettings()
@@ -159,10 +171,14 @@ class SettingsActivity : SimpleActivity() {
             binding.settingsFileOperationsLabel,
             binding.settingsBottomActionsLabel,
             binding.settingsRecycleBinLabel,
+            binding.settingsGaleriaLabel,
             binding.settingsMigratingLabel
         ).forEach {
             it.setTextColor(getProperPrimaryColor())
         }
+
+        // hľadanie v nastaveniach (ak je v poli text) sa použije na čerstvo nastavené riadky
+        reapplySettingsFilter()
     }
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, resultData: Intent?) {
@@ -811,7 +827,15 @@ class SettingsActivity : SimpleActivity() {
     private fun setupCheckForUpdates() {
         binding.settingsCheckUpdatesHolder.setOnClickListener {
             binding.settingsCheckUpdatesSummary.text = getString(R.string.checking_updates)
-            AppUpdater.checkForUpdate(this, force = true) { update ->
+            AppUpdater.checkForUpdate(
+                this,
+                force = true,
+                onError = {
+                    if (!isDestroyed) {
+                        binding.settingsCheckUpdatesSummary.text = getString(R.string.q1_update_check_error)
+                    }
+                },
+            ) { update ->
                 if (!isDestroyed) {
                     if (update == null) {
                         binding.settingsCheckUpdatesSummary.text = getString(R.string.up_to_date)
@@ -838,6 +862,15 @@ class SettingsActivity : SimpleActivity() {
         }
     }
 
+    // Automatická kontrola (raz denne pri otvorení appky) sa dá vypnúť; ručná kontrola vyššie funguje stále.
+    private fun setupAutoUpdateCheck() {
+        binding.settingsAutoUpdateCheck.isChecked = config.checkForAppUpdates
+        binding.settingsAutoUpdateCheckHolder.setOnClickListener {
+            binding.settingsAutoUpdateCheck.toggle()
+            config.checkForAppUpdates = binding.settingsAutoUpdateCheck.isChecked
+        }
+    }
+
     private fun setupSettingsSearch() {
         binding.settingsSearch.addTextChangedListener(object : TextWatcher {
             override fun afterTextChanged(s: Editable?) {
@@ -851,14 +884,39 @@ class SettingsActivity : SimpleActivity() {
 
     // Filtruje riadky nastavení podľa textu. settings_holder obsahuje striedavo nadpisy sekcií
     // (raw TextView), riadky (ViewGroup) a oddeľovače. Nadpis sekcie ukáže iba ak má zhodný riadok.
+    //
+    // Viditeľnosť riadkov rozhodujú aj samotné nastavenia (Notch len na Pie+, správa skrytých
+    // priečinkov len do Androidu 10, položky koša len pri zapnutom koši, zbalené „Pokročilé nástroje"…),
+    // preto filter nikdy neukáže riadok, ktorý bol pri štarte hľadania skrytý (okrem pokročilých
+    // nástrojov — tie sa dajú nájsť aj zbalené). Po zmazaní hľadaného textu sa všetko vráti do stavu
+    // podľa nastavení cez setupSettingItems(), takže zbalenie „Pokročilé nástroje" ostane zachované.
     private fun filterSettings(rawQuery: String) {
         val query = rawQuery.trim().lowercase()
+        if (query.isEmpty()) {
+            if (settingsFilterActive) {
+                setupSettingItems()
+            }
+            return
+        }
+
         val holder = binding.settingsHolder
+        if (!settingsFilterActive) {
+            settingsFilterActive = true
+            val advanced = advancedHolders()
+            filterEligible.clear()
+            for (i in 0 until holder.childCount) {
+                val child = holder.getChildAt(i)
+                if (child is ViewGroup && (child.visibility == View.VISIBLE || child in advanced)) {
+                    filterEligible.add(child)
+                }
+            }
+        }
+
         var sectionLabel: View? = null
         var sectionHasMatch = false
 
         fun finishSection() {
-            sectionLabel?.visibility = if (query.isEmpty() || sectionHasMatch) View.VISIBLE else View.GONE
+            sectionLabel?.visibility = if (sectionHasMatch) View.VISIBLE else View.GONE
         }
 
         for (i in 0 until holder.childCount) {
@@ -866,7 +924,8 @@ class SettingsActivity : SimpleActivity() {
             if (child.id == R.id.settings_search) continue
             when {
                 child is ViewGroup -> {
-                    val matches = query.isEmpty() || collectText(child).contains(query)
+                    if (child !in filterEligible) continue
+                    val matches = collectText(child).contains(query)
                     child.visibility = if (matches) View.VISIBLE else View.GONE
                     if (matches) sectionHasMatch = true
                 }
@@ -875,12 +934,33 @@ class SettingsActivity : SimpleActivity() {
                     sectionLabel = child
                     sectionHasMatch = false
                 }
-                else -> {
-                    child.visibility = if (query.isEmpty()) View.VISIBLE else View.GONE
-                }
+                else -> child.visibility = View.GONE
             }
         }
         finishSection()
+    }
+
+    // Zruší účinok hľadania: nadpisy, oddeľovače a riadky, ktoré filter mohol skryť, vráti na
+    // viditeľné. Riadky skryté samotnými nastaveniami (nikdy neboli v filterEligible) nechá, ako sú.
+    private fun releaseSettingsFilter() {
+        if (!settingsFilterActive) return
+        settingsFilterActive = false
+        val holder = binding.settingsHolder
+        for (i in 0 until holder.childCount) {
+            val child = holder.getChildAt(i)
+            if (child.id == R.id.settings_search) continue
+            if (child !is ViewGroup || child in filterEligible) {
+                child.visibility = View.VISIBLE
+            }
+        }
+        filterEligible.clear()
+    }
+
+    private fun reapplySettingsFilter() {
+        val query = binding.settingsSearch.text?.toString().orEmpty()
+        if (query.isNotBlank()) {
+            filterSettings(query)
+        }
     }
 
     private fun collectText(view: View): String {
@@ -1232,27 +1312,39 @@ class SettingsActivity : SimpleActivity() {
     }
 
     private fun refreshIndexOverview() {
+        // obnova beží každých 1,5 s — ak predchádzajúca ešte nedobehla (veľká knižnica), nezakladaj ďalšie vlákno
+        if (!overviewRefreshing.compareAndSet(false, true)) return
         ensureBackgroundThread {
-            val total = org.fossify.gallery.helpers.IndexStatus.photoCount(this)
-            val items = org.fossify.gallery.helpers.IndexStatus.all(this, total)
-            val pct = org.fossify.gallery.helpers.IndexStatus.overallPercent(items)
-            val running = items.any { it.running }
-            val clipModelMissing = items.any { it.modelMissing }
-            // chyba vydrží aj reštart appky (prefs) — nezmizne skôr, než ju používateľ uvidí
-            val err = org.fossify.gallery.services.IndexingService.lastErrorPersisted(this)
-            runOnUiThread {
-                if (isDestroyed) return@runOnUiThread
-                binding.settingsIndexOverviewBar.setProgressCompat(pct, true)
-                val live = org.fossify.gallery.services.IndexingService.liveProgress
-                binding.settingsIndexOverviewSummary.text = when {
-                    live.isNotEmpty() -> live
-                    err != null -> getString(R.string.index_overview_error, err)
-                    running -> getString(R.string.index_overview_running, pct)
-                    // bez CLIP modelu nikdy nepovedať čisté „Hotovo" — povedať, čo chýba a že ťuk to stiahne
-                    pct >= 100 && clipModelMissing -> getString(R.string.a3_index_overview_done_no_clip)
-                    pct >= 100 -> getString(R.string.index_overview_done)
-                    else -> getString(R.string.index_overview_summary, pct)
+            try {
+                // počet fotiek sa pýta MediaStore (drahé) — stačí ho zistiť raz za 30 s
+                val now = System.currentTimeMillis()
+                if (now - cachedPhotoCountAt > 30_000L) {
+                    cachedPhotoCount = org.fossify.gallery.helpers.IndexStatus.photoCount(this)
+                    cachedPhotoCountAt = now
                 }
+                val total = cachedPhotoCount
+                val items = org.fossify.gallery.helpers.IndexStatus.all(this, total)
+                val pct = org.fossify.gallery.helpers.IndexStatus.overallPercent(items)
+                val running = items.any { it.running }
+                val clipModelMissing = items.any { it.modelMissing }
+                // chyba vydrží aj reštart appky (prefs) — nezmizne skôr, než ju používateľ uvidí
+                val err = org.fossify.gallery.services.IndexingService.lastErrorPersisted(this)
+                runOnUiThread {
+                    if (isDestroyed) return@runOnUiThread
+                    binding.settingsIndexOverviewBar.setProgressCompat(pct, true)
+                    val live = org.fossify.gallery.services.IndexingService.liveProgress
+                    binding.settingsIndexOverviewSummary.text = when {
+                        live.isNotEmpty() -> live
+                        err != null -> getString(R.string.index_overview_error, err)
+                        running -> getString(R.string.index_overview_running, pct)
+                        // bez CLIP modelu nikdy nepovedať čisté „Hotovo" — povedať, čo chýba a že ťuk to stiahne
+                        pct >= 100 && clipModelMissing -> getString(R.string.a3_index_overview_done_no_clip)
+                        pct >= 100 -> getString(R.string.index_overview_done)
+                        else -> getString(R.string.index_overview_summary, pct)
+                    }
+                }
+            } finally {
+                overviewRefreshing.set(false)
             }
         }
     }
@@ -1304,7 +1396,7 @@ class SettingsActivity : SimpleActivity() {
     }
 
     // Menej preplnené Nastavenia: jednotlivé funkcie (tváre, OCR, QR, duplikáty, CLIP…) sú
-    // predvolene SKRYTÉ pod „Pokročilé nástroje" — bežne stačí prehľad + „Indexovať všetko naraz".
+    // predvolene SKRYTÉ pod „Pokročilé nástroje" — bežne stačí „Spracovanie knižnice" (ťuk spustí všetko).
     private fun advancedHolders(): List<android.view.View> = listOf(
         binding.settingsFaceIndexingHolder,
         binding.settingsFaceAutoHolder,
@@ -1320,39 +1412,24 @@ class SettingsActivity : SimpleActivity() {
 
     private fun setupAdvancedToggle() {
         val prefs = getSharedPreferences("galeria_faces", android.content.Context.MODE_PRIVATE)
-        fun apply(open: Boolean) {
-            advancedHolders().forEach { it.visibility = if (open) android.view.View.VISIBLE else android.view.View.GONE }
-            binding.settingsAdvToggleSummary.text = getString(if (open) R.string.adv_tools_hide else R.string.adv_tools_show)
-        }
-        apply(prefs.getBoolean("adv_tools_open", false))
+        applyAdvancedVisibility(prefs.getBoolean("adv_tools_open", false))
         binding.settingsAdvToggleHolder.setOnClickListener {
             val now = !prefs.getBoolean("adv_tools_open", false)
             prefs.edit().putBoolean("adv_tools_open", now).apply()
-            apply(now)
+            applyAdvancedVisibility(now)
+            // ak je práve zapnuté hľadanie, o viditeľnosti riadkov rozhoduje ono
+            reapplySettingsFilter()
         }
+    }
+
+    private fun applyAdvancedVisibility(open: Boolean) {
+        advancedHolders().forEach { it.beVisibleIf(open) }
+        binding.settingsAdvToggleSummary.text = getString(if (open) R.string.adv_tools_hide else R.string.adv_tools_show)
     }
 
     private fun setupChangelog() {
         binding.settingsChangelogHolder.setOnClickListener {
             startActivity(android.content.Intent(this, ChangelogActivity::class.java))
-        }
-    }
-
-    private fun setupIndexAll() {
-        binding.settingsIndexAllSummary.text = getString(R.string.index_all_summary)
-        binding.settingsIndexAllHolder.setOnClickListener {
-            val begin = {
-                org.fossify.gallery.services.IndexingService.start(
-                    this, org.fossify.gallery.services.IndexingService.TASK_ALL, allowMetered = true,
-                )
-                binding.settingsIndexAllSummary.text = getString(R.string.indexing_started_bg)
-            }
-            if (org.fossify.gallery.clip.ClipModels.bothPresent(this)) {
-                begin()
-            } else {
-                // súčasťou je stiahnutie CLIP modelu — na mobilných dátach až po potvrdení
-                confirmClipDownloadOnMetered(getString(R.string.a3_clip_size_main)) { begin() }
-            }
         }
     }
 

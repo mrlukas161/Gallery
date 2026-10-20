@@ -2,27 +2,23 @@
 <resources>
     <string name="app_launcher_name">Gallery</string>
     <string name="app_name_brand">Galéria+</string>
-    <string name="update_available_msg">Je dostupná nová verzia Galéria+ %s. Chcete ju nainštalovať?</string>
+    <string name="update_available_msg">Je dostupná nová verzia Galéria+ %s. Chceš ju nainštalovať?</string>
     <string name="update_now">Aktualizovať</string>
     <string name="update_later">Neskôr</string>
     <string name="update_downloading">Sťahujem aktualizáciu…</string>
     <string name="update_check_failed">Aktualizácia zlyhala</string>
-    <string name="show_smart_albums">Zobraziť smart albumy</string>
     <string name="smart_album_videos">Videá</string>
     <string name="smart_album_gifs">GIF</string>
-    <string name="smart_album_screenshots">Screenshoty</string>
+    <string name="smart_album_screenshots">Snímky obrazovky</string>
     <string name="smart_album_downloads">Stiahnuté</string>
-    <string name="smart_album_camera">Kamera</string>
+    <string name="smart_album_camera">Fotoaparát</string>
     <string name="smart_album_raw">RAW</string>
     <string name="face_indexing_title">Rozpoznávanie tvárí (beta)</string>
-    <string name="face_indexing_tap_to_start">Ťuknutím spustíš vyhľadávanie tvárí na fotkách</string>
-    <string name="face_indexing_starting">Spúšťam…</string>
-    <string name="face_indexing_running">Indexujem tváre… (ťuknutím zastavíš)</string>
-    <string name="face_indexing_progress">Indexujem %1$d / %2$d (ťuknutím zastavíš)</string>
-    <string name="face_indexing_result">Našlo %1$d tvárí v %2$d fotkách (ťuknutím znova)</string>
-    <string name="face_indexing_result_persons">Tvárí %1$d v %2$d fotkách. Osôb podľa prahu:\n%3$s</string>
+    <string name="face_indexing_tap_to_start">Ťuknutím spustíš rozpoznávanie tvárí na fotkách</string>
+    <string name="face_indexing_running">Spracúvam tváre… (ťuknutím zastavíš)</string>
+    <string name="face_indexing_result">Nájdené tváre: %1$d · fotky s tvárami: %2$d (ťuknutím spustíš znova)</string>
     <string name="people">Ľudia</string>
-    <string name="people_empty">Zatiaľ žiadne osoby — spusti „Rozpoznávanie tvárí" v Nastaveniach</string>
+    <string name="people_empty">Zatiaľ žiadne osoby — v Nastaveniach → Galéria+ ťukni na „Spracovanie knižnice“</string>
     <string name="loading">Načítavam…</string>
     <!-- Ľudia / opravy (B3) -->
     <string name="person_suggested">Navrhovaná skupina</string>
@@ -35,14 +31,13 @@
     <string name="action_move_to_person">Presunúť k inej osobe</string>
     <string name="action_not_this_person">Toto nie je táto osoba</string>
     <string name="delete_person_confirm">Odstrániť túto osobu? Tváre sa vrátia medzi návrhy.</string>
-    <string name="no_other_person">Nie je iná osoba na zlúčenie</string>
-    <string name="person_long_press_hint">Podržaním tváre ju opravíš (presun k osobe / toto nie je táto osoba)</string>
+    <string name="no_other_person">Niet inej osoby na zlúčenie</string>
     <!-- Import tvárí z Picasy -->
-    <string name="picasa_import_title">Importovať Picasa tváre</string>
-    <string name="picasa_import_tap">Ťuknutím vyber ZIP s tvárami z Picasy</string>
-    <string name="picasa_import_state">Naimportované vzory: %1$d (ťuknutím doplniť)</string>
+    <string name="picasa_import_title">Import tvárí z Picasy</string>
+    <string name="picasa_import_tap">Ťuknutím vyberieš ZIP s tvárami z Picasy</string>
+    <string name="picasa_import_state">Naimportované vzory: %1$d (ťuknutím doplníš ďalšie)</string>
     <string name="picasa_import_running">Importujem… %1$d / %2$d</string>
-    <string name="picasa_import_done">Hotovo: %1$d osôb, %2$d vzorov (preskočené %3$d). Tváre sa zaradia pod mená pri ďalšom otvorení Ľudí.</string>
+    <string name="picasa_import_done">Hotovo — osoby: %1$d, vzory: %2$d, preskočené: %3$d. Tváre sa zaradia pod mená pri ďalšom otvorení obrazovky Ľudia.</string>
     <string name="picasa_import_already">Táto sada už bola naimportovaná</string>
     <string name="picasa_import_error">Chyba importu: %1$s</string>
     <string name="picasa_import_failed">Nepodarilo sa otvoriť výber súboru</string>
@@ -54,15 +49,13 @@
     <string name="this_is_not">Toto nie je</string>
     <string name="assign_to_person">Priradiť k osobe</string>
     <string name="selected_count">Vybrané: %1$d</string>
-    <string name="no_suggestions">Žiadne návrhy — najprv priraď zopár tvárí (alebo importuj Picasa vzory)</string>
+    <string name="no_suggestions">Žiadne návrhy — najprv priraď zopár tvárí (alebo importuj vzory z Picasy)</string>
     <string name="no_unlabeled_faces">Žiadne neoznačené tváre</string>
-    <string name="threshold_label">Podobnosť ≥ %1$.2f · %2$d návrhov</string>
+    <string name="threshold_label">Podobnosť ≥ %1$.2f · návrhov: %2$d</string>
     <string name="select_all">Vybrať všetko</string>
     <string name="clear_selection">Zrušiť výber</string>
     <string name="show_photos">Celé fotky</string>
     <string name="show_faces">Tváre</string>
-    <string name="sort_newest">Najnovšie</string>
-    <string name="sort_oldest">Najstaršie</string>
     <string name="sort_action">Zoradiť</string>
     <string name="chronological">Chronologicky (podľa dátumu)</string>
     <!-- Hľadanie osôb -->
@@ -74,18 +67,14 @@
     <string name="search_count">Fotiek: %1$d</string>
     <!-- Prehliadač osoby -->
     <string name="share">Zdieľať</string>
-    <string name="delete_confirm">Vymazať túto fotku?</string>
     <string name="action_failed">Akcia zlyhala</string>
     <!-- Rozsah hľadania + OCR -->
     <string name="search_scope_people">Hľadám: Osoby</string>
     <string name="search_scope_text">Hľadám: Text (OCR)</string>
-    <string name="ocr_title">OCR – text na fotkách (beta)</string>
-    <string name="ocr_tap_to_start">Ťuknutím spustíš čítanie textu z fotiek (pomalé, na pozadí)</string>
-    <string name="ocr_starting">Spúšťam…</string>
-    <string name="ocr_running">Čítam text… (ťuknutím zastavíš)</string>
-    <string name="ocr_progress">Čítam %1$d / %2$d (ťuknutím zastavíš)</string>
-    <string name="ocr_result">Spracované %1$d fotiek, s textom %2$d (ťuknutím znova)</string>
-    <string name="ocr_error">Chyba: %1$s (ťuknutím skús znova)</string>
+    <string name="ocr_title">Rozpoznávanie textu (OCR, beta)</string>
+    <string name="ocr_tap_to_start">Ťuknutím spustíš rozpoznávanie textu na fotkách (pomalé, beží na pozadí)</string>
+    <string name="ocr_running">Rozpoznávam text… (ťuknutím zastavíš)</string>
+    <string name="ocr_result">Spracované fotky: %1$d · z toho s textom: %2$d (ťuknutím spustíš znova)</string>
     <!-- Ignorovanie tvárí + skupiny osôb -->
     <string name="ignore_faces">Ignorovať</string>
     <string name="restore">Vrátiť</string>
@@ -97,97 +86,93 @@
     <string name="filter_group">Filtrovať skupinu</string>
     <string name="groups_title">Skupiny</string>
     <!-- Mapa -->
-    <string name="map_title">Mapa</string>
-    <string name="map_indexing">Indexujem polohu %1$d / %2$d</string>
-    <!-- Indexovanie na pozadí -->
-    <string name="indexing_running">Indexujem…</string>
+    <string name="map_title">Miesta</string>
+    <string name="map_indexing">Spracúvam polohu %1$d / %2$d</string>
+    <!-- Spracovanie knižnice na pozadí -->
+    <string name="indexing_running">Spracúvam knižnicu…</string>
     <string name="indexing_faces">Tváre</string>
     <string name="indexing_geo">Poloha</string>
     <string name="indexing_ocr">Text (OCR)</string>
-    <string name="indexing_reembed">Prepracovanie tvárí</string>
     <string name="indexing_qr">QR kódy</string>
-    <string name="indexing_phash">Podobné fotky</string>
+    <string name="indexing_phash">Podobné a duplikáty</string>
     <string name="indexing_clip">Hľadanie predmetov (CLIP)</string>
-    <!-- Prehľad indexovania -->
+    <!-- Prehľad spracovania knižnice -->
     <string name="index_overview_title">Spracovanie knižnice (tváre, text, poloha…)</string>
     <string name="index_overview_summary">Spracovaných %1$d %% fotiek — ťuknutím sa dokončí zvyšok (beží na pozadí)</string>
     <string name="index_overview_done">Hotovo ✓ Všetky fotky sú spracované; nové sa pridajú samy. Podržaním zobrazíš rozpis.</string>
-    <string name="index_overview_running">Spracovávam na pozadí… %1$d %%</string>
+    <string name="index_overview_running">Spracúvam na pozadí… %1$d %%</string>
     <string name="index_detail_line">%1$s — %2$d %% (%3$d / %4$d)</string>
     <string name="index_detail_title">Čo je spracované</string>
-    <string name="phash_title">Duplikáty / podobné fotky (index)</string>
-    <string name="phash_tap_to_start">Ťuknutím prehľadám knižnicu a nájdem podobné/duplicitné fotky</string>
-    <string name="phash_running">Hľadám podobné fotky…</string>
-    <string name="phash_result">%1$d fotiek prehľadaných — otvor „Podobné/burst\" → Duplikáty</string>
-    <string name="compare_mode_duplicates">Duplikáty (podobné v knižnici)</string>
-    <string name="tab_bursts">Série (burst)</string>
+    <string name="phash_title">Podobné a duplikáty</string>
+    <string name="phash_tap_to_start">Ťuknutím spustíš prehľadanie knižnice — nájdu sa podobné fotky a duplikáty</string>
+    <string name="phash_running">Hľadám podobné fotky a duplikáty…</string>
+    <string name="phash_result">Prehľadané fotky: %1$d — pozri „Podobné a duplikáty“ → Duplikáty</string>
+    <string name="compare_mode_duplicates">Duplikáty</string>
+    <string name="tab_bursts">Série</string>
     <string name="tab_duplicates">Duplikáty</string>
-    <!-- CLIP sémantické hľadanie -->
-    <string name="clip_title">CLIP sémantické hľadanie (beta)</string>
-    <string name="clip_tap_download">Ťuknutím stiahne model (~580 MB, WiFi) a naindexuje — potom hľadaj predmety</string>
-    <string name="clip_tap_index">Model stiahnutý — ťuknutím naindexuje fotky</string>
-    <string name="clip_running">Sťahujem/indexujem CLIP…</string>
-    <string name="clip_result">%1$d fotiek naindexovaných — hľadaj predmety cez lupu</string>
-    <!-- CLIP multilingválny (priama slovenčina) -->
-    <string name="clip_ml_title">Priama slovenčina v hľadaní (AI model)</string>
-    <string name="clip_ml_download_hint">Ťuknutím stiahne multilingválny model (~500 MB, WiFi) — hľadanie rozumie priamo po slovensky. Netreba re-indexovať fotky.</string>
-    <string name="clip_ml_downloading">Sťahujem slovenský model (~500 MB)…</string>
-    <string name="clip_ml_on">Zapnuté — hľadanie rozumie priamo po slovensky (ťuknutím vypnúť)</string>
-    <string name="clip_ml_off">Stiahnuté, vypnuté — používa sa slovníkový preklad (ťuknutím zapnúť)</string>
+    <!-- Hľadanie predmetov (CLIP) -->
+    <string name="clip_title">Hľadanie predmetov (CLIP, beta)</string>
+    <string name="clip_tap_download">Ťuknutím stiahneš model (~150–580 MB, Wi-Fi) a spracuješ fotky — potom môžeš hľadať predmety</string>
+    <string name="clip_tap_index">Model je stiahnutý — ťuknutím spracuješ fotky</string>
+    <string name="clip_running">Sťahujem model / spracúvam fotky pre CLIP…</string>
+    <string name="clip_result">Spracované fotky: %1$d — predmety hľadaj cez lupu</string>
+    <!-- Hľadanie priamo po slovensky (AI model) -->
+    <string name="clip_ml_title">Hľadanie po slovensky (AI model)</string>
+    <string name="clip_ml_download_hint">Ťuknutím stiahneš viacjazyčný model (~500 MB, Wi-Fi) — hľadanie potom rozumie priamo po slovensky. Fotky netreba spracovať znova.</string>
+    <string name="clip_ml_downloading">Sťahujem model pre slovenčinu (~500 MB)…</string>
+    <string name="clip_ml_on">Zapnuté — hľadanie rozumie priamo po slovensky (ťuknutím vypneš)</string>
+    <string name="clip_ml_off">Stiahnuté, vypnuté — používa sa slovníkový preklad (ťuknutím zapneš)</string>
     <!-- Hub Preskúmať -->
     <string name="explore_title">Preskúmať</string>
     <string name="explore_people_sub">Fotky roztriedené podľa osôb</string>
     <string name="explore_places">Miesta</string>
     <string name="explore_places_sub">Fotky na mape podľa polohy</string>
-    <string name="explore_similar_sub">Nájdi takmer rovnaké fotky a série (burst)</string>
+    <string name="explore_similar_sub">Nájdi takmer rovnaké fotky, série a duplikáty</string>
     <string name="explore_search">Hľadať čokoľvek</string>
     <string name="explore_search_sub">Predmety, scény, text z dokumentov, mená osôb</string>
     <string name="galeria_plus_section">Galéria+ (inteligentné funkcie)</string>
-    <string name="index_overview_error">Chyba: %1$s — ťuknutím skús znova</string>
+    <string name="index_overview_error">Chyba: %1$s — ťuknutím skúsiš znova</string>
     <string name="adv_tools_title">Pokročilé nástroje</string>
     <string name="adv_tools_show">Jednotlivé funkcie skryté — ťuknutím zobrazíš (tváre, OCR, QR, duplikáty, CLIP…)</string>
     <string name="adv_tools_hide">Ťuknutím skryješ jednotlivé funkcie</string>
     <string name="changelog_title">Čo je nové (história zmien)</string>
-    <string name="changelog_summary">Prehľad všetkých zmien medzi verziami — na odkontrolovanie funkcií</string>
-    <string name="index_all_title">Indexovať všetko naraz</string>
-    <string name="index_all_summary">Ťuknutím rozbehne tváre, OCR, QR, polohu, duplikáty aj CLIP súčasne</string>
-    <string name="perf_title">Výkon indexovania</string>
+    <string name="changelog_summary">Prehľad zmien medzi verziami</string>
+    <string name="perf_title">Výkon spracovania</string>
     <string name="perf_max">Naplno — všetky funkcie bežia naraz (rýchlejšie, zohreje telefón)</string>
     <string name="perf_charger">Naplno len pri nabíjaní</string>
     <string name="perf_limited">Obmedzený — po jednej funkcii (šetrne)</string>
     <string name="not_this_person_confirm">Odstrániť túto fotku od osoby %1$s? (už sa nebude navrhovať)</string>
     <string name="info_title">Info (poloha a osoby)</string>
     <string name="info_show_on_map">Zobraziť na mape</string>
-    <string name="info_no_location">📍 Bez GPS polohy (alebo poloha ešte nebola indexovaná)</string>
+    <string name="info_no_location">📍 Bez GPS polohy (alebo poloha ešte nebola spracovaná)</string>
     <string name="info_no_people">👤 Žiadne priradené osoby (tvárí na fotke: %1$d)</string>
     <string name="info_tag_people">Označiť tváre</string>
     <string name="show_ocr_text">Zobraziť text (OCR)</string>
-    <string name="ocr_no_text">Na tejto fotke sa nenašiel text (alebo OCR ešte nebežalo)</string>
-    <string name="copy_text">Kopírovať</string>
+    <string name="ocr_no_text">Na tejto fotke sa nenašiel text (alebo rozpoznávanie textu ešte nebežalo)</string>
     <string name="ocr_copied">Text skopírovaný</string>
-    <string name="auto_ocr_title">OCR aj automaticky (na pozadí)</string>
-    <string name="auto_ocr_on">Zapnuté — text sa číta sám (pomalé, najlepšie pri nabíjaní)</string>
-    <string name="auto_ocr_off">Vypnuté — OCR len ručne tlačidlom vyššie</string>
+    <string name="auto_ocr_title">Rozpoznávanie textu automaticky (na pozadí)</string>
+    <string name="auto_ocr_on">Zapnuté — text sa rozpoznáva sám (pomalé, najlepšie pri nabíjaní)</string>
+    <string name="auto_ocr_off">Vypnuté — rozpoznávanie textu len ručne (riadok vyššie)</string>
     <string name="indexing_started_bg">Spustené na pozadí (sleduj notifikáciu)</string>
     <!-- Vylepšenie presnosti tvárí (5-bodové prepočítanie) -->
-    <string name="reembed_title">Prepracovať tváre (oprava otočenia + vzdialené)</string>
-    <string name="reembed_tap">Opraví otočené tváre a nájde aj tie, ktoré predtým unikli (ťukni)</string>
+    <string name="reembed_title">Prepracovať tváre (oprava otočenia a vzdialených tvárí)</string>
+    <string name="reembed_tap">Ťuknutím opravíš otočené tváre a nájdeš aj tie, ktoré predtým unikli</string>
     <string name="reembed_running">Prepracovávam tváre…</string>
-    <string name="reembed_confirm">Prejdem všetky už naskenované fotky správne otočené (podľa EXIF): opravím tváre, ktoré sa zobrazovali nabok, a nájdem aj tie, ktoré detektor predtým prehliadol (vzdialené, na fotkách na výšku). Tvoje pomenovania a skupiny ostanú zachované. Trvá to dlhšie — najlepšie pri nabíjaní. Spustiť?</string>
+    <string name="reembed_confirm">Znova prejdem všetky už spracované fotky so správnym otočením (podľa EXIF): opravím tváre, ktoré sa zobrazovali nabok, a nájdem aj tie, ktoré detektor predtým prehliadol (vzdialené, na fotkách na výšku). Tvoje pomenovania a skupiny ostanú zachované. Trvá to dlhšie — najlepšie pri nabíjaní. Spustiť?</string>
     <!-- QR / čiarové kódy -->
     <string name="qr_title">QR a čiarové kódy (beta)</string>
-    <string name="qr_tap_to_start">Ťuknutím prehľadám fotky a nájdem QR/čiarové kódy</string>
+    <string name="qr_tap_to_start">Ťuknutím spustíš hľadanie QR a čiarových kódov na fotkách</string>
     <string name="qr_running">Hľadám QR kódy…</string>
-    <string name="qr_result">%1$d prehľadaných, %2$d s kódom</string>
+    <string name="qr_result">Prehľadané fotky: %1$d · z toho s kódom: %2$d</string>
     <string name="filter_qr_code">Len fotky s QR kódom</string>
     <string name="clear_filter">Zrušiť filter</string>
-    <!-- PC sync (lokálny LAN server) -->
-    <string name="pc_server_title">PC sync server (WiFi)</string>
+    <!-- Server pre PC (lokálna sieť) -->
+    <string name="pc_server_title">Server pre PC (Wi-Fi)</string>
     <string name="pc_server_tap_to_start">Vypnutý — ťuknutím spustíš server; adresa pre PC sa rovno skopíruje do schránky</string>
     <string name="pc_server_running_at">Beží: %1$s\nŤuknutím zastavíš · podržaním znova skopíruješ adresu</string>
     <string name="pc_server_link_copied">Adresa skopírovaná: %1$s — na PC prilep do prehliadača (Ctrl+V)</string>
     <string name="pc_marked_title">Fotky označené z PC</string>
-    <string name="pc_marked_message">Z PC galérie je označených %1$d súborov na zmazanie. Vymazať ich teraz z telefónu?</string>
+    <string name="pc_marked_message">Z PC galérie je označených súborov na zmazanie: %1$d. Vymazať ich teraz z telefónu?</string>
     <string name="pc_marked_delete">Vymazať</string>
     <string name="pc_marked_later">Neskôr</string>
     <string name="pc_marked_clear">Zrušiť označenia</string>
@@ -196,17 +181,17 @@
     <string name="map_filter_videos">Videá</string>
     <!-- Album Dokumenty -->
     <string name="docs_title">Dokumenty</string>
-    <string name="docs_sub">Doklady, faktúry, preukazy a screenshoty s textom</string>
+    <string name="docs_sub">Doklady, faktúry, preukazy a snímky obrazovky s textom</string>
     <string name="docs_loading">Hľadám dokumenty…</string>
-    <string name="docs_empty_run_ocr">Zatiaľ žiadne dokumenty. Spusti Nastavenia → Galéria+ → „Rozpoznávanie textu (OCR)" a album sa naplní.</string>
+    <string name="docs_empty_run_ocr">Zatiaľ žiadne dokumenty. V Nastaveniach → Galéria+ ťukni na „Spracovanie knižnice“ — album sa naplní, keď dobehne rozpoznávanie textu.</string>
     <string name="docs_empty_filter">V tomto filtri nič nie je.</string>
     <string name="docs_filter_all">Všetko</string>
     <string name="docs_search_hint">Hľadať v texte dokumentov…</string>
-    <string name="doc_kind_document">Dokumenty</string>
+    <string name="doc_kind_document">Ostatné dokumenty</string>
     <string name="doc_kind_receipt">Doklady a faktúry</string>
-    <string name="doc_kind_screenshot">Screenshoty s textom</string>
+    <string name="doc_kind_screenshot">Snímky obrazovky s textom</string>
     <string name="doc_kind_id">Preukazy</string>
-    <string name="live_text_reading">Čítam text z fotky…</string>
+    <string name="live_text_reading">Rozpoznávam text na fotke…</string>
     <string name="text_select_title">Výber textu na fotke</string>
     <string name="text_select_hint">Ťukaj na slová, ktoré chceš skopírovať</string>
     <string name="text_select_none">Na fotke sa nenašiel žiadny text</string>
@@ -218,9 +203,9 @@
     <string name="memories_empty">Zatiaľ nie sú žiadne spomienky. Pomôže, keď dobehne spracovanie polohy fotiek.</string>
     <string name="memory_year_ago">Pred rokom</string>
     <string name="memory_years_ago">Pred %1$d rokmi</string>
-    <string name="memory_photos">%1$d · %2$d fotiek</string>
+    <string name="memory_photos">%1$d · fotiek: %2$d</string>
     <string name="memory_trip">Výlet</string>
-    <string name="memory_trip_sub">%1$s · %2$d fotiek</string>
+    <string name="memory_trip_sub">%1$s · fotiek: %2$d</string>
     <string name="memory_day">Vydarený deň</string>
     <!-- Špeciálne fotky -->
     <string name="special_title">Špeciálne fotky</string>
@@ -238,7 +223,6 @@
     <string name="motion_autoplay_off">Automatické prehrávanie vypnuté</string>
     <string name="motion_badge">Pohyblivá fotka — ťuknutím prehráš</string>
     <string name="motion_not_found">Táto fotka nemá vloženú pohyblivú časť</string>
-    <string name="map_gps_suspicious">Poloha vyzerá nepresne (%1$s)</string>
     <!-- Automatické zaradenie tvárí -->
     <string name="face_auto_title">Automatické zaraďovanie tvárí</string>
     <string name="face_auto_off">Vypnuté — v albume osoby sú len ručne potvrdené tváre</string>
@@ -247,13 +231,12 @@
     <string name="face_auto_loose">Voľné — pridá aj menej isté (občas sa pomýli)</string>
     <!-- Automatické zaradenie tvárí -->
     <string name="pc_server_stop">Zastaviť</string>
-    <string name="pc_server_notif_title">PC sync server beží</string>
+    <string name="pc_server_notif_title">Server pre PC beží</string>
     <string name="pc_server_notif_text">Otvor na PC: %1$s\nPIN: %2$s\nServer beží len kým ho nezastavíš.</string>
-    <string name="auto_index_title">Automatické indexovanie</string>
-    <string name="auto_index_on">Zapnuté — tváre a poloha sa indexujú samé na pozadí</string>
-    <string name="auto_index_off">Vypnuté (indexovať len ručne)</string>
+    <string name="auto_index_title">Automatické spracovanie</string>
+    <string name="auto_index_on">Zapnuté — nové fotky sa spracujú samé na pozadí</string>
+    <string name="auto_index_off">Vypnuté — spracovanie len ručne</string>
     <!-- Kombinované hľadanie -->
-    <string name="smart_search_title">Hľadať (osoby / text)</string>
     <string name="search_time_from">Od dátumu</string>
     <string name="search_time_to">Do dátumu</string>
     <string name="search_time_from_x">Od: %1$s</string>
@@ -261,14 +244,14 @@
     <string name="map_action">Mapa</string>
     <string name="map_selection">Mapa (výber)</string>
     <!-- Komparátor podobných/burst -->
-    <string name="compare_title">Podobné / burst</string>
-    <string name="compare_none">Žiadne podobné/burst skupiny (fotky z toho istého priečinka do ~3 s)</string>
+    <string name="compare_title">Podobné a duplikáty</string>
+    <string name="compare_none">Žiadne série (podobné fotky z toho istého priečinka do ~3 s)</string>
     <string name="compare_hint">Ťuk = vľavo (Ľ) · šípky = meniť panel · podrž = označ na zmazanie</string>
     <string name="compare_sync">Synchronizácia priblíženia</string>
     <string name="compare_sync_on">Synchronizácia priblíženia zapnutá</string>
     <string name="compare_sync_off">Synchronizácia priblíženia vypnutá</string>
     <string name="compare_duel">Turnaj (vyber lepšiu)</string>
-    <string name="compare_duel_hint">Turnaj: ťukni „Táto\" pri lepšej — porazená sa označí</string>
+    <string name="compare_duel_hint">Turnaj: ťukni na „Táto“ pri lepšej fotke — porazená sa označí</string>
     <string name="compare_duel_done">Turnaj hotový · označených na zmazanie: %1$d</string>
     <string name="compare_pick_left">◄ Táto</string>
     <string name="compare_pick_right">Táto ►</string>
@@ -281,11 +264,10 @@
     <string name="compare_kept_only">Táto ostáva · na zmazanie označených: %1$d</string>
     <string name="compare_pane_label">%1$s · kvalita %2$d%%</string>
     <string name="compare_done">Hotovo</string>
-    <string name="face_indexing_error">Chyba: %1$s (ťuknutím skús znova)</string>
     <string name="search_settings_hint">Hľadať v nastaveniach</string>
     <string name="check_updates_title">Skontrolovať aktualizácie</string>
     <string name="checking_updates">Kontrolujem…</string>
-    <string name="up_to_date">Máte najnovšiu verziu</string>
+    <string name="up_to_date">Máš najnovšiu verziu</string>
     <string name="update_available_short">Dostupná verzia %1$s</string>
     <string name="edit">Edit</string>
     <string name="open_camera">Open camera</string>
@@ -587,16 +569,10 @@
     <string name="faq_18_text">Our apps have no ads whatsoever. If you see them during video playback, you must be using some other apps video player. Try finding your default video player in the device settings, then do a \"Clear defaults\" on it. The next time you invoke some video intent you will see an app picker prompt, where you can select what app you want to use.</string>
     <!-- Spodná navigačná lišta -->
     <string name="startup_error_title">Nová navigácia sa nespustila</string>
-    <string name="startup_error_message">Galéria beží ďalej v režime priečinkov. Pošli mi prosím túto chybu:
-
-%1$s</string>
+    <string name="startup_error_message">Galéria beží ďalej v režime priečinkov. Pošli mi prosím túto chybu:\n\n%1$s</string>
     <string name="start_page_title">Obrazovka po spustení</string>
     <string name="intro_title">Vitaj v Galérii+</string>
-    <string name="intro_message">Appka vie prehľadať tvoju knižnicu a nájsť v nej ľudí, text na dokladoch, miesta, duplikáty aj predmety na fotkách. Všetko prebieha priamo v telefóne.
-
-Spracovanie beží na pozadí — najlepšie pri nabíjaní a na WiFi (raz sa stiahne model na hľadanie predmetov).
-
-Spustiť teraz?</string>
+    <string name="intro_message">Appka vie prehľadať tvoju knižnicu a nájsť v nej ľudí, text na dokladoch, miesta, duplikáty aj predmety na fotkách. Všetko prebieha priamo v telefóne.\n\nSpracovanie beží na pozadí — najlepšie pri nabíjaní a na Wi-Fi (raz sa stiahne model na hľadanie predmetov).\n\nSpustiť teraz?</string>
     <string name="intro_start">Spustiť spracovanie</string>
     <string name="intro_later">Neskôr</string>
     <string name="nav_home">Domov</string>
@@ -610,11 +586,11 @@ Spustiť teraz?</string>
     <string name="folder_sort_modified">Podľa poslednej zmeny</string>
 
     <!-- Stránka Domov -->
-    <string name="home_search_hint">🔍  Hľadať osobu, text, miesto alebo vec…</string>
+    <string name="home_search_hint">🔍  Hľadať osobu, text, miesto alebo predmet…</string>
     <string name="home_cleanup_title">Na upratanie</string>
-    <string name="home_cleanup_summary">%1$d sérií · %2$d duplikátov · %3$s</string>
+    <string name="home_cleanup_summary">Série: %1$d · duplikáty: %2$d · %3$s</string>
     <string name="home_cleanup_none">Nič na upratanie ✓</string>
-    <string name="home_cleanup_no_index">Ťuknutím prehľadám knižnicu a nájdem duplikáty</string>
+    <string name="home_cleanup_no_index">Ťuknutím spustíš hľadanie podobných fotiek a duplikátov</string>
     <string name="home_folders_header">Priečinky · %1$s (ťuknutím zmeníš)</string>
     <string name="home_folders_all">Zobraziť všetky priečinky</string>
 

@@ -22,11 +22,18 @@ object MotionPhoto {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Info?>): Boolean = size > 500
     }
 
-    @Synchronized
+    // Zámok drží len prístup k cache, NIE samotné čítanie súboru: skenovanie „Špeciálnych fotiek" volá
+    // readCached tisíckrát na pozadí a dlhé čítanie (až 6 MB z konca súboru) pod zámkom by blokovalo
+    // prehliadač, ktorý ho volá z hlavného vlákna. Dve súbežné čítania tej istej cesty sú len zbytočná práca.
     fun readCached(path: String): Info? {
-        if (cache.containsKey(path)) return cache[path]
+        synchronized(cache) {
+            if (cache.containsKey(path)) return cache[path]
+        }
+
         val info = read(path)
-        cache[path] = info
+        synchronized(cache) {
+            cache[path] = info
+        }
         return info
     }
 
