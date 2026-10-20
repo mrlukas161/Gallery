@@ -38,6 +38,7 @@ import org.fossify.gallery.faces.FaceVisibility
 import org.fossify.gallery.faces.FacesDatabase
 import org.fossify.gallery.faces.PeopleDatabase
 import org.fossify.gallery.faces.PersonGrouper
+import org.fossify.gallery.family.FamilyRecorder
 import org.fossify.gallery.helpers.DragSelectListener
 import org.fossify.gallery.helpers.GridZoom
 
@@ -374,6 +375,7 @@ class FaceTaggingActivity : SimpleActivity() {
             val dao = PeopleDatabase.getInstance(this).PeopleDao()
             // všetky potvrdené tváre naraz v jednej transakcii
             dao.assignFaces(ids, personId, System.currentTimeMillis())
+            FamilyRecorder.facesAssigned(this, ids, personId)
             runOnUiThread {
                 toast(R.string.person_saved)
                 load() // prepočítaj návrhy z nového vzoru = real-time učenie
@@ -395,6 +397,7 @@ class FaceTaggingActivity : SimpleActivity() {
             ensureBackgroundThread {
                 val dao = PeopleDatabase.getInstance(this).PeopleDao()
                 dao.rejectFacesForPerson(ids, personId)
+                FamilyRecorder.facesRejected(this, ids, personId)
                 runOnUiThread {
                     load() // prepočítaj (zohľadní cannot-link aj nové potvrdenia)
                 }
@@ -432,8 +435,10 @@ class FaceTaggingActivity : SimpleActivity() {
             // priradenie (aj založenie novej osoby) naraz v jednej transakcii
             if (existingId != null) {
                 dao.assignFaces(ids, existingId, now)
+                FamilyRecorder.facesAssigned(this, ids, existingId)
             } else {
-                dao.createPersonWithFaces(newName.orEmpty(), ids, now)
+                val newId = dao.createPersonWithFaces(newName.orEmpty(), ids, now)
+                FamilyRecorder.personCreated(this, newId, ids)
             }
             ids.forEach {
                 extras.deleteIgnored(it) // priradenie zruší prípadné ignorovanie

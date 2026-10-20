@@ -13,6 +13,7 @@ import org.fossify.commons.dialogs.RadioGroupDialog
 import org.fossify.commons.extensions.beGone
 import org.fossify.commons.extensions.beVisible
 import org.fossify.commons.extensions.getAlertDialogBuilder
+import org.fossify.commons.extensions.getProperPrimaryColor
 import org.fossify.commons.extensions.getProperTextColor
 import org.fossify.commons.extensions.setupDialogStuff
 import org.fossify.commons.extensions.toast
@@ -27,6 +28,7 @@ import org.fossify.commons.views.MyTextView
 import org.fossify.gallery.R
 import org.fossify.gallery.adapters.PeopleAdapter
 import org.fossify.gallery.databinding.ActivityPeopleBinding
+import org.fossify.gallery.dialogs.FamilyProposalsDialog
 import org.fossify.gallery.faces.ExtrasDatabase
 import org.fossify.gallery.faces.FaceEmbedder
 import org.fossify.gallery.faces.FaceFilter
@@ -38,6 +40,8 @@ import org.fossify.gallery.faces.Person
 import org.fossify.gallery.faces.PersonEntity
 import org.fossify.gallery.faces.PersonGroupEntity
 import org.fossify.gallery.faces.PersonGrouper
+import org.fossify.gallery.family.FamilyProposals
+import org.fossify.gallery.family.FamilyRecorder
 import org.fossify.gallery.helpers.GridZoom
 
 class PeopleActivity : SimpleActivity() {
@@ -106,6 +110,48 @@ class PeopleActivity : SimpleActivity() {
         // až po naplnení menu — setupTopAppBar farbí ikony, ktoré v lište práve sú
         setupTopAppBar(binding.peopleAppbar, NavigationIcon.Arrow)
         loadPeople()
+        refreshFamilyBanner()
+    }
+
+    // Lišta „Máš N návrhov z telefónu …“ (rodinné prepojenie). reopen = po rozhodnutí rovno ukáž ďalšie návrhy.
+    private fun refreshFamilyBanner(reopen: Boolean = false) {
+        ensureBackgroundThread {
+            val proposals = try {
+                FamilyProposals(this).let { it.openItems() to it.personNames() }
+            } catch (ignored: RuntimeException) {
+                emptyList<FamilyProposals.Item>() to emptyMap<Long, String?>()
+            }
+            runOnUiThread {
+                if (isDestroyed || isFinishing) return@runOnUiThread
+                showFamilyBanner(proposals.first)
+                if (reopen && proposals.first.isNotEmpty()) {
+                    FamilyProposalsDialog(this, proposals.first, proposals.second) { afterFamilyDecision() }
+                }
+            }
+        }
+    }
+
+    private fun showFamilyBanner(items: List<FamilyProposals.Item>) {
+        val banner = binding.peopleFamilyBanner
+        if (items.isEmpty()) {
+            banner.beGone()
+            return
+        }
+        val phones = items.map { it.fromDeviceId }.distinct()
+        banner.text = if (phones.size == 1) {
+            val phone = items.first().phoneName ?: getString(R.string.fp_unknown_phone)
+            resources.getQuantityString(R.plurals.fp_banner, items.size, items.size, phone)
+        } else {
+            resources.getQuantityString(R.plurals.fp_banner_many_phones, items.size, items.size)
+        }
+        banner.setTextColor(getProperPrimaryColor())
+        banner.setOnClickListener { refreshFamilyBanner(reopen = true) }
+        banner.beVisible()
+    }
+
+    private fun afterFamilyDecision() {
+        loadPeople()
+        refreshFamilyBanner(reopen = true)
     }
 
     private fun loadPeople() {
@@ -212,6 +258,7 @@ class PeopleActivity : SimpleActivity() {
         promptName(person.name) { name ->
             ensureBackgroundThread {
                 PeopleDatabase.getInstance(this).PeopleDao().renamePerson(id, name)
+                FamilyRecorder.personRenamed(this, id, person.name, name)
                 runOnUiThread { afterAction() }
             }
         }
@@ -221,7 +268,9 @@ class PeopleActivity : SimpleActivity() {
         ensureBackgroundThread {
             val dao = PeopleDatabase.getInstance(this).PeopleDao()
             // nová osoba + priradenie všetkých tvárí v jednej transakcii
-            dao.createPersonWithFaces(name, person.faces.mapNotNull { it.id }, System.currentTimeMillis())
+            val faceIds = person.faces.mapNotNull { it.id }
+            val personId = dao.createPersonWithFaces(name, faceIds, System.currentTimeMillis())
+            FamilyRecorder.personCreated(this, personId, faceIds)
             runOnUiThread {
                 toast(R.string.person_saved)
                 afterAction()
@@ -284,6 +333,7 @@ class PeopleActivity : SimpleActivity() {
                     false
                 }
                 if (ok) {
+                    FamilyRecorder.personsMerged(this, fromIds, target.id)
                     try {
                         val extras = ExtrasDatabase.getInstance(this).ExtrasDao()
                         fromIds.forEach { extras.moveMemberships(it, target.id) }
@@ -325,6 +375,7 @@ class PeopleActivity : SimpleActivity() {
                     false
                 }
                 if (ok) {
+                    FamilyRecorder.personsDeleted(this, persons.mapNotNull { p -> p.id?.let { it to p.name } }.toMap())
                     try {
                         val extras = ExtrasDatabase.getInstance(this).ExtrasDao()
                         ids.forEach { extras.removePersonFromGroups(it) }
@@ -375,7 +426,7 @@ class PeopleActivity : SimpleActivity() {
                             groups.forEachIndexed { i, g ->
                                 val want = checked[i]
                                 val was = memberOf.contains(g.id)
-                                if (want && !was) dao.addMember(GroupMemberEntity(g.id, pid))
+                                if (want && !was) addToGroup(g.id, pid)
                                 else if (!want && was) dao.removeMember(g.id, pid)
                             }
                             // pri zapnutom filtri skupiny sa zoznam mohol zmeniť
@@ -393,11 +444,18 @@ class PeopleActivity : SimpleActivity() {
         }
     }
 
+    // pridanie do skupiny sa zapíše aj pre prepojený telefón (odobratie sa tam neprenáša, členovia sa len pridávajú)
+    private fun addToGroup(groupId: Long, personId: Long) {
+        ExtrasDatabase.getInstance(this).ExtrasDao().addMember(GroupMemberEntity(groupId, personId))
+        FamilyRecorder.groupChanged(this, groupId)
+    }
+
     private fun createGroupWith(name: String, personId: Long) {
         ensureBackgroundThread {
             val dao = ExtrasDatabase.getInstance(this).ExtrasDao()
             val gid = dao.insertGroup(PersonGroupEntity(name = name, createdAt = System.currentTimeMillis()))
             dao.addMember(GroupMemberEntity(gid, personId))
+            FamilyRecorder.groupChanged(this, gid)
             runOnUiThread {
                 toast(R.string.person_saved)
                 afterAction()
@@ -461,6 +519,7 @@ class PeopleActivity : SimpleActivity() {
         promptName(group.name) { name ->
             ensureBackgroundThread {
                 ExtrasDatabase.getInstance(this).ExtrasDao().renameGroup(group.id, name)
+                FamilyRecorder.groupRenamed(this, group.name, name)
                 runOnUiThread {
                     // premenovaná skupina je práve aktívny filter → titulok lišty musí ukázať nový názov
                     if (filterGroupId == group.id) {

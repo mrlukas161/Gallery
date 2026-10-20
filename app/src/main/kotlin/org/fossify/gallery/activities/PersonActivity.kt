@@ -28,6 +28,7 @@ import org.fossify.gallery.faces.FaceSorter
 import org.fossify.gallery.faces.FaceVisibility
 import org.fossify.gallery.faces.FacesDatabase
 import org.fossify.gallery.faces.PeopleDatabase
+import org.fossify.gallery.family.FamilyRecorder
 import org.fossify.gallery.helpers.GridZoom
 import org.fossify.gallery.helpers.PATH
 import org.fossify.gallery.helpers.SHOW_ALL
@@ -276,6 +277,7 @@ class PersonActivity : SimpleActivity() {
         ensureBackgroundThread {
             // všetky tváre výberu naraz v jednej transakcii
             PeopleDatabase.getInstance(this).PeopleDao().assignFaces(faceIds, targetId, System.currentTimeMillis())
+            FamilyRecorder.facesAssigned(this, faceIds, targetId)
             runOnUiThread {
                 toast(R.string.person_saved)
                 removeFacesLocally(faceIds.toHashSet())
@@ -286,8 +288,9 @@ class PersonActivity : SimpleActivity() {
     private fun assignToNewPerson(faceIds: List<Long>, name: String) {
         ensureBackgroundThread {
             // nová osoba + priradenie tvárí v jednej transakcii
-            PeopleDatabase.getInstance(this).PeopleDao()
+            val newId = PeopleDatabase.getInstance(this).PeopleDao()
                 .createPersonWithFaces(name, faceIds, System.currentTimeMillis())
+            FamilyRecorder.personCreated(this, newId, faceIds)
             runOnUiThread {
                 toast(R.string.person_saved)
                 removeFacesLocally(faceIds.toHashSet())
@@ -315,6 +318,7 @@ class PersonActivity : SimpleActivity() {
         ensureBackgroundThread {
             // zrušenie priradenia + negatívne pravidlo (aby sa už nenavrhla) v jednej transakcii
             PeopleDatabase.getInstance(this).PeopleDao().rejectFacesForPerson(faceIds, personId)
+            FamilyRecorder.facesRejected(this, faceIds, personId)
             runOnUiThread {
                 if (isDestroyed || isFinishing) return@runOnUiThread
                 removeFacesLocally(faceIds.toHashSet())
@@ -343,6 +347,7 @@ class PersonActivity : SimpleActivity() {
         val faceIds = loadedFaces.filter { pathSet.contains(it.mediaFullPath) }.mapNotNull { it.id }
         ensureBackgroundThread {
             PeopleDatabase.getInstance(this).PeopleDao().rejectFacesForPerson(faceIds, personId)
+            FamilyRecorder.facesRejected(this, faceIds, personId)
             runOnUiThread {
                 if (isDestroyed || isFinishing) return@runOnUiThread
                 loadedFaces = loadedFaces.filter { !pathSet.contains(it.mediaFullPath) }

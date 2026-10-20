@@ -55,6 +55,20 @@ interface OpDao {
     @Query("SELECT * FROM ops WHERE device_id = :deviceId AND lamport > :sinceLamport ORDER BY lamport, op_id")
     fun getOpsSince(deviceId: String, sinceLamport: Long): List<OpEntity>
 
+    // stránkovanie pre prenos (F2): najviac `limit` operácií za `sinceLamport`
+    @Query(
+        "SELECT * FROM ops WHERE device_id = :deviceId AND lamport > :sinceLamport " +
+            "ORDER BY lamport, op_id LIMIT :limit"
+    )
+    fun getOpsSincePage(deviceId: String, sinceLamport: Long, limit: Int): List<OpEntity>
+
+    // operácie jedného typu (napr. vlastné zlúčenia ako aliasy rodinných UUID), bez veľkých payloadov iných typov
+    @Query("SELECT * FROM ops WHERE device_id = :deviceId AND type = :type ORDER BY lamport, op_id")
+    fun getOpsOfType(deviceId: String, type: String): List<OpEntity>
+
+    @Query("SELECT COUNT(*) FROM ops WHERE applied_at IS NULL")
+    fun countUnappliedOps(): Int
+
     @Query("SELECT * FROM ops WHERE applied_at IS NULL ORDER BY lamport, device_id, op_id")
     fun getUnappliedOps(): List<OpEntity>
 
