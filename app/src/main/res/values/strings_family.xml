@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Stringy rodinného prepojenia (F2: párovanie a prenos) -->
+<resources>
+    <!-- Nastavenia → „Prepojiť telefón“; %s = názvy prepojených telefónov -->
+    <string name="family_pair_title">Prepojiť telefón</string>
+    <string name="family_settings_none">Prepoj Galériu+ s telefónom v rodine cez Wi-Fi a QR kód</string>
+    <string name="family_settings_paired">Prepojené: %s</string>
+
+    <!-- obrazovka párovania -->
+    <string name="family_this_phone">Tento telefón</string>
+    <string name="family_device_name">Názov tohto telefónu</string>
+    <string name="family_device_name_hint">Pod týmto názvom ťa uvidí druhý telefón</string>
+    <string name="family_qr_description">Párovací QR kód</string>
+    <string name="family_qr_help">Na druhom telefóne naskenuj tento kód fotoaparátom alebo v Galérii+ cez „Naskenovať kód“. Oba telefóny musia byť na rovnakej Wi-Fi, mimo domu stačí hotspot jedného z nich.</string>
+    <!-- %s = zostávajúci čas, napr. 4:59 -->
+    <string name="family_qr_valid">Kód platí ešte %s</string>
+    <string name="family_qr_expired">Kód vypršal. Ťukni naň a vytvorí sa nový.</string>
+    <string name="family_qr_no_wifi">Telefón nie je na Wi-Fi. Pripoj oba telefóny na rovnakú Wi-Fi alebo na jednom z nich zapni hotspot.</string>
+    <string name="family_qr_server_error">Prepojenie sa nepodarilo spustiť. Skús to znova o chvíľu.</string>
+    <string name="family_scan">Naskenovať kód</string>
+    <string name="family_scan_summary">Odfoť QR kód z obrazovky druhého telefónu</string>
+    <string name="family_scan_no_camera">Nenašla sa aplikácia fotoaparátu</string>
+    <string name="family_scan_not_found">Na fotke sa nenašiel párovací kód Galérie+</string>
+
+    <!-- potvrdenie a výsledok párovania; %s = názov druhého telefónu -->
+    <string name="family_pair_confirm_title">Prepojiť telefón?</string>
+    <string name="family_pair_confirm">Prepojiť tento telefón s telefónom „%s“? Prepojené telefóny si budú vymieňať osoby a mená a fotky, ktoré tam pošleš.</string>
+    <string name="family_pair_confirm_button">Prepojiť</string>
+    <string name="family_pairing">Prepájam…</string>
+    <string name="family_paired_with">Prepojené s telefónom „%s“</string>
+    <string name="family_pair_unreachable">Druhý telefón sa nedá nájsť. Skontroluj, či je na rovnakej Wi-Fi a má otvorené „Prepojiť telefón“.</string>
+    <string name="family_pair_rejected">Kód je neplatný alebo už vypršal. Na druhom telefóne vytvor nový.</string>
+    <string name="family_pair_error">Prepojenie sa nepodarilo uložiť</string>
+
+    <!-- prepojené telefóny; %1$s = dátum prepojenia, %2$s = kedy sa naposledy stretli -->
+    <string name="family_paired_phones">Prepojené telefóny</string>
+    <string name="family_no_peers">Zatiaľ žiadny prepojený telefón</string>
+    <string name="family_peer_summary">Prepojené %1$s · naposledy %2$s</string>
+    <string name="family_peer_never">zatiaľ nikdy</string>
+    <string name="family_unpair_title">Zrušiť prepojenie?</string>
+    <string name="family_unpair_text">Telefón „%s“ už nebude dostávať zmeny z tohto telefónu. Kľúč prepojenia sa zmaže, druhý telefón sa to dozvie pri najbližšom stretnutí. Osoby ani fotky sa nemažú.</string>
+    <string name="family_unpair_button">Zrušiť prepojenie</string>
+    <string name="family_unpaired">Prepojenie s telefónom „%s“ je zrušené</string>
+
+    <!-- ladenie (len debug build) -->
+    <string name="family_debug_manual">Ručná adresa (ladenie)</string>
+    <string name="family_debug_manual_off">Vypnutá, telefón sa hľadá na Wi-Fi (NSD)</string>
+    <string name="family_debug_manual_hint">IP:port, napr. 127.0.0.1:8090 (prázdne = vypnuté)</string>
+</resources>
