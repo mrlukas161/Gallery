@@ -6,6 +6,7 @@ import android.provider.Settings
 
 // Spárované telefóny a ich kľúče: jediné miesto, kde sa spolu menia riadok v `peers` (family.db)
 // a zabalený kľúč (FamilyKeys). Volať len na pozadí (Room, Keystore).
+@Suppress("TooManyFunctions")
 class FamilyStore(context: Context) {
     private val appContext = context.applicationContext
     private val db = FamilyDatabase.getInstance(appContext)
