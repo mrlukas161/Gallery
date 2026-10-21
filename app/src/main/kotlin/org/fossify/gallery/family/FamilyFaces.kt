@@ -87,6 +87,9 @@ class FamilyFaces(
     internal fun verifyNow(face: FaceEntity, g: PhotoGeometry): BoxSpace? {
         val v = verifier ?: return null
         val id = face.id ?: return null
+        // B: počas prepočtu odtlačkov v2 (alebo pri inej verzii uložených odtlačkov) sa overenie odloží: nič sa
+        // neuloží a rozhodne len posledná záloha (dátum); stará nejasná tvár sa zatiaľ nepošle
+        if (!v.canVerifyNow()) return null
         val space = v.verify(face, g) ?: return null
         val stamp = FaceSpaceRules.stamp(storedBox(face), face.embedding)
         spaces?.upsert(FaceSpaceEntity(id, space.code, FaceEmbedder.MODEL_ID, clock(), stamp))
