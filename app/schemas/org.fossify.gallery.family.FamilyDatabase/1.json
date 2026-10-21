@@ -2,7 +2,7 @@
   "formatVersion": 1,
   "database": {
     "version": 1,
-    "identityHash": "4b78c7623e51977fa014d875e7a092c3",
+    "identityHash": "a1c2a9f295aaad1382fd1f4a7be7f72b",
     "entities": [
       {
         "tableName": "peers",
@@ -159,7 +159,7 @@
       },
       {
         "tableName": "ops",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`op_id` TEXT NOT NULL, `device_id` TEXT NOT NULL, `lamport` INTEGER NOT NULL, `type` TEXT NOT NULL, `payload_json` TEXT NOT NULL, `applied_at` INTEGER, PRIMARY KEY(`op_id`))",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`op_id` TEXT NOT NULL, `device_id` TEXT NOT NULL, `lamport` INTEGER NOT NULL, `type` TEXT NOT NULL, `payload_json` TEXT NOT NULL, `applied_at` INTEGER, `wait_key` TEXT, `deferred_at` INTEGER, `parked_at` INTEGER, PRIMARY KEY(`op_id`))",
         "fields": [
           {
             "fieldPath": "opId",
@@ -195,6 +195,21 @@
             "fieldPath": "appliedAt",
             "columnName": "applied_at",
             "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "waitKey",
+            "columnName": "wait_key",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "deferredAt",
+            "columnName": "deferred_at",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "parkedAt",
+            "columnName": "parked_at",
+            "affinity": "INTEGER"
           }
         ],
         "primaryKey": {
@@ -213,6 +228,15 @@
             ],
             "orders": [],
             "createSql": "CREATE INDEX IF NOT EXISTS `index_ops_device_id_lamport` ON `${TABLE_NAME}` (`device_id`, `lamport`)"
+          },
+          {
+            "name": "index_ops_wait_key",
+            "unique": false,
+            "columnNames": [
+              "wait_key"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_ops_wait_key` ON `${TABLE_NAME}` (`wait_key`)"
           }
         ]
       },
@@ -437,11 +461,95 @@
             "createSql": "CREATE INDEX IF NOT EXISTS `index_bundle_inbox_content_key` ON `${TABLE_NAME}` (`content_key`)"
           }
         ]
+      },
+      {
+        "tableName": "face_space",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`face_id` INTEGER NOT NULL, `space` TEXT NOT NULL, `model_id` TEXT NOT NULL, `verified_at` INTEGER NOT NULL, `stamp` INTEGER NOT NULL, PRIMARY KEY(`face_id`))",
+        "fields": [
+          {
+            "fieldPath": "faceId",
+            "columnName": "face_id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "space",
+            "columnName": "space",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "modelId",
+            "columnName": "model_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "verifiedAt",
+            "columnName": "verified_at",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "stamp",
+            "columnName": "stamp",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "face_id"
+          ]
+        }
+      },
+      {
+        "tableName": "remote_assignment",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`face_id` INTEGER NOT NULL, `device_id` TEXT NOT NULL, `op_id` TEXT NOT NULL, `person_id` INTEGER NOT NULL, `updated_at` INTEGER NOT NULL, PRIMARY KEY(`face_id`))",
+        "fields": [
+          {
+            "fieldPath": "faceId",
+            "columnName": "face_id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "deviceId",
+            "columnName": "device_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "opId",
+            "columnName": "op_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "personId",
+            "columnName": "person_id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "updatedAt",
+            "columnName": "updated_at",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "face_id"
+          ]
+        }
       }
     ],
     "setupQueries": [
       "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '4b78c7623e51977fa014d875e7a092c3')"
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'a1c2a9f295aaad1382fd1f4a7be7f72b')"
     ]
   }
 }
