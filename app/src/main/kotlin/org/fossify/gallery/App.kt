@@ -39,6 +39,8 @@ class App : FossifyApp() {
         // A3: núdzová obnova DB potvrdená pred reštartom sa nasadí skôr, než sa ktorákoľvek DB otvorí
         org.fossify.gallery.safety.DbRestore.applyPending(this)
         Reprint.initialize(this)
+        // verzia uložených odtlačkov tvárí (FaceEmbedder.MODEL_ID) — skôr než ju prečíta rodinné prepojenie
+        org.fossify.gallery.faces.FaceEmbedVersion.init(this)
         // rodinné prepojenie: op-log osôb sa aplikuje po prijatí z druhého telefónu
         FamilyHandlers.register(OpLogHandler(this))
         // … a fotky s hotovými výsledkami (F4: odoslanie fronty, príjem balíkov)

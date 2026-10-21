@@ -49,6 +49,9 @@ class PeopleActivity : SimpleActivity() {
     private val binding by viewBinding(ActivityPeopleBinding::inflate)
 
     private val prefs by lazy { getSharedPreferences("galeria_faces", android.content.Context.MODE_PRIVATE) }
+
+    // výzva na nový import vzorov z Picasy po prepnutí odtlačkov na v2
+    private val picasaReimport = PicasaReimportBanner(this, { binding.peopleReimportBanner }) { loadPeople() }
     private var filterGroupId: Long = -1L
     private var filterGroupName: String? = null
 
@@ -112,6 +115,7 @@ class PeopleActivity : SimpleActivity() {
         setupTopAppBar(binding.peopleAppbar, NavigationIcon.Arrow)
         loadPeople()
         refreshFamilyBanner()
+        picasaReimport.refresh()
     }
 
     // Lišta „Máš N návrhov z telefónu …“ (rodinné prepojenie). reopen = po rozhodnutí rovno ukáž ďalšie návrhy.
