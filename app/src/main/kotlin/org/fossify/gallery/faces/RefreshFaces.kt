@@ -104,6 +104,58 @@ object RefreshFaces {
         owner.set(0)
     }
 
+    // A6: prepracovanie LEN vybraných fotiek (po otočení/prepísaní, keď sa rámčeky nedali otočiť
+    // bezpečne — FaceRotation). Rovnaké párovanie ako run() (IoU, obe hypotézy priestoru), takže
+    // menovky ostanú na mieste. Vráti vybavené cesty (spracované alebo už neexistujúce). Volať z pozadia.
+    internal fun refreshPaths(context: Context, paths: Collection<String>): Set<String> {
+        if (paths.isEmpty() || isRunning) return emptySet()
+        isRunning = true
+        val appCtx = context.applicationContext
+        val done = HashSet<String>()
+        var detector: FaceDetectionHelper? = null
+        var embedder: FaceEmbedder? = null
+        var landmarker: FaceLandmarkHelper? = null
+        try {
+            if (!FacesDatabase.ensureIdsAboveReferences(appCtx)) return emptySet()
+            val dao = FacesDatabase.getInstance(appCtx).FaceDao()
+            val det = FaceDetectionHelper(appCtx).also { detector = it }
+            val emb = FaceEmbedder(appCtx).also { embedder = it }
+            val lm = FaceLandmarkHelper(appCtx).also { landmarker = it }
+            for (path in paths.asSequence().takeWhile { isRunning }) {
+                if (!java.io.File(path).exists() || refreshOne(dao, path, det, emb, lm)) done.add(path)
+            }
+        } catch (ignored: Throwable) {
+        } finally {
+            detector?.close()
+            embedder?.close()
+            landmarker?.close()
+            isRunning = false
+        }
+        return done
+    }
+
+    private fun refreshOne(
+        dao: FaceDao,
+        path: String,
+        det: FaceDetectionHelper,
+        emb: FaceEmbedder,
+        lm: FaceLandmarkHelper,
+    ): Boolean = try {
+        val res = UprightDecoder.decode(path, MAX_DECODE)
+        if (res != null) {
+            val bmp = res.bitmap
+            try {
+                val detected = det.detect(bmp).filter { FaceFilter.isUsable(it) }
+                matchAndStore(dao, path, dao.getFacesForPath(path), detected, bmp, res, lm, emb, det)
+            } finally {
+                bmp.recycle()
+            }
+        }
+        res != null
+    } catch (ignored: Throwable) {
+        false
+    }
+
     // Doplnenie odtlačku tváram, ktorým ho indexovanie nevypočítalo (výnimka v TFLite/MediaPipe) —
     // bez odtlačku sú v appke neviditeľné (getAllFaces ich filtruje) a nedajú sa označiť. Fotka sa
     // znova deteguje, staré záznamy sa spárujú ako pri prepracovaní a aktualizujú sa NA MIESTE LEN

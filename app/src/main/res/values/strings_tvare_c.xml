@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Stringy balíka C (spoľahlivejšie zaraďovanie tvárí do osôb, revízia 2026-10) -->
+<resources>
+    <!-- Ľudia — osoba, ktorej všetky fotky sa nenašli (presunuté, zmazané alebo mimo spracovania knižnice) -->
+    <string name="tc_person_missing_label">%1$s · fotky sa nenašli</string>
+
+    <!-- Osoba — „Toto nie je táto osoba“ nad fotkou, na ktorej má osoba viac tvárí -->
+    <string name="tc_pick_face_title">Ktorá tvár nie je osoba „%1$s“?</string>
+    <string name="tc_pick_face_item">Tvár %1$d</string>
+    <string name="tc_pick_face_all">Všetky tváre na tejto fotke (%1$d)</string>
+    <string name="tc_pick_face_skip">Preskočiť fotku</string>
+
+    <!-- Ručné priradenie — osoba by bola na jednej fotke viackrát (len upozornenie, nie zákaz) -->
+    <string name="tc_same_photo_title">Osoba už na fotke je</string>
+    <plurals name="tc_same_photo_warning">
+        <item quantity="one">Osoba „%2$s“ by mala na %1$d fotke viac tvárí. Jeden človek býva na fotke len raz. Aj tak priradiť?</item>
+        <item quantity="few">Osoba „%2$s“ by mala na %1$d fotkách viac tvárí. Jeden človek býva na fotke len raz. Aj tak priradiť?</item>
+        <item quantity="many">Osoba „%2$s“ by mala na %1$d fotkách viac tvárí. Jeden človek býva na fotke len raz. Aj tak priradiť?</item>
+        <item quantity="other">Osoba „%2$s“ by mala na %1$d fotkách viac tvárí. Jeden človek býva na fotke len raz. Aj tak priradiť?</item>
+    </plurals>
+    <string name="tc_assign_anyway">Aj tak priradiť</string>
+</resources>

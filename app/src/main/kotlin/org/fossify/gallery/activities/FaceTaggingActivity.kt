@@ -37,6 +37,7 @@ import org.fossify.gallery.faces.FaceSorter
 import org.fossify.gallery.faces.FaceVisibility
 import org.fossify.gallery.faces.FacesDatabase
 import org.fossify.gallery.faces.PeopleDatabase
+import org.fossify.gallery.faces.Person
 import org.fossify.gallery.faces.PersonGrouper
 import org.fossify.gallery.family.FamilyRecorder
 import org.fossify.gallery.helpers.DragSelectListener
@@ -346,13 +347,22 @@ class FaceTaggingActivity : SimpleActivity() {
         val pool = allFaces.filter { FaceFilter.isGood(it) }
         val assignments = peopleDao.getAssignments()
         val assigned = assignments.map { it.faceId }.toHashSet()
-        val mineIds = assignments.filter { it.personId == personId }.map { it.faceId }.toHashSet()
-        // ťažisko z RUČNE potvrdených tvárí — BEZ filtra skóre (používateľ ich potvrdil, musia rátať do učenia)
-        val confirmedEmb = allFaces.filter { it.id != null && mineIds.contains(it.id) }
-            .mapNotNull { it.embedding?.let { b -> FaceEmbedder.toFloats(b) } }
-        val anchorEmb = peopleDao.getAnchorEmbeddings(personId).map { FaceEmbedder.toFloats(it) }
-        // viac ťažísk (okuliare/starnutie/deti) → porovnaj s najbližším
-        val centroids = PersonGrouper.subCentroids(confirmedEmb + anchorEmb)
+        val mine = assignments.filter { it.personId == personId }
+        val mineIds = mine.map { it.faceId }.toHashSet()
+        // tváre osoby BEZ filtra skóre (používateľ ich potvrdil, musia rátať do učenia); is_manual=false
+        // = prišli z rodinného prepojenia → znížená váha (rovnaké pravidlá ako automatika v Ľuďoch)
+        val person = Person(
+            personId, personName,
+            allFaces.filter { it.id != null && mineIds.contains(it.id) },
+            manualFaceIds = mineIds,
+            familyFaceIds = mine.filter { !it.isManual }.map { it.faceId }.toHashSet(),
+        )
+        val anchors = PersonGrouper.splitAnchors(peopleDao.getAllAnchors().filter { it.personId == personId }) {
+            FaceEmbedder.toFloats(it)
+        }[personId]
+        // viac ťažísk (okuliare/starnutie/deti) → porovnaj s najbližším; rodinné vzory ťažisko netvoria
+        val evidence = PersonGrouper.evidenceOf(person, anchors) { FaceEmbedder.toFloats(it) }
+        val centroids = PersonGrouper.suggestionCentroids(evidence)
         if (centroids.isEmpty()) return emptyList()
         val cannot = peopleDao.getCannotLinks().filter { it.personId == personId }.map { it.faceId }.toHashSet()
         val ignored = ExtrasDatabase.getInstance(this).ExtrasDao().getIgnoredIds().toHashSet()
@@ -371,6 +381,10 @@ class FaceTaggingActivity : SimpleActivity() {
     private fun confirmSelected() {
         val ids = adapter?.selectedIds().orEmpty()
         if (ids.isEmpty() || personId < 0) return
+        confirmSamePhoto(this, ids, personId, personName) { assignConfirmed(ids) }
+    }
+
+    private fun assignConfirmed(ids: List<Long>) {
         ensureBackgroundThread {
             val dao = PeopleDatabase.getInstance(this).PeopleDao()
             // všetky potvrdené tváre naraz v jednej transakcii
@@ -420,7 +434,8 @@ class FaceTaggingActivity : SimpleActivity() {
                     if (which == persons.size) {
                         promptName { name -> doAssign(ids, null, name) }
                     } else {
-                        doAssign(ids, persons[which].id, null)
+                        val target = persons[which]
+                        confirmSamePhoto(this, ids, target.id, target.name) { doAssign(ids, target.id, null) }
                     }
                 }
             }
@@ -500,6 +515,61 @@ class FaceTaggingActivity : SimpleActivity() {
     }
 
     companion object {
+        // C4 — fotky, na ktorých by osoba [personId] mala po ručnom priradení [faceIds] viac ako jednu tvár
+        // (počítajú sa tváre s riadkom v priradeniach). Volať z pozadia.
+        fun samePhotoConflicts(context: Context, faceIds: List<Long>, personId: Long): Set<String> {
+            val facesDao = FacesDatabase.getInstance(context).FaceDao()
+            val selected = faceIds.chunked(ID_CHUNK).flatMap { facesDao.getFacesByIds(it) }
+            val ofPerson = PeopleDatabase.getInstance(context).PeopleDao().getAssignments()
+                .filter { it.personId == personId }
+                .mapTo(HashSet()) { it.faceId }
+            val personFaces = selected.map { it.mediaFullPath }.distinct().flatMap { path ->
+                facesDao.getFacesForPath(path).filter { f -> f.id?.let { ofPerson.contains(it) } == true }
+            }
+            return PersonGrouper.samePhotoConflicts(selected, personFaces)
+        }
+
+        // Ručné priradenie druhej tváre tej istej osoby na fotke: upozornenie s možnosťou pokračovať (nie zákaz).
+        // [proceed] sa zavolá na hlavnom vlákne — hneď, ak konflikt nie je, inak po potvrdení.
+        fun confirmSamePhoto(
+            activity: SimpleActivity,
+            faceIds: List<Long>,
+            personId: Long,
+            personName: String?,
+            proceed: () -> Unit,
+        ) {
+            ensureBackgroundThread {
+                val conflicts = try {
+                    samePhotoConflicts(activity, faceIds, personId)
+                } catch (ignored: Throwable) {
+                    // kontrola je len upozornenie — pri chybe nebrániť priradeniu
+                    emptySet()
+                }
+                activity.runOnUiThread {
+                    if (activity.isDestroyed || activity.isFinishing) return@runOnUiThread
+                    if (conflicts.isEmpty()) {
+                        proceed()
+                    } else {
+                        ConfirmationDialog(
+                            activity,
+                            message = activity.resources.getQuantityString(
+                                R.plurals.tc_same_photo_warning,
+                                conflicts.size,
+                                conflicts.size,
+                                personName ?: "#$personId",
+                            ),
+                            positive = R.string.tc_assign_anyway,
+                            negative = org.fossify.commons.R.string.cancel,
+                            dialogTitle = activity.getString(R.string.tc_same_photo_title),
+                        ) {
+                            proceed()
+                        }
+                    }
+                }
+            }
+        }
+
+        private const val ID_CHUNK = 500
         const val MODE = "mode"
         const val PERSON_ID = "person_id"
         const val PERSON_NAME = "person_name"

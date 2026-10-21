@@ -60,6 +60,8 @@ object FaceIndexer {
                 landmarker = FaceLandmarkHelper(appCtx)
                 if (notify) ensureChannel(appCtx)
 
+                // A5: presunuté/premenované fotky preklopiť podľa obsahu PRED detekciou (inak duplikáty)
+                FaceRelinker.relink(appCtx, dao) { isRunning }
                 val processed = dao.getProcessedPaths().toHashSet()
                 // vylúčené a zamknuté priečinky sa nespracúvajú (rozhodnutie Lukáša 20.10.2026);
                 // už uložené tváre odtiaľ sa NEmažú — UI ich len skryje
