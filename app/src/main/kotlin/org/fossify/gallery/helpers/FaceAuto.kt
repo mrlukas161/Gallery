@@ -1,6 +1,7 @@
 package org.fossify.gallery.helpers
 
 import android.content.Context
+import org.fossify.gallery.faces.PersonGrouper
 
 // Prah istoty, od ktorého sa tvár automaticky zaradí do albumu osoby (bez ručného potvrdzovania).
 // 0 = vypnuté (len ručne potvrdené). Vyššia hodnota = menej fotiek, ale takmer isto správne.
@@ -12,6 +13,11 @@ object FaceAuto {
     const val STRICT = 0.80f   // takmer isto správne
     const val NORMAL = 0.72f   // vyvážené (predvolené)
     const val LOOSE = 0.65f    // viac fotiek, občas niekto cudzí
+
+    // Rozostup od druhej najbližšej osoby (C3): okrem prahu musí byť najlepšia osoba aspoň o toľko lepšia
+    // než druhá, inak sa tvár automaticky nezaradí (súrodenci, rodič s dieťaťom). Nie je nastaviteľný —
+    // hodnota a zdôvodnenie sú pri PersonGrouper.AUTO_MARGIN; prah ostáva voľbou používateľa.
+    const val MARGIN = PersonGrouper.AUTO_MARGIN
 
     fun threshold(context: Context): Float =
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getFloat(KEY, NORMAL)

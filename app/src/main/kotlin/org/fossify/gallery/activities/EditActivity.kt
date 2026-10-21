@@ -70,6 +70,7 @@ import org.fossify.gallery.extensions.resolveUriScheme
 import org.fossify.gallery.extensions.showContentDescriptionOnLongClick
 import org.fossify.gallery.extensions.writeBitmapToCache
 import org.fossify.gallery.extensions.writeExif
+import org.fossify.gallery.faces.FaceRotation
 import org.fossify.gallery.helpers.ASPECT_RATIO_FOUR_THREE
 import org.fossify.gallery.helpers.ASPECT_RATIO_FREE
 import org.fossify.gallery.helpers.ASPECT_RATIO_ONE_ONE
@@ -942,6 +943,8 @@ class EditActivity : BaseCropActivity() {
         }
 
         writeExif(oldExif, file.toUri())
+        // A6: prepísaná fotka s tvárami (orezanie, otočenie, kreslenie…) — rámčeky prepracovať
+        FaceRotation.onRewritten(applicationContext, file.absolutePath)
         setResult(RESULT_OK, intent)
         scanFinalPath(file.absolutePath)
     }

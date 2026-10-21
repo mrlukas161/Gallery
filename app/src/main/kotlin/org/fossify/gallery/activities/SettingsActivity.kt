@@ -1612,12 +1612,20 @@ class SettingsActivity : SimpleActivity() {
                 toast(org.fossify.commons.R.string.system_service_disabled, android.widget.Toast.LENGTH_LONG)
             }
         }
-        binding.settingsPeopleRestoreHolder.setOnClickListener {
-            try {
-                peopleBackupOpener.launch(arrayOf("*/*"))
-            } catch (ignored: android.content.ActivityNotFoundException) {
-                toast(org.fossify.commons.R.string.system_service_disabled, android.widget.Toast.LENGTH_LONG)
-            }
+        binding.settingsPeopleRestoreHolder.setOnClickListener { pickPeopleBackupFile() }
+        // A3: automatická záloha osôb a obnova z nej
+        org.fossify.gallery.safety.AutoBackupSettings(this, peopleBackupUi) { pickPeopleBackupFile() }.setup(
+            binding.settingsAutoBackupHolder,
+            binding.settingsAutoBackupSummary,
+            binding.settingsAutoRestoreHolder,
+        )
+    }
+
+    private fun pickPeopleBackupFile() {
+        try {
+            peopleBackupOpener.launch(arrayOf("*/*"))
+        } catch (ignored: android.content.ActivityNotFoundException) {
+            toast(org.fossify.commons.R.string.system_service_disabled, android.widget.Toast.LENGTH_LONG)
         }
     }
 

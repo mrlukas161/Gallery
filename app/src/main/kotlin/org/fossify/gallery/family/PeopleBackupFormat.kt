@@ -19,6 +19,13 @@ import java.util.zip.ZipOutputStream
 // snapshot Ľudí ako operácie op-logu (PersonCreate, PersonRename, AssignFace s contentKey + RelBox,
 // GroupSet, AnchorsSet ≤ 20 odtlačkov). Obnova ich prijme ako operácie od „zariadenia zálohy“
 // (deviceId = backup:<id>) cez OpApplier — potichu pridá, čo chýba, rozpory sú návrhy.
+//
+// Doplnené kľúče (balík A3, verzia ostáva 1 — staršia appka ich ignoruje), mimo op-logu, lebo ide
+// o lokálne rozhodnutia, ktoré sa medzi telefónmi neposielajú:
+//   "auto_assign":   [{"ck","boxes","uuid"}, …]  automatické priradenia tvárí
+//   "cannot_links":  [{"ck","boxes","uuid"}, …]  „toto nie je táto osoba“
+//   "ignored_faces": [{"ck","boxes"}, …]          ignorované tváre
+// Obnova ich len dopĺňa (PeopleBackupExtras), nič neprepisuje.
 // Čistá logika bez Androidu (PeopleBackupFormatTest). Kľúče len pridávať, nikdy nepremenovať.
 object PeopleBackupFormat {
     const val FORMAT = "galeria-family"
@@ -46,9 +53,20 @@ object PeopleBackupFormat {
         val deviceName: String?,
         val faceModelId: String,
         val ops: List<OpEntity>,
+        val extras: Extras = Extras(),
     ) {
         val deviceId: String get() = deviceIdFor(id)
     }
+
+    // tvár (obsahový kľúč fotky + rámček) a rodinné UUID osoby
+    data class FaceLink(val face: FaceRef, val uuid: String)
+
+    // lokálne rozhodnutia mimo op-logu (A3)
+    data class Extras(
+        val auto: List<FaceLink> = emptyList(),
+        val cannot: List<FaceLink> = emptyList(),
+        val ignored: List<FaceRef> = emptyList(),
+    )
 
     // osoba v snapshote: rodinné UUID a aktuálne meno (null = nepomenovaná)
     data class SnapPerson(val uuid: String, val name: String?)
@@ -84,13 +102,20 @@ object PeopleBackupFormat {
 
     // Operácie snapshotu v danom poradí → záznamy op-logu zálohy: lamport 1…n, opId „<id zálohy>:<n>“.
     // Rovnaká záloha obnovená znova má rovnaké opId, takže sa nič neaplikuje dvakrát.
-    fun build(id: String, createdAt: Long, deviceName: String?, faceModelId: String, ops: List<Op>): Backup {
+    fun build(
+        id: String,
+        createdAt: Long,
+        deviceName: String?,
+        faceModelId: String,
+        ops: List<Op>,
+        extras: Extras = Extras(),
+    ): Backup {
         val device = deviceIdFor(id)
         val entities = ops.mapIndexed { i, op ->
             val lamport = i + 1L
             OpEntity("$id:$lamport", device, lamport, op.type, OpCodec.encode(op))
         }
-        return Backup(id, createdAt, deviceName, faceModelId, entities)
+        return Backup(id, createdAt, deviceName, faceModelId, entities, extras)
     }
 
     fun toJson(backup: Backup): JSONObject {
@@ -102,6 +127,7 @@ object PeopleBackupFormat {
             .put(K_MODEL, backup.faceModelId)
             .put(K_OPS, OpJson.toJson(backup.ops))
         backup.deviceName?.let { o.put(K_DEVICE, it) }
+        PeopleBackupExtrasJson.put(backup.extras, o)
         return o
     }
 
@@ -115,7 +141,8 @@ object PeopleBackupFormat {
         val device = deviceIdFor(id)
         val ops = OpJson.fromJson(o.optJSONArray(K_OPS), device)
         val name = if (o.has(K_DEVICE) && !o.isNull(K_DEVICE)) o.optString(K_DEVICE) else null
-        return Backup(id, o.optLong(K_CREATED, 0), name, o.optString(K_MODEL), ops)
+        val extras = PeopleBackupExtrasJson.read(o)
+        return Backup(id, o.optLong(K_CREATED, 0), name, o.optString(K_MODEL), ops, extras)
     }
 
     @Throws(IOException::class)

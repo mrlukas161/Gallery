@@ -280,6 +280,8 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // A4: dáta z novšej verzie appky → hláška namiesto pádu (nič sa neotvorí ani nezmení)
+        if (org.fossify.gallery.safety.DataSafetyUi.blockIfNewerData(this)) return
         setContentView(binding.root)
         appLaunched(BuildConfig.APPLICATION_ID)
 
@@ -293,6 +295,8 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
             startNewPhotoFetcher()
             // rodinné prepojenie (F5): okno synchronizácie a dobehnutia spracovania pri nabíjaní
             org.fossify.gallery.family.FamilyAutoSync.onAppStarted(this)
+            // A3: týždenná automatická záloha osôb pri nabíjaní
+            org.fossify.gallery.safety.DataSafetyUi.onAppStarted(this)
         }
 
         mIsPickImageIntent = isPickImageIntent(intent)
@@ -1282,6 +1286,9 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
         if (!mIsThirdPartyIntent) {
             org.fossify.gallery.family.FamilyAutoSync.onAppResumed(this)
         }
+
+        // A1: poškodená DB bola premenovaná → ponuka obnovy zo zálohy
+        org.fossify.gallery.safety.DataSafetyUi.onResume(this)
     }
 
     // Kým IndexingService beží a je vidno Domov, riadok stavu sa obnovuje sám každé ~2 s.

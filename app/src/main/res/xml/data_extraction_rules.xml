@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A2: záloha Androidu pre Android 12+ (cloud aj prenos na nový telefón). Rovnaké pravidlá ako
+     backup_rules.xml: len people.db, extras.db, family.db (aj -wal/-shm) a nastavenia. -->
+<data-extraction-rules>
+    <cloud-backup>
+        <include domain="database" path="people.db" />
+        <include domain="database" path="people.db-wal" />
+        <include domain="database" path="people.db-shm" />
+        <include domain="database" path="extras.db" />
+        <include domain="database" path="extras.db-wal" />
+        <include domain="database" path="extras.db-shm" />
+        <include domain="database" path="family.db" />
+        <include domain="database" path="family.db-wal" />
+        <include domain="database" path="family.db-shm" />
+        <include domain="sharedpref" path="." />
+        <!-- kľúče párov sú zabalené v Android Keystore, ktorý sa nezálohuje: po obnove sú nepoužiteľné,
+             prepojené telefóny sa musia spárovať znova -->
+        <exclude domain="sharedpref" path="galeria_family_keys.xml" />
+        <!-- záznamy o poškodení, čakajúcej obnove a čase poslednej automatickej zálohy patria len tomuto telefónu -->
+        <exclude domain="sharedpref" path="galeria_db_safety.xml" />
+        <exclude domain="sharedpref" path="galeria_auto_backup.xml" />
+    </cloud-backup>
+    <device-transfer>
+        <include domain="database" path="people.db" />
+        <include domain="database" path="people.db-wal" />
+        <include domain="database" path="people.db-shm" />
+        <include domain="database" path="extras.db" />
+        <include domain="database" path="extras.db-wal" />
+        <include domain="database" path="extras.db-shm" />
+        <include domain="database" path="family.db" />
+        <include domain="database" path="family.db-wal" />
+        <include domain="database" path="family.db-shm" />
+        <include domain="sharedpref" path="." />
+        <!-- kľúče párov sú zabalené v Android Keystore, ktorý sa nezálohuje: po obnove sú nepoužiteľné,
+             prepojené telefóny sa musia spárovať znova -->
+        <exclude domain="sharedpref" path="galeria_family_keys.xml" />
+        <!-- záznamy o poškodení, čakajúcej obnove a čase poslednej automatickej zálohy patria len tomuto telefónu -->
+        <exclude domain="sharedpref" path="galeria_db_safety.xml" />
+        <exclude domain="sharedpref" path="galeria_auto_backup.xml" />
+    </device-transfer>
+</data-extraction-rules>

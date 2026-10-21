@@ -42,6 +42,7 @@ import org.fossify.gallery.faces.PersonGroupEntity
 import org.fossify.gallery.faces.PersonGrouper
 import org.fossify.gallery.family.FamilyProposals
 import org.fossify.gallery.family.FamilyRecorder
+import org.fossify.gallery.helpers.FaceAuto
 import org.fossify.gallery.helpers.GridZoom
 
 class PeopleActivity : SimpleActivity() {
@@ -587,14 +588,14 @@ class PeopleActivity : SimpleActivity() {
         fun loadPersons(context: Context): List<Person> {
             val facesDao = FacesDatabase.getInstance(context).FaceDao()
             val peopleDao = PeopleDatabase.getInstance(context).PeopleDao()
-            val faces = facesDao.getAllFaces().filter { FaceFilter.isGood(it) }
-            // základ = ručne potvrdené tváre
-            var all = PersonGrouper.confirmedPersons(faces, peopleDao.getPersons(), peopleDao.getAssignments())
-            // + automatické zaradenie tvárí nad zvolenou istotou (0 = vypnuté)
-            val threshold = org.fossify.gallery.helpers.FaceAuto.threshold(context)
+            val allFaces = facesDao.getAllFaces()
+            // základ = priradené tváre BEZ filtra skóre/veľkosti — ručné potvrdenie má prednosť (C5)
+            var all = PersonGrouper.confirmedPersons(allFaces, peopleDao.getPersons(), peopleDao.getAssignments())
+            // + automatické zaradenie tvárí nad zvolenou istotou (0 = vypnuté); automatika len z „dobrých" tvárí
+            val threshold = FaceAuto.threshold(context)
             if (threshold > 0f) {
                 val anchors = try {
-                    peopleDao.getAllAnchors().groupBy({ it.personId }, { FaceEmbedder.toFloats(it.embedding) })
+                    PersonGrouper.splitAnchors(peopleDao.getAllAnchors()) { FaceEmbedder.toFloats(it) }
                 } catch (e: Throwable) {
                     emptyMap()
                 }
@@ -603,7 +604,15 @@ class PeopleActivity : SimpleActivity() {
                 } catch (e: Throwable) {
                     emptyList()
                 }
-                all = PersonGrouper.withAutoMatches(all, faces, anchors, links, threshold)
+                // ignorované tváre (extras.db) sa automaticky nezaraďujú (C1)
+                val ignored = try {
+                    ExtrasDatabase.getInstance(context).ExtrasDao().getIgnoredIds().toHashSet()
+                } catch (e: Throwable) {
+                    // bez zoznamu ignorovaných radšej nezaraďovať nič automaticky
+                    return all
+                }
+                val pool = allFaces.filter { FaceFilter.isGood(it) }
+                all = PersonGrouper.withAutoMatches(all, pool, anchors, links, ignored, threshold, FaceAuto.MARGIN)
             }
             return all
         }

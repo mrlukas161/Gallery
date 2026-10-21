@@ -13,13 +13,19 @@ import org.fossify.commons.helpers.ensureBackgroundThread
 import org.fossify.gallery.R
 import org.fossify.gallery.family.FamilyInbox
 import java.io.File
+import java.util.concurrent.atomic.AtomicLong
 
 // B2: indexovanie = detekcia + ODTLAČOK pre každú tvár (faces.db); po dokončení vráti počet tvárí
 // a fotiek s tvárami. Beží na bežnom vlákne (robustnosť FGS/WorkManager = B4).
 object FaceIndexer {
-    @Volatile
-    var isRunning = false
-        private set
+    // A7: beh sa „privlastní“ cez compareAndSet(0, id) — dve súbežné volania nespustia dva behy naraz.
+    // owner = id bežiaceho behu (0 = nebeží). stop() ho vynuluje; koniec behu ho vynuluje len vtedy,
+    // keď je ešte jeho (compareAndSet), takže nový beh spustený hneď po stop() neprepíše.
+    private val owner = AtomicLong(0)
+    private val runIds = AtomicLong(0)
+
+    val isRunning: Boolean
+        get() = owner.get() != 0L
 
     private const val MAX_DECODE_SIZE = 1024
     private const val CHANNEL_ID = "face_indexing"
@@ -35,8 +41,9 @@ object FaceIndexer {
         onDone: (faces: Int, photos: Int) -> Unit,
         onError: (message: String) -> Unit,
     ) {
-        if (isRunning) return
-        isRunning = true
+        val myRun = runIds.incrementAndGet()
+        if (!owner.compareAndSet(0, myRun)) return
+        val active = { owner.get() == myRun }
         val appCtx = context.applicationContext
         ensureBackgroundThread {
             var detector: FaceDetectionHelper? = null
@@ -53,6 +60,8 @@ object FaceIndexer {
                 landmarker = FaceLandmarkHelper(appCtx)
                 if (notify) ensureChannel(appCtx)
 
+                // A5: presunuté/premenované fotky preklopiť podľa obsahu PRED detekciou (inak duplikáty)
+                FaceRelinker.relink(appCtx, dao, active)
                 val processed = dao.getProcessedPaths().toHashSet()
                 // vylúčené a zamknuté priečinky sa nespracúvajú (rozhodnutie Lukáša 20.10.2026);
                 // už uložené tváre odtiaľ sa NEmažú — UI ich len skryje
@@ -68,7 +77,7 @@ object FaceIndexer {
                 val total = todo.size
                 var done = 0
                 for ((mediaStoreId, path) in todo) {
-                    if (!isRunning) break
+                    if (!active()) break
                     if (path in withFaces) {
                         try {
                             dao.insertIndexedPhoto(IndexedPhotoEntity(path, dao.getFaceCountForPath(path), System.currentTimeMillis()))
@@ -113,7 +122,7 @@ object FaceIndexer {
                     }
                 }
                 cancelNotification(appCtx)
-                if (isRunning) maybeRepairUnembedded(appCtx, dao, detector, embedder, landmarker)
+                if (active()) maybeRepairUnembedded(appCtx, dao, detector, embedder, landmarker, active)
                 // (predtým sa tu po KAŽDOM behu zhlukovali všetky odtlačky pri 8 prahoch len pre
                 // diagnostický reťazec, ktorý nikto nečítal — zbytočná záťaž CPU a batérie)
                 onDone(safeFaceCount(dao), safePhotoCount(dao))
@@ -124,13 +133,13 @@ object FaceIndexer {
                 detector?.close()
                 embedder?.close()
                 landmarker?.close()
-                isRunning = false
+                owner.compareAndSet(myRun, 0)
             }
         }
     }
 
     fun stop() {
-        isRunning = false
+        owner.set(0)
     }
 
     // Raz denne skús doplniť odtlačok tváram, ktorým ho indexovanie nevypočítalo — bez neho sú
@@ -142,12 +151,13 @@ object FaceIndexer {
         detector: FaceDetectionHelper,
         embedder: FaceEmbedder,
         landmarker: FaceLandmarkHelper,
+        active: () -> Boolean,
     ) {
         try {
             val prefs = context.getSharedPreferences("galeria_faces", Context.MODE_PRIVATE)
             if (System.currentTimeMillis() - prefs.getLong(KEY_REPAIR_AT, 0L) < REPAIR_INTERVAL_MS) return
             prefs.edit().putLong(KEY_REPAIR_AT, System.currentTimeMillis()).apply()
-            RefreshFaces.repairUnembedded(dao, detector, embedder, landmarker, REPAIR_MAX_PHOTOS) { isRunning }
+            RefreshFaces.repairUnembedded(dao, detector, embedder, landmarker, REPAIR_MAX_PHOTOS, active)
         } catch (ignored: Throwable) {
         }
     }
