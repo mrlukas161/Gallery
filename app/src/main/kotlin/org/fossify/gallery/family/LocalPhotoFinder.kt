@@ -15,7 +15,13 @@ class LocalPhotoFinder(context: Context) {
     private val keys = ContentKeyStore(FamilyDatabase.getInstance(app).contentKeyDao())
     private val scope = IndexScope(app)
 
-    class Found(val path: String, val match: BundleMatch, val localPhash: Long? = null)
+    // names (D5) = ako zapísať mená z balíka, keď zhoda stojí len na zálohe (séria bez EXIF)
+    class Found(
+        val path: String,
+        val match: BundleMatch,
+        val localPhash: Long? = null,
+        val names: NamePolicy = NamePolicy.FULL,
+    )
 
     fun find(bundle: PhotoBundle, nowMs: Long = System.currentTimeMillis()): Found? =
         exact(bundle)?.let { Found(it, BundleMatch.EXACT) } ?: fuzzy(bundle, nowMs)
@@ -40,8 +46,27 @@ class LocalPhotoFinder(context: Context) {
             path to fp
         }.toMap()
         val best = FuzzyMatch.findBest(target, candidates) ?: return null
-        return Found(best, BundleMatch.FUZZY, hashes[best])
+        // D5: iný čakajúci balík (napr. susedný záber série) môže tejto fotke zodpovedať lepšie alebo rovnako
+        val names = SeriesGuard.policy(
+            target,
+            candidates.getValue(best),
+            candidates.filterKeys { it != best }.values,
+            waitingFingerprints(bundle.contentKey),
+        )
+        return Found(best, BundleMatch.FUZZY, hashes[best], names)
     }
+
+    // pHash a dátum nedávno pridaných fotiek okrem `exclude` (D5: kontrola série v FamilyInbox)
+    fun recentFingerprints(exclude: String, nowMs: Long = System.currentTimeMillis()): List<FuzzyMatch.Fingerprint> =
+        recentImages(nowMs - BundleRules.FUZZY_WINDOW_MS).filter { it != exclude }.mapNotNull { fingerprint(it) }
+
+    // čakajúce balíky (okrem balíka s kľúčom `except`) ako odtlačky na porovnanie
+    private fun waitingFingerprints(except: String): List<FuzzyMatch.Fingerprint> = guarded {
+        FamilyDatabase.getInstance(app).bundleInboxDao().getBundles(BundleInboxEntity.STATE_WAITING)
+            .filter { it.contentKey != except }
+            .mapNotNull { row -> PhotoBundleCodec.decode(row.payloadJson) }
+            .mapNotNull { b -> b.phash?.let { FuzzyMatch.Fingerprint(it, b.takenAtMs) } }
+    }.orEmpty()
 
     // pHash prijímateľovej kópie (z indexu, inak vypočítaný — lacné 64 px dekódovanie) a dátum z EXIF
     fun fingerprint(path: String): FuzzyMatch.Fingerprint? {

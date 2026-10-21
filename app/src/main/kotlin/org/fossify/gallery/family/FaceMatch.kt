@@ -14,6 +14,9 @@ object FaceMatch {
     // minimálny prekryv (IoU) relatívnych rámčekov, aby išlo o tú istú tvár
     const val MIN_IOU = 0.5f
 
+    // D2: presná kópia (rovnaký obsahový kľúč) má rovnaké pixely aj detekciu, rámčeky sa musia prekrývať viac
+    const val MIN_IOU_EXACT = 0.7f
+
     // keď sa dve lokálne tváre zhodujú takmer rovnako (duplicitné riadky), radšej nič
     const val AMBIGUITY_MARGIN = 0.05f
 
@@ -55,7 +58,7 @@ object FaceMatch {
     }
 
     // Id lokálnej tváre, ktorá zodpovedá vzdialenej, alebo null (žiadna alebo nejednoznačná).
-    fun <T> best(remote: List<RelBox>, candidates: List<Pair<T, List<RelBox>>>): T? {
+    fun <T> best(remote: List<RelBox>, candidates: List<Pair<T, List<RelBox>>>, minIou: Float = MIN_IOU): T? {
         var bestId: T? = null
         var bestScore = 0f
         var secondScore = 0f
@@ -69,7 +72,8 @@ object FaceMatch {
                 secondScore = s
             }
         }
-        val clear = bestScore >= MIN_IOU && !(secondScore >= MIN_IOU && bestScore - secondScore < AMBIGUITY_MARGIN)
+        val rival = secondScore >= minOf(minIou, MIN_IOU) && bestScore - secondScore < AMBIGUITY_MARGIN
+        val clear = bestScore >= minIou && !rival
         return if (clear) bestId else null
     }
 

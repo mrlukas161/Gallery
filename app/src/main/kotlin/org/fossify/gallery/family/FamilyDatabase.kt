@@ -12,6 +12,10 @@ import androidx.room.RoomDatabase
 // IllegalStateException a dáta ostanú na disku nedotknuté. Pri KAŽDEJ zmene entít zvýš `version`
 // A pridaj .addMigrations(Migration(stará, nová) { … }), vzor: databases/GalleryDatabase.kt.
 // BundleInboxEntity (F4) pribudla ešte vo verzii 1: family.db zatiaľ nebola vydaná v žiadnom APK.
+// Rovnako balík D (spoľahlivosť tvárí): stĺpce ops.wait_key/deferred_at/parked_at a tabuľky face_space
+// a remote_assignment. Na testovacom telefóne s family.db z 0.66 Room novú schému rovnakej verzie
+// odmietne otvoriť (súbor ostane nedotknutý): vtedy treba zmazať LEN family.db (Ľudia sú v people.db)
+// a telefóny znova spárovať. Po vydaní už len cez verziu 2 + Migration.
 // exportSchema ostáva predvolene zapnutý (rovnako ako PeopleDatabase/FacesDatabase/ExtrasDatabase).
 @Database(
     entities = [
@@ -23,6 +27,8 @@ import androidx.room.RoomDatabase
         ProposalEntity::class,
         MetaEntity::class,
         BundleInboxEntity::class,
+        FaceSpaceEntity::class,
+        RemoteAssignmentEntity::class,
     ],
     version = 1,
 )
@@ -42,6 +48,10 @@ abstract class FamilyDatabase : RoomDatabase() {
     abstract fun metaDao(): MetaDao
 
     abstract fun bundleInboxDao(): BundleInboxDao
+
+    abstract fun faceSpaceDao(): FaceSpaceDao
+
+    abstract fun remoteAssignmentDao(): RemoteAssignmentDao
 
     companion object {
         private const val DB_NAME = "family.db"

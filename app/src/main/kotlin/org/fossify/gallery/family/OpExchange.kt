@@ -20,11 +20,13 @@ internal class OpExchange(private val db: FamilyDatabase) {
     fun ownOpsSince(selfId: String, since: Long, limit: Int): Batch {
         // F3 tu doplní snapshot Ľudí po spárovaní a čerstvé odtlačky osôb
         FamilyHandlers.beforeOwnOps()
-        val all = db.opDao().getOpsSince(selfId, since)
-        if (all.size <= limit) return Batch(all, false)
-        var end = limit
-        while (end < all.size && all[end].lamport == all[end - 1].lamport) end++
-        return Batch(all.subList(0, end), end < all.size)
+        val (ops, more) = LamportClock.page(db.opDao().getOpsSince(selfId, since), since, limit)
+        return Batch(ops, more)
+    }
+
+    // D1: „have“ druhej strany z hello (najvyšší môj lamport, ktorý už má) → vlastné hodiny aspoň naň
+    fun raiseClock(peerHave: Long) {
+        if (peerHave > 0) db.metaDao().raiseLamport(peerHave)
     }
 
     // Uloží opy od peera (len tie, ktoré naozaj patria jemu) a posunie jeho „have“. Vráti počet nových.

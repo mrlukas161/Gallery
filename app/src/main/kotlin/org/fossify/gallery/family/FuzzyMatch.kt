@@ -41,13 +41,14 @@ object FuzzyMatch {
         return if (ambiguous) null else bestKey
     }
 
-    private data class Score(val distance: Int, val dateDiffMs: Long) : Comparable<Score> {
+    // Kvalita zhody: menšia = lepšia (pHash vzdialenosť, potom rozdiel dátumu).
+    data class Score(val distance: Int, val dateDiffMs: Long) : Comparable<Score> {
         override fun compareTo(other: Score): Int =
             compareValuesBy(this, other, Score::distance, Score::dateDiffMs)
     }
 
     // null = nezhoda
-    private fun score(a: Fingerprint, b: Fingerprint): Score? {
+    fun score(a: Fingerprint, b: Fingerprint): Score? {
         if (a.phash == 0L || b.phash == 0L) return null
         val distance = hammingDistance(a.phash, b.phash)
         val ta = a.takenAtMs?.takeIf { it > 0L }

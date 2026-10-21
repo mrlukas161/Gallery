@@ -30,20 +30,27 @@ import java.io.File
 // geo/phash/clip/qr pri ostatných), takže indexery fotku preskočia — procesor nerobí nič druhýkrát.
 // Čo už prijímateľ má, sa NIKDY neprepisuje (BundleRules.plan). Tváre sa len pridávajú k fotke, ktorá ešte
 // žiadne nemá, takže pomenované tváre prijímateľa sa nedajú poškodiť. Volá sa len z pozadia.
+@Suppress("TooManyFunctions")
 class BundleApplier(context: Context) {
     private val app = context.applicationContext
     private val scope = IndexScope(app)
     private val faceDao by lazy { FacesDatabase.getInstance(app).FaceDao() }
 
     // localPhash = pHash prijímateľovej kópie, ak ho vypočítala záloha (FUZZY) — uloží sa namiesto cudzieho.
+    // names (D5) = ako zapísať mená (séria bez EXIF), fromDeviceId/inboxId (D6) = pôvod priradení.
     // Vráti, čo sa naozaj zapísalo.
+    @Suppress("LongParameterList")
     fun apply(
         path: String,
         bundle: PhotoBundle,
         match: BundleMatch,
         localPhash: Long? = null,
         mediaStoreId: Long? = null,
+        names: NamePolicy = NamePolicy.FULL,
+        fromDeviceId: String? = null,
+        inboxId: String? = null,
     ): TakePlan {
+        val origin = Origin(names, fromDeviceId, inboxId)
         // fotka v zamknutom/vylúčenom priečinku: indexery ju nespracúvajú, výsledky sa tam nezapíšu ani z balíka
         if (!scope.allows(path) || !File(path).isFile) return TakePlan()
         val image = path.isImageFast()
@@ -54,7 +61,8 @@ class BundleApplier(context: Context) {
         val geo = bundle.geo
         val qr = bundle.qr
         val wrote = TakePlan(
-            faces = plan.faces && guarded { writeFaces(path, bundle.faces.orEmpty(), mediaStoreId, now) } == true,
+            faces = plan.faces &&
+                guarded { writeFaces(path, bundle.faces.orEmpty(), mediaStoreId, now, origin) } == true,
             ocr = plan.ocr && ocr != null &&
                 guarded { OcrIndexer.saveResult(app, path, ocr, overwrite = false) } == true,
             geo = plan.geo && geo != null && guarded {
@@ -64,9 +72,35 @@ class BundleApplier(context: Context) {
             clip = plan.clip && writeClip(path, bundle, now),
             qr = plan.qr && qr != null && guarded { QrScanner.store(app, path, qr) } != null,
         )
+        // D4: fotku už spracoval prijímateľ sám (napr. kópia z WhatsAppu) → aspoň mená cez párovanie tvárí
+        if (image && have.faces && !plan.faces) guarded { takeNames(path, bundle.faces.orEmpty(), match, now, origin) }
         // obsahový kľúč fotky si zapamätaj (F3 podľa neho páruje priradenia tvárí z op-logu)
         guarded { ContentKeyStore(FamilyDatabase.getInstance(app).contentKeyDao()).keyFor(path) }
         return wrote
+    }
+
+    // pôvod a politika mien balíka
+    private class Origin(val names: NamePolicy, val deviceId: String?, val inboxId: String?)
+
+    private fun takeNames(path: String, faces: List<BundleFace>, match: BundleMatch, now: Long, origin: Origin) {
+        if (faces.isEmpty()) return
+        val family = FamilyDatabase.getInstance(app)
+        val local = FamilyFaces(app, faceDao, ContentKeyStore(family.contentKeyDao()), family.faceSpaceDao())
+            .localBoxes(path)
+        if (local.isEmpty()) return
+        val minIou = if (match == BundleMatch.EXACT) FaceMatch.MIN_IOU_EXACT else FaceMatch.MIN_IOU
+        val pairs = BundleNames.pair(faces, local, minIou)
+        val state = LocalFamilyState(app)
+        BundleNames.writes(faces, pairs, origin.names, { state.localPersonId(it) }, { state.assignment(it) })
+            .forEach { write(it, now, origin) }
+    }
+
+    private fun write(w: BundleNames.Write, now: Long, origin: Origin) {
+        val entity = FaceAssignmentEntity(w.faceId, w.personId, w.manual, now)
+        PeopleDatabase.getInstance(app).PeopleDao().upsertAssignment(entity)
+        val device = origin.deviceId ?: return
+        FamilyDatabase.getInstance(app).remoteAssignmentDao()
+            .upsert(RemoteOrigin.record(entity, device, RemoteOrigin.bundleOpId(origin.inboxId.orEmpty())))
     }
 
     private fun localResults(path: String, image: Boolean): LocalResults {
@@ -83,7 +117,13 @@ class BundleApplier(context: Context) {
 
     // Tváre v relatívnych súradniciach → absolútne pre túto kópiu (môže byť zmenšená) v priestore, v akom ich
     // ukladá FaceIndexer (UprightDecoder.decode(path, 1024)). Rovnaká poistka id ako pri indexovaní.
-    private fun writeFaces(path: String, faces: List<BundleFace>, mediaStoreId: Long?, now: Long): Boolean {
+    private fun writeFaces(
+        path: String,
+        faces: List<BundleFace>,
+        mediaStoreId: Long?,
+        now: Long,
+        origin: Origin,
+    ): Boolean {
         if (faces.isNotEmpty()) {
             if (!FacesDatabase.ensureIdsAboveReferences(app)) return false
             val size = UprightDecoder.uprightSize(path, FaceMatch.DECODE_MAX_SIZE) ?: return false
@@ -108,22 +148,22 @@ class BundleApplier(context: Context) {
             faceDao.insertFaces(entities)
         }
         faceDao.insertIndexedPhoto(IndexedPhotoEntity(path, faces.size, now))
-        if (faces.isNotEmpty()) guarded { assign(path, faces, now) }
+        if (faces.isNotEmpty()) guarded { assign(path, faces, now, origin) }
         return true
     }
 
     // priradenia osobám podľa rodinného UUID (neznáma osoba = bez priradenia; ručné priradenia prídu aj
     // cez op-log F3 a spárujú sa po FamilySync.retryPending) a „odložené“ tváre
-    private fun assign(path: String, faces: List<BundleFace>, now: Long) {
+    // D5: pri sérii bez EXIF len automaticky alebo bez mien (origin.names); D6: pôvod priradení
+    private fun assign(path: String, faces: List<BundleFace>, now: Long, origin: Origin) {
         val inserted = faceDao.getFacesForPath(path).associateBy { it.faceIndex }
         val state = LocalFamilyState(app)
-        val people = PeopleDatabase.getInstance(app).PeopleDao()
         val extras = ExtrasDatabase.getInstance(app).ExtrasDao()
+        val names = BundleNames.forNewFaces(faces, origin.names) { state.localPersonId(it) }
         faces.forEachIndexed { i, f ->
             val faceId = inserted[i]?.id ?: return@forEachIndexed
             if (f.ignored) extras.insertIgnored(IgnoredFaceEntity(faceId))
-            val localId = f.familyUuid?.let { state.localPersonId(it) } ?: return@forEachIndexed
-            people.upsertAssignment(FaceAssignmentEntity(faceId, localId, f.manual, now))
+            names[i]?.let { write(it.copy(faceId = faceId), now, origin) }
         }
     }
 
@@ -149,7 +189,13 @@ class BundleApplier(context: Context) {
         val clip = bundle.clip ?: return false
         val bytes = FamilyBytes.unb64(clip.vectorB64)?.takeIf { it.size == CLIP_BYTES } ?: return false
         val ok = guarded { ClipDatabase.getInstance(app).ClipDao().insert(ClipEntity(path, bytes, now)) } != null
-        if (ok) guarded { FamilyDatabase.getInstance(app).metaDao().put(MetaEntity(KEY_CLIP_MODEL, clip.modelId)) }
+        if (ok) {
+            guarded {
+                val meta = FamilyDatabase.getInstance(app).metaDao()
+                val merged = FamilyModels.mergeClipModel(meta.get(KEY_CLIP_MODEL), clip.modelId)
+                meta.put(MetaEntity(KEY_CLIP_MODEL, merged))
+            }
+        }
         return ok
     }
 

@@ -42,7 +42,11 @@ class FamilyProposals(context: Context) {
     fun accept(item: Item) {
         val persons = personNames()
         when (val p = item.proposal) {
-            is RenameProposal -> if (persons.containsKey(p.localId)) people.renamePerson(p.localId, p.theirName)
+            is RenameProposal -> if (persons.containsKey(p.localId)) {
+                people.renamePerson(p.localId, p.theirName)
+                // D8: rozhodnutie je nová zmena mena → obe strany dôjdu k rovnakému stavu
+                recordRename(p.localId, RenameResolution.onAccept(p))
+            }
             is SameNameProposal -> linkSameName(p, persons)
             is MergeProposal -> if (persons.containsKey(p.fromLocalId) && persons.containsKey(p.toLocalId)) {
                 people.mergeManyInto(listOf(p.fromLocalId), p.toLocalId)
@@ -75,9 +79,17 @@ class FamilyProposals(context: Context) {
                 // ich osoba vznikne tu ako samostatná (s rovnakým menom)
                 sink.createPerson(ApplyAction.CreatePerson(p.uuid, p.name), null)
             }
+            // D8: „ponechať“ moje meno je tiež novšia zmena — inak by telefóny ostali s rôznymi menami
+            if (p is RenameProposal && !PeopleBackupFormat.isBackupDevice(item.fromDeviceId)) {
+                RenameResolution.onKeep(p)?.let { recordRename(p.localId, it) }
+            }
             family.proposalDao().setProposalState(item.id, ProposalEntity.STATE_REJECTED)
         }
         retry()
+    }
+
+    private fun recordRename(localId: Long, op: PersonRename) {
+        OpRecorder(app).use { it.personRenamed(localId, op.previousName, op.name) }
     }
 
     private fun linkSameName(p: SameNameProposal, persons: Map<Long, String?>) {

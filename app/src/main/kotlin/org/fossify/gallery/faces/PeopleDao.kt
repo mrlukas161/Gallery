@@ -142,6 +142,11 @@ interface PeopleDao {
     @Query("UPDATE anchor_embeddings SET person_id = :to WHERE person_id = :from")
     fun reassignAnchors(from: Long, to: Long)
 
+    // rodinné prepojenie (balík D7): sada odtlačkov jedného zdroja sa nahrádza, nie pridáva
+    // (len dotaz, bez zmeny schémy)
+    @Query("DELETE FROM anchor_embeddings WHERE source = :source AND person_id = :personId")
+    fun deleteAnchorsFromSource(personId: Long, source: String)
+
     @Query("SELECT COUNT(*) FROM anchor_embeddings")
     fun getAnchorCount(): Int
 

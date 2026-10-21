@@ -5,13 +5,29 @@ package org.fossify.gallery.family
 //  - návrh vznikne pri: premenovaní na oboch stranách, rovnakom mene, zlúčení, odobratí alebo
 //    preradení ručne priradenej tváre a pri zmazaní (mazanie sa NIKDY nevykoná automaticky);
 //  - ručné priradenie má vždy prednosť pred automatickým, aj keď automatické príde neskôr;
+//  - oprava priradenia od toho istého telefónu, ktorý ho sem poslal, sa prevezme potichu, ak sa ho tu
+//    používateľ nedotkol (D6, remote_assignment);
+//  - mená: posledná zmena vyhráva podľa (nameVersionLamport, deviceId); návrh len pri súbežnej zmene (D8);
+//  - odtlačky (AnchorsSet) sadu daného zdroja nahradia, nepridávajú (D7);
 //  - každá operácia sa aplikuje práve raz (opId) a v deterministickom poradí (LoggedOp.ORDER).
 // Samotný zápis robí ActionSink (FamilyLocalState) výhradne cez existujúce DAO metódy.
 
 // Lokálne priradenie tváre (FaceAssignmentEntity v people.db).
 data class LocalAssignment(val personId: Long, val manual: Boolean)
 
+// Verzia mena osoby (D8): lamport a zariadenie operácie, ktorá meno naposledy nastavila. Novšia = vyšší
+// lamport, pri rovnosti vyššie deviceId (deterministicky rovnako na oboch telefónoch).
+data class NameVersion(val lamport: Long, val deviceId: String?) : Comparable<NameVersion> {
+    override fun compareTo(other: NameVersion): Int =
+        compareValuesBy(this, other, { it.lamport }, { it.deviceId.orEmpty() })
+
+    companion object {
+        val NONE = NameVersion(0, null)
+    }
+}
+
 // Pohľad na lokálny stav, z ktorého sa rozhoduje.
+@Suppress("TooManyFunctions") // pohľad na celý lokálny stav (people/extras/faces/family.db)
 interface FamilyState {
     // lokálne id osoby pre rodinné UUID (aj cez vlastné zlúčenia); null = neznáma alebo už neexistuje
     fun localPersonId(uuid: String): Long?
@@ -34,6 +50,17 @@ interface FamilyState {
 
     // už uložené odtlačky osoby z daného zdroja (AnchorEmbeddingEntity.source)
     fun anchors(localId: Long, source: String): List<FloatArray>
+
+    // D8: verzia aktuálneho mena osoby (FamilyPersonEntity.nameVersionLamport/nameDeviceId)
+    fun nameVersion(uuid: String): NameVersion = NameVersion.NONE
+
+    // D6: telefón, ktorý priradenie tváre sem poslal, ak sa ho tu odvtedy nikto nedotkol; null = vlastné
+    fun assignmentOrigin(faceId: Long): String? = null
+
+    // D10: zdroje odtlačkov osoby (AnchorEmbeddingEntity.source) a či je telefón stále spárovaný
+    fun anchorSources(localId: Long): Set<String> = emptySet()
+
+    fun isPairedDevice(deviceId: String): Boolean = true
 }
 
 // Návrh pre používateľa (ProposalEntity). Typ = ProposalEntity.type.
@@ -99,7 +126,14 @@ sealed interface ApplyAction {
 
     data class RenameGroup(val oldName: String, val newName: String) : ApplyAction
 
-    data class AddAnchors(val localId: Long, val vectors: List<FloatArray>, val source: String) : ApplyAction
+    // D7: sada odtlačkov zdroja `source` sa NAHRADÍ (nie pridá); clearSources = sady iných zdrojov tej istej
+    // osoby, ktoré nahrádza tiež (D10: starý deviceId toho istého telefónu po preinštalovaní)
+    data class ReplaceAnchors(
+        val localId: Long,
+        val vectors: List<FloatArray>,
+        val source: String,
+        val clearSources: Set<String> = emptySet(),
+    ) : ApplyAction
 
     data class Propose(val proposal: Proposal) : ApplyAction
 }
@@ -110,15 +144,17 @@ enum class Reason {
     PERSON_GONE, // lokálna osoba už neexistuje
     NO_CHANGE,
     MANUAL_WINS, // automatické priradenie neprepíše iné priradenie
-    OTHER_MODEL, // odtlačky iného embeddera sa zahodia
+    OTHER_MODEL, // odtlačky iného embeddera počkajú na rovnaký model (D9), nikdy sa nemiešajú
+    STALE_NAME, // premenovanie staršie než lokálne meno (D8: posledná zmena vyhráva)
     GROUP_EXISTS,
 }
 
 sealed interface Decision {
     data class Apply(val actions: List<ApplyAction>) : Decision
 
-    // ostane v op-logu neaplikovaná a skúsi sa znova pri ďalšom príjme
-    data class Defer(val reason: Reason) : Decision
+    // ostane v op-logu neaplikovaná a skúsi sa znova pri ďalšom príjme; waitKey (D9) = skúsi sa až keď sa
+    // objaví fotka s týmto obsahovým kľúčom, alebo „model:<id>“ = až keď je tu ten model odtlačkov
+    data class Defer(val reason: Reason, val waitKey: String? = null) : Decision
 
     // spracovaná bez zmeny (označí sa ako aplikovaná)
     data class Skip(val reason: Reason) : Decision
@@ -132,6 +168,16 @@ interface OpStore {
     fun pending(): List<LoggedOp>
 
     fun markApplied(opId: String)
+
+    // D9: operácia sa odložila (waitKey = na čo čaká)
+    fun deferred(op: LoggedOp, waitKey: String?) {
+        // predvolene nič
+    }
+
+    // D9: novšia sada odtlačkov tej istej osoby z toho istého telefónu je spracovaná, staršie sa môžu zmazať
+    fun supersede(op: LoggedOp) {
+        // predvolene nič
+    }
 }
 
 fun interface ActionSink {
@@ -164,15 +210,21 @@ class OpApplier(private val ownDeviceId: String, private val faceModelId: String
 
     private fun applyOne(op: LoggedOp, store: OpStore, state: FamilyState, sink: ActionSink, r: ApplyReport) =
         when (val decision = decide(op, state)) {
-            is Decision.Defer -> r.copy(deferred = r.deferred + 1)
+            is Decision.Defer -> {
+                store.deferred(op, decision.waitKey)
+                r.copy(deferred = r.deferred + 1)
+            }
+
             is Decision.Skip -> {
                 store.markApplied(op.opId)
+                if (op.op is AnchorsSet) store.supersede(op)
                 r.copy(skipped = r.skipped + 1)
             }
 
             is Decision.Apply -> try {
                 decision.actions.forEach { sink.execute(it, op) }
                 store.markApplied(op.opId)
+                if (op.op is AnchorsSet) store.supersede(op)
                 val proposals = decision.actions.count { it is ApplyAction.Propose }
                 r.copy(applied = r.applied + 1, proposals = r.proposals + proposals)
             } catch (ignored: RuntimeException) {
@@ -183,12 +235,12 @@ class OpApplier(private val ownDeviceId: String, private val faceModelId: String
 
     fun decide(logged: LoggedOp, state: FamilyState): Decision = when (val op = logged.op) {
         is PersonCreate -> PersonRules.create(op, state)
-        is PersonRename -> PersonRules.rename(op, state)
+        is PersonRename -> PersonRules.rename(op, NameVersion(logged.lamport, logged.deviceId), state)
         is PersonMerge -> PersonRules.merge(op, state)
         is PersonDelete -> PersonRules.delete(op, state)
-        is AssignFace -> FaceRules.assign(op, state)
-        is UnassignFace -> FaceRules.unassign(op, state)
-        is AnchorsSet -> FaceRules.anchors(op, state, faceModelId, anchorSource(logged.deviceId))
+        is AssignFace -> FaceRules.assign(op, logged.deviceId, state)
+        is UnassignFace -> FaceRules.unassign(op, logged.deviceId, state)
+        is AnchorsSet -> AnchorRules.anchors(op, state, faceModelId, logged.deviceId)
         is GroupSet -> GroupRules.set(op, state)
         is GroupRename -> GroupRules.rename(op, state)
     }
@@ -196,7 +248,24 @@ class OpApplier(private val ownDeviceId: String, private val faceModelId: String
     companion object {
         const val ANCHOR_SOURCE_PREFIX = "family:"
 
-        fun anchorSource(deviceId: String) = "$ANCHOR_SOURCE_PREFIX$deviceId"
+        // D10: odtlačky zo zálohy osôb (F6) sú vlastné — zdroj nezačína „family:“, takže sa posielajú ďalej
+        // (AnchorOutbox) a nemajú nižšiu váhu cudzích odtlačkov
+        const val RESTORED_ANCHOR_SOURCE = "restore"
+
+        // kľúč čakania (D9) pre odtlačky iného modelu
+        const val MODEL_WAIT_PREFIX = "model:"
+
+        fun anchorSource(deviceId: String) = if (PeopleBackupFormat.isBackupDevice(deviceId)) {
+            RESTORED_ANCHOR_SOURCE
+        } else {
+            "$ANCHOR_SOURCE_PREFIX$deviceId"
+        }
+
+        fun modelWait(faceModelId: String) = "$MODEL_WAIT_PREFIX$faceModelId"
+
+        // nahradiť (zmazať a zapísať znova) sa smú len sady z rodiny a zo zálohy osôb, nikdy Picasa a iné vlastné
+        fun isReplaceableSource(source: String) =
+            source.startsWith(ANCHOR_SOURCE_PREFIX) || source == RESTORED_ANCHOR_SOURCE
     }
 }
 
@@ -218,11 +287,15 @@ private object PersonRules {
         }
     }
 
-    fun rename(op: PersonRename, state: FamilyState): Decision {
+    // D8: posledná zmena vyhráva. Staršie premenovanie než lokálne meno sa preskočí (druhá strana dostane
+    // naše novšie a prevezme ho). Novšie sa prevezme potichu, keď odosielateľ videl naše meno (previousName)
+    // alebo tu meno chýba; inak ide o súbežnú zmenu → návrh.
+    fun rename(op: PersonRename, version: NameVersion, state: FamilyState): Decision {
         val local = state.localPersonId(op.uuid) ?: return missingPerson(op.uuid, state)
         val current = state.personName(local)
         return when {
             current == op.name -> Decision.Skip(Reason.NO_CHANGE)
+            version <= state.nameVersion(op.uuid) -> Decision.Skip(Reason.STALE_NAME)
             current.isNullOrBlank() || current == op.previousName ->
                 Decision.Apply(listOf(ApplyAction.RenamePerson(local, op.uuid, op.name)))
 
@@ -248,9 +321,9 @@ private object PersonRules {
 }
 
 private object FaceRules {
-    fun assign(op: AssignFace, state: FamilyState): Decision {
+    fun assign(op: AssignFace, from: String, state: FamilyState): Decision {
         val person = state.localPersonId(op.uuid) ?: return missingPerson(op.uuid, state)
-        val face = state.findFace(op.face) ?: return Decision.Defer(Reason.FACE_NOT_HERE)
+        val face = state.findFace(op.face) ?: return waitForPhoto(op.face)
         val current = state.assignment(face)
         val assign = Decision.Apply(listOf(ApplyAction.Assign(face, person, op.manual)))
         return when {
@@ -260,37 +333,73 @@ private object FaceRules {
 
             !op.manual -> Decision.Skip(Reason.MANUAL_WINS)
             !current.manual -> assign
+            // D6: ten istý telefón opravuje svoje vlastné (tu nedotknuté) priradenie
+            state.assignmentOrigin(face) == from -> assign
             else -> propose(FaceMoveProposal(op.face, face, current.personId, person))
         }
     }
 
-    fun unassign(op: UnassignFace, state: FamilyState): Decision {
+    fun unassign(op: UnassignFace, from: String, state: FamilyState): Decision {
         val person = state.localPersonId(op.uuid) ?: return missingPerson(op.uuid, state)
         // aj odobratie čaká na fotku: inak by neskôr dorazené priradenie prebilo novšie odobratie
-        val face = state.findFace(op.face) ?: return Decision.Defer(Reason.FACE_NOT_HERE)
+        val face = state.findFace(op.face) ?: return waitForPhoto(op.face)
         val current = state.assignment(face)
         return when {
             current == null || current.personId != person -> Decision.Skip(Reason.NO_CHANGE)
             !current.manual -> Decision.Apply(listOf(ApplyAction.Reject(face, person)))
+            // D6: chybné priradenie, ktoré sem poslal ten istý telefón a tu sa ho nikto nedotkol → potichu
+            state.assignmentOrigin(face) == from -> Decision.Apply(listOf(ApplyAction.Reject(face, person)))
             else -> propose(FaceRemoveProposal(op.face, face, person))
         }
     }
 
-    fun anchors(op: AnchorsSet, state: FamilyState, faceModelId: String, source: String): Decision {
-        if (op.faceModelId != faceModelId) return Decision.Skip(Reason.OTHER_MODEL)
+    // D9: skúsi sa znova, až keď sa objaví fotka s týmto obsahovým kľúčom
+    private fun waitForPhoto(ref: FaceRef) = Decision.Defer(Reason.FACE_NOT_HERE, ref.contentKey)
+}
+
+// D7 + D10: odtlačky osoby (AnchorsSet).
+private object AnchorRules {
+    // podiel takmer zhodných vektorov, od ktorého je sada iného zdroja tá istá (preinštalovaný telefón)
+    private const val SAME_SET_SHARE = 1.0 / 3
+    private const val SAME_VECTOR_COSINE = 0.995f
+
+    fun anchors(op: AnchorsSet, state: FamilyState, faceModelId: String, from: String): Decision {
+        // iný model: počká, kým tu bude ten istý (vektory rôznych modelov sa nikdy nemiešajú)
+        if (op.faceModelId != faceModelId) {
+            return Decision.Defer(Reason.OTHER_MODEL, OpApplier.modelWait(op.faceModelId))
+        }
         val person = state.localPersonId(op.uuid) ?: return missingPerson(op.uuid, state)
-        val have = state.anchors(person, source)
-        val room = AnchorsSet.MAX_ANCHORS - have.size
-        val fresh = op.vectors
-            .filter { v -> v.isNotEmpty() && have.none { it.contentEquals(v) } }
-            .distinctBy { it.toList() }
-            .take(maxOf(0, room))
-        return if (fresh.isEmpty()) {
-            Decision.Skip(Reason.NO_CHANGE)
+        val source = OpApplier.anchorSource(from)
+        val fresh = op.vectors.filter { it.isNotEmpty() }.distinctBy { it.toList() }.take(AnchorsSet.MAX_ANCHORS)
+        if (fresh.isEmpty()) return Decision.Skip(Reason.NO_CHANGE)
+        val stale = if (source == OpApplier.RESTORED_ANCHOR_SOURCE) {
+            emptySet()
         } else {
-            Decision.Apply(listOf(ApplyAction.AddAnchors(person, fresh, source)))
+            staleSources(person, source, fresh, state)
+        }
+        if (stale.isEmpty() && sameSet(state.anchors(person, source), fresh)) return Decision.Skip(Reason.NO_CHANGE)
+        return Decision.Apply(listOf(ApplyAction.ReplaceAnchors(person, fresh, source, stale)))
+    }
+
+    // Sady iných telefónov tej istej osoby, ktoré sú v skutočnosti od toho istého telefónu pod starým deviceId
+    // (preinštalovanie, D10): telefón už nie je spárovaný, alebo sa jeho sada s novou z veľkej časti zhoduje.
+    private fun staleSources(person: Long, source: String, fresh: List<FloatArray>, state: FamilyState): Set<String> {
+        val prefix = OpApplier.ANCHOR_SOURCE_PREFIX
+        val backupPrefix = prefix + PeopleBackupFormat.DEVICE_PREFIX
+        return state.anchorSources(person).filterTo(HashSet()) { other ->
+            val foreign = other != source && other.startsWith(prefix) && !other.startsWith(backupPrefix)
+            val gone = foreign && !state.isPairedDevice(other.removePrefix(prefix))
+            gone || (foreign && overlaps(state.anchors(person, other), fresh))
         }
     }
+
+    private fun overlaps(theirs: List<FloatArray>, fresh: List<FloatArray>): Boolean {
+        val same = theirs.count { v -> fresh.any { FaceSpaceRules.cosine(it, v) >= SAME_VECTOR_COSINE } }
+        return theirs.isNotEmpty() && same >= theirs.size * SAME_SET_SHARE
+    }
+
+    private fun sameSet(a: List<FloatArray>, b: List<FloatArray>): Boolean =
+        a.size == b.size && a.map { it.toList() }.toSet() == b.map { it.toList() }.toSet()
 }
 
 private object GroupRules {

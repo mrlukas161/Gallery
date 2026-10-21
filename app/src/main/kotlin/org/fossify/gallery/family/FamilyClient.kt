@@ -77,8 +77,11 @@ class FamilyClient(context: Context) {
             return SyncResult(peer.deviceId, Status.UNPAIRED)
         }
         val counters = Counters()
+        val serverHave = response.optLong("have", 0)
+        // D1: po obnove staršej family.db by nové opy mali lamport ≤ have servera a nikdy by neodišli
+        sync.raiseClock(serverHave)
         return try {
-            val ok = exchangeOps(peer, link, response.optLong("have", 0), counters) &&
+            val ok = exchangeOps(peer, link, serverHave, counters) &&
                 sendOutbox(peer, link, counters) &&
                 finish(peer, link)
             val status = if (ok) Status.OK else Status.REJECTED

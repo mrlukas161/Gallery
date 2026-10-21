@@ -22,32 +22,38 @@ import org.fossify.gallery.faces.PersonGroupEntity
 class FamilyLocal(context: Context, clock: () -> Long = System::currentTimeMillis) {
     private val app = context.applicationContext
     val state = LocalFamilyState(app)
-    val store = LocalOpStore(FamilyDatabase.getInstance(app).opDao(), clock)
+    val store = LocalOpStore(FamilyDatabase.getInstance(app).opDao(), clock, FaceEmbedder.MODEL_ID)
     val sink = LocalActionSink(app, state, clock)
     val ownDeviceId: String by lazy { FamilyDatabase.getInstance(app).metaDao().deviceId() }
 }
 
+@Suppress("TooManyFunctions") // implementácia celého FamilyState
 class LocalFamilyState(context: Context) : FamilyState {
     private val family = FamilyDatabase.getInstance(context)
     private val people = PeopleDatabase.getInstance(context).PeopleDao()
     private val extras = ExtrasDatabase.getInstance(context).ExtrasDao()
+    // D4: tváre sa hľadajú aj na kópiách nájdených len cez zálohu (bundle_inbox.applied_path)
     private val faces = FamilyFaces(
         context,
         FacesDatabase.getInstance(context).FaceDao(),
         ContentKeyStore(family.contentKeyDao()),
+        spaces = family.faceSpaceDao(),
+        aliases = { family.bundleInboxDao().appliedPaths(it) },
     )
     private val familyPersons = family.familyPersonDao()
+    private val remote = family.remoteAssignmentDao()
 
     private var personsCache: Map<Long, String?>? = null
-    private var assignmentsCache: MutableMap<Long, LocalAssignment>? = null
+    private var assignmentsCache: MutableMap<Long, FaceAssignmentEntity>? = null
     private var aliasesCache: Map<String, String>? = null
+    private var pairedCache: Set<String>? = null
 
     private val persons: Map<Long, String?>
         get() = personsCache ?: people.getPersons().associate { it.id to it.name }.also { personsCache = it }
 
-    private val assignments: MutableMap<Long, LocalAssignment>
+    private val assignments: MutableMap<Long, FaceAssignmentEntity>
         get() = assignmentsCache ?: people.getAssignments()
-            .associateTo(HashMap()) { it.faceId to LocalAssignment(it.personId, it.isManual) }
+            .associateByTo(HashMap()) { it.faceId }
             .also { assignmentsCache = it }
 
     // vlastné zlúčenia: fromUuid → toUuid
@@ -63,7 +69,7 @@ class LocalFamilyState(context: Context) : FamilyState {
         aliasesCache = null
     }
 
-    fun onAssignmentChanged(faceId: Long, value: LocalAssignment?) {
+    fun onAssignmentChanged(faceId: Long, value: FaceAssignmentEntity?) {
         val cache = assignmentsCache ?: return
         if (value == null) cache.remove(faceId) else cache[faceId] = value
     }
@@ -90,7 +96,26 @@ class LocalFamilyState(context: Context) : FamilyState {
 
     override fun findFace(ref: FaceRef): Long? = faces.findFace(ref)
 
-    override fun assignment(faceId: Long): LocalAssignment? = assignments[faceId]
+    override fun assignment(faceId: Long): LocalAssignment? =
+        assignments[faceId]?.let { LocalAssignment(it.personId, it.isManual) }
+
+    override fun nameVersion(uuid: String): NameVersion =
+        familyPersons.getPersonByUuid(uuid)?.let { NameVersion(it.nameVersionLamport, it.nameDeviceId) }
+            ?: NameVersion.NONE
+
+    override fun assignmentOrigin(faceId: Long): String? {
+        val row = remote.get(faceId) ?: return null
+        return row.deviceId.takeIf { RemoteOrigin.untouched(row, assignments[faceId]) }
+    }
+
+    override fun anchorSources(localId: Long): Set<String> =
+        people.getAllAnchors().filter { it.personId == localId }.mapTo(HashSet()) { it.source }
+
+    override fun isPairedDevice(deviceId: String): Boolean {
+        val paired = pairedCache
+            ?: family.peerDao().getPeers().mapTo(HashSet()) { it.deviceId }.also { pairedCache = it }
+        return deviceId in paired
+    }
 
     override fun groupMembers(name: String): Set<Long>? =
         extras.groupByName(name)?.let { extras.getMembers(it.id).toSet() }
@@ -104,16 +129,40 @@ class LocalFamilyState(context: Context) : FamilyState {
     }
 }
 
-class LocalOpStore(private val dao: OpDao, private val clock: () -> Long) : OpStore {
+// D9: staršie AnchorsSet tej istej osoby z toho istého telefónu (aj vlastné) sú nahradené novšou sadou
+internal fun dropSupersededAnchors(dao: OpDao, op: LoggedOp) {
+    val uuid = (op.op as? AnchorsSet)?.uuid ?: return
+    dao.getOpsOfType(op.deviceId, OpType.ANCHORS_SET)
+        .filter { it.lamport < op.lamport && (OpCodec.decode(it.type, it.payloadJson) as? AnchorsSet)?.uuid == uuid }
+        .forEach { dao.deleteSupersededAnchors(it.opId) }
+}
+
+class LocalOpStore(private val dao: OpDao, private val clock: () -> Long, private val faceModelId: String) :
+    OpStore {
     override fun store(op: LoggedOp): Boolean =
         dao.insertOp(OpEntity(op.opId, op.deviceId, op.lamport, op.op.type, OpCodec.encode(op.op))) != -1L
 
-    // neznáme typy (novšia appka) a poškodené payloady ostanú v op-logu neaplikované
-    override fun pending(): List<LoggedOp> = dao.getUnappliedOps().mapNotNull { e ->
-        OpCodec.decode(e.type, e.payloadJson)?.let { LoggedOp(e.opId, e.deviceId, e.lamport, it) }
+    // Neznáme typy (novšia appka) a poškodené payloady ostanú v op-logu neaplikované. D9: operácie, ktoré
+    // čakajú na fotku, sa vrátia, až keď sa jej obsahový kľúč objaví; po 90 dňoch sa odložia nabok.
+    override fun pending(): List<LoggedOp> {
+        val now = clock()
+        dao.parkStale(now - PARK_AFTER_MS, now)
+        return dao.getPendingOps(OpApplier.modelWait(faceModelId)).mapNotNull { e ->
+            OpCodec.decode(e.type, e.payloadJson)?.let { LoggedOp(e.opId, e.deviceId, e.lamport, it) }
+        }
     }
 
     override fun markApplied(opId: String) = dao.markOpApplied(opId, clock())
+
+    override fun deferred(op: LoggedOp, waitKey: String?) = dao.deferOp(op.opId, waitKey, clock())
+
+    // nahradené sady odtlačkov tej istej osoby z toho istého telefónu (staršie, aj odložené pre iný model)
+    override fun supersede(op: LoggedOp) = dropSupersededAnchors(dao, op)
+
+    companion object {
+        // D9: operácia s tvárou, ktorej fotka sa ani za 90 dní neobjavila, sa odloží nabok (nezmaže sa)
+        const val PARK_AFTER_MS = 90L * 24 * 60 * 60 * 1000
+    }
 }
 
 class LocalActionSink(context: Context, private val state: LocalFamilyState, private val clock: () -> Long) :
@@ -122,25 +171,31 @@ class LocalActionSink(context: Context, private val state: LocalFamilyState, pri
     private val people = PeopleDatabase.getInstance(context).PeopleDao()
     private val extras = ExtrasDatabase.getInstance(context).ExtrasDao()
 
+    // osoby, ktoré vznikli týmto príjmom (D10: po obnove zálohy sa ohlásia prepojeným telefónom)
+    val createdUuids = ArrayList<String>()
+
     override fun execute(action: ApplyAction, op: LoggedOp) {
         when (action) {
             is ApplyAction.CreatePerson -> createPerson(action, op)
             is ApplyAction.RenamePerson -> renamePerson(action, op)
             is ApplyAction.Assign -> {
-                people.upsertAssignment(FaceAssignmentEntity(action.faceId, action.localId, action.manual, clock()))
-                state.onAssignmentChanged(action.faceId, LocalAssignment(action.localId, action.manual))
+                val entity = FaceAssignmentEntity(action.faceId, action.localId, action.manual, clock())
+                people.upsertAssignment(entity)
+                state.onAssignmentChanged(action.faceId, entity)
+                // D6: pôvod priradenia (obnova zálohy osôb je vlastná, nie cudzia)
+                if (!PeopleBackupFormat.isBackupDevice(op.deviceId)) {
+                    family.remoteAssignmentDao().upsert(RemoteOrigin.record(entity, op.deviceId, op.opId))
+                }
             }
 
             is ApplyAction.Reject -> {
                 people.rejectFacesForPerson(listOf(action.faceId), action.localId)
                 state.onAssignmentChanged(action.faceId, null)
+                family.remoteAssignmentDao().forget(action.faceId)
             }
 
             is ApplyAction.CreateGroup, is ApplyAction.AddGroupMembers, is ApplyAction.RenameGroup -> group(action)
-            is ApplyAction.AddAnchors -> action.vectors.forEach {
-                val bytes = FaceEmbedder.toBytes(it)
-                people.insertAnchor(AnchorEmbeddingEntity(0, action.localId, bytes, action.source, clock()))
-            }
+            is ApplyAction.ReplaceAnchors -> replaceAnchors(action)
 
             is ApplyAction.Propose -> family.proposalDao().insertProposal(
                 ProposalEntity(
@@ -159,6 +214,18 @@ class LocalActionSink(context: Context, private val state: LocalFamilyState, pri
         val id = people.insertPerson(PersonEntity(name = action.name, createdAt = clock()))
         family.familyPersonDao().upsertPerson(FamilyPersonEntity(action.uuid, id, op?.lamport ?: 0, op?.deviceId))
         state.onPersonsChanged()
+        createdUuids.add(action.uuid)
+    }
+
+    // D7: sada zdroja sa nahradí (len odtlačky z rodiny alebo zo zálohy, nikdy Picasa ani tváre); D10: aj sady
+    // starého deviceId toho istého telefónu
+    private fun replaceAnchors(action: ApplyAction.ReplaceAnchors) {
+        (action.clearSources + action.source).filter { OpApplier.isReplaceableSource(it) }
+            .forEach { people.deleteAnchorsFromSource(action.localId, it) }
+        action.vectors.forEach {
+            val bytes = FaceEmbedder.toBytes(it)
+            people.insertAnchor(AnchorEmbeddingEntity(0, action.localId, bytes, action.source, clock()))
+        }
     }
 
     private fun renamePerson(action: ApplyAction.RenamePerson, op: LoggedOp) {
