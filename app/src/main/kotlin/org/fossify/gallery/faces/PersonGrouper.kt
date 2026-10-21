@@ -27,7 +27,13 @@ object PersonGrouper {
     // prah, nad ktorým sa vektor pridá do existujúceho pod-ťažiska (inak založí nové)
     const val SUB_CENTROID_THRESHOLD = 0.6f
 
-    private const val UNROLL = 4
+    // C7 — šírka pásma „neisté, potvrď“ pod prahom automatiky. Pri kNN skóre (C6) leží väčšina správnych,
+    // ale automaticky nezaradených tvárí do 0,1 pod prahom; nižšie už prevládajú cudzí ľudia a sekcia
+    // „Potvrď“ by sa zahltila.
+    const val UNCERTAIN_BAND = 0.10f
+
+    // prah, od ktorého sa počíta pásmo „neisté“, keď je automatika vypnutá (= FaceAuto.NORMAL)
+    const val REFERENCE_THRESHOLD = 0.72f
 
     // vzory osoby (anchor_embeddings) rozdelené podľa pôvodu
     class Anchors(val own: List<FloatArray>, val family: List<FloatArray>)
@@ -115,15 +121,8 @@ object PersonGrouper {
         subCentroidsWeighted(ev.own, ev.family, familyWeight(ev.own.size, ev.family.size))
     }
 
-    // Automatické zaradenie do albumu osoby od zvolenej ISTOTY (podobnosť k ťažisku). Zaradené tváre sú
-    // „nepotvrdené" (nie sú v manualFaceIds), dajú sa kedykoľvek opraviť cez „Toto nie je on". Pravidlá:
-    //  - ignorované tváre (extras.db) a cannot-links sa nezaraďujú (C1);
-    //  - best ≥ threshold a best − druhá najlepšia osoba ≥ margin (C3);
-    //  - jedna osoba najviac raz na fotke: tváre fotky sa priraďujú greedy podľa skóre a osoba, ktorá je
-    //    na fotke už priradená (ručne alebo z rodiny), sa pre ostatné tváre fotky vôbec neuvažuje (C4).
-    //    Tvár, ktorej najlepšiu osobu na fotke získala lepšia tvár, ostane nezaradená (nepresúva sa
-    //    k druhej najlepšej — tá rozostup aj tak nesplnila);
-    //  - ťažisko len z ručne potvrdených tvárí a vzorov, rodinné so zníženou váhou (C5).
+    // Automatické zaradenie do albumu osoby od zvolenej ISTOTY. Zaradené tváre sú „nepotvrdené" (nie sú
+    // v manualFaceIds), dajú sa kedykoľvek opraviť cez „Toto nie je on". Pravidlá sú v classify.
     fun withAutoMatches(
         persons: List<Person>,
         allFaces: List<FaceEntity>,
@@ -135,43 +134,142 @@ object PersonGrouper {
         decode: (ByteArray) -> FloatArray = { FaceEmbedder.toFloats(it) },
     ): List<Person> {
         if (threshold <= 0f || persons.isEmpty()) return persons
-        val model = buildModel(persons, anchorsByPerson, decode) ?: return persons
+        return classify(persons, allFaces, anchorsByPerson, cannotLinks, ignoredFaceIds, threshold, margin, decode)
+            .persons
+    }
+
+    // C7 — tri stavy nepriradenej tváre: AUTOMATICKY (pridá sa do osoby), NEISTÉ (čaká v sekcii „Potvrď“
+    // na karte osoby) alebo nič. Skóre je kNN (C6, KnnModel) s penalizáciou za odmietnuté tváre (C8).
+    //  - ignorované tváre (extras.db) a cannot-links sa nezaraďujú (C1);
+    //  - automaticky: skóre ≥ prah osoby (KnnModel.autoThreshold) a rozostup od druhej osoby ≥ margin (C3);
+    //  - neisté: skóre ≥ prah − UNCERTAIN_BAND, ale nie automaticky (pod prahom alebo s malým rozostupom);
+    //    pri vypnutej automatike (threshold ≤ 0) sa pásmo počíta od REFERENCE_THRESHOLD a všetko je neisté;
+    //  - jedna osoba najviac raz na fotke: tváre fotky sa priraďujú greedy podľa skóre a osoba, ktorá je
+    //    na fotke už priradená (ručne alebo z rodiny), sa pre ostatné tváre fotky vôbec neuvažuje (C4).
+    //    Neistá tvár sa ponúkne len osobe, ktorá na fotke ešte nie je (ani automaticky), a len raz na fotku;
+    //  - prototypy len z ručne potvrdených tvárí a vzorov, rodinné so zníženou váhou (C5).
+    // [contested] = tváre, pri ktorých sú dve osoby nad dolnou hranicou pásma (fronta C11).
+    @Suppress("LongParameterList")
+    fun classify(
+        persons: List<Person>,
+        pool: List<FaceEntity>,
+        anchorsByPerson: Map<Long, Anchors>,
+        cannotLinks: List<CannotLinkEntity>,
+        ignoredFaceIds: Set<Long>,
+        threshold: Float,
+        margin: Float = AUTO_MARGIN,
+        decode: (ByteArray) -> FloatArray = { FaceEmbedder.toFloats(it) },
+        negativeFaces: Map<Long, FaceEntity> = pool.associateByIdNotNull(),
+    ): Classification {
+        val model = buildKnn(persons, anchorsByPerson, cannotLinks, negativeFaces, decode)
+            ?: return Classification(persons, emptyMap(), emptyMap(), emptyList(), null)
         val banned = HashMap<Long, HashSet<Long>>()
         cannotLinks.forEach { banned.getOrPut(it.faceId) { HashSet() }.add(it.personId) }
-        val scorer = Scorer(model, Fixed(persons), banned, ignoredFaceIds, decode)
-
-        // kandidáti (tvár → jej najlepšia osoba) zoskupení podľa fotky
+        val fixed = Fixed(persons)
+        val ranker = model.newRanker()
+        val low = uncertainFloor(threshold)
         val byPhoto = HashMap<String, ArrayList<Candidate>>()
-        for (f in allFaces) {
-            val c = scorer.best(f) ?: continue
-            if (c.score >= threshold && c.score - c.second >= margin) {
-                byPhoto.getOrPut(f.mediaFullPath) { ArrayList() }.add(Candidate(f, c.personId, c.score))
-            }
+        val contested = ArrayList<Scored>()
+        for (f in pool) {
+            val fid = f.id ?: continue
+            val e = f.embedding ?: continue
+            if (fixed.assigned.contains(fid) || ignoredFaceIds.contains(fid)) continue
+            val r = ranker.rank(decode(e), banned[fid], fixed.onPhoto[f.mediaFullPath]) ?: continue
+            if (r.best < low) continue
+            val scored = Scored(f, r.bestId, r.best, r.secondId, r.second)
+            val isAuto = threshold > 0f && model.isAssignable(r.bestIndex) &&
+                r.best >= model.autoThreshold(r.bestIndex, threshold) && r.margin >= margin
+            byPhoto.getOrPut(f.mediaFullPath) { ArrayList() }.add(Candidate(scored, isAuto))
+            if (r.hasSecond && r.second >= low) contested.add(scored)
         }
-        val extra = pickPerPhoto(byPhoto)
-        if (extra.isEmpty()) return persons
-        return persons.map { p ->
-            val add = p.id?.let { extra[it] } ?: return@map p
-            if (add.isEmpty()) p else p.copy(faces = (p.faces + add).sortedByDescending { it.score })
+        val picked = pickPerPhoto(byPhoto)
+        val autoIds = picked.auto.values.flatten().mapNotNullTo(HashSet()) { it.face.id }
+        val result = persons.map { p ->
+            val add = p.id?.let { picked.auto[it] } ?: return@map p
+            if (add.isEmpty()) p else p.copy(faces = (p.faces + add.map { it.face }).sortedByDescending { it.score })
         }.sortedWith(personOrder)
+        val autoOwner = HashMap<Long, Long>()
+        picked.auto.forEach { (pid, list) -> list.forEach { s -> s.face.id?.let { autoOwner[it] = pid } } }
+        return Classification(
+            result,
+            picked.uncertain.mapValues { (_, list) -> list.sortedByDescending { it.score } },
+            autoOwner,
+            contested.filter { !autoIds.contains(it.face.id) },
+            model,
+        )
     }
 
-    // najlepšia osoba pre ešte nepriradenú, neignorovanú tvár (bez osôb zakázaných cannot-linkom a osôb,
-    // ktoré na fotke už sú)
-    private class Scorer(
-        val model: Model,
-        val fixed: Fixed,
-        val banned: Map<Long, Set<Long>>,
-        val ignored: Set<Long>,
-        val decode: (ByteArray) -> FloatArray,
-    ) {
-        fun best(f: FaceEntity): Best? {
-            val fid = f.id ?: return null
-            val e = f.embedding ?: return null
-            if (fixed.assigned.contains(fid) || ignored.contains(fid)) return null
-            return model.best(decode(e), banned[fid], fixed.onPhoto[f.mediaFullPath])
+    // dolná hranica pásma „neisté“
+    fun uncertainFloor(threshold: Float): Float =
+        (if (threshold > 0f) threshold else REFERENCE_THRESHOLD) - UNCERTAIN_BAND
+
+    // kNN model všetkých osôb (C6) vrátane negatívnych prototypov z cannot-links (C8)
+    fun buildKnn(
+        persons: List<Person>,
+        anchorsByPerson: Map<Long, Anchors>,
+        cannotLinks: List<CannotLinkEntity>,
+        faceById: Map<Long, FaceEntity>,
+        decode: (ByteArray) -> FloatArray = { FaceEmbedder.toFloats(it) },
+    ): KnnModel? {
+        val negByPerson = HashMap<Long, ArrayList<KnnModel.FaceVec>>()
+        for (link in cannotLinks) {
+            val e = faceById[link.faceId]?.embedding ?: continue
+            negByPerson.getOrPut(link.personId) { ArrayList() }.add(KnnModel.FaceVec(link.faceId, decode(e)))
         }
+        val inputs = persons.mapNotNull { p ->
+            val pid = p.id ?: return@mapNotNull null
+            val own = ArrayList<KnnModel.FaceVec>()
+            val family = ArrayList<KnnModel.FaceVec>()
+            for (f in p.faces) {
+                val id = f.id ?: continue
+                if (!p.manualFaceIds.contains(id)) continue
+                val e = f.embedding ?: continue
+                val target = if (p.familyFaceIds.contains(id)) family else own
+                target.add(KnnModel.FaceVec(id, decode(e)))
+            }
+            val anchors = anchorsByPerson[pid]
+            KnnModel.PersonInput(
+                pid, own, anchors?.own.orEmpty(), family, anchors?.family.orEmpty(), negByPerson[pid].orEmpty(),
+            )
+        }
+        return KnnModel.build(inputs)
     }
+
+    // C11 — fronta „Pomôž mi rozhodnúť“: tváre s najmenším rozostupom medzi dvoma osobami (tam jedna
+    // odpoveď rozhodne najviac), pri rovnosti tá s vyšším skóre. [pair] obmedzí frontu na dvojicu osôb
+    // (upozornenie z C10), [skipped] = tváre preskočené v tomto sedení.
+    fun decisionQueue(
+        contested: List<Scored>,
+        pair: Pair<Long, Long>? = null,
+        skipped: Set<Long> = emptySet(),
+        limit: Int = Int.MAX_VALUE,
+    ): List<Scored> = contested.asSequence()
+        .filter { it.secondId != KnnModel.NO_PERSON && it.face.id?.let { id -> !skipped.contains(id) } == true }
+        .filter { s -> pair == null || setOf(s.personId, s.secondId) == setOf(pair.first, pair.second) }
+        .sortedWith(compareBy<Scored> { it.margin }.thenByDescending { it.score })
+        .take(limit)
+        .toList()
+
+    private fun List<FaceEntity>.associateByIdNotNull(): Map<Long, FaceEntity> {
+        val m = HashMap<Long, FaceEntity>(size * 2)
+        for (f in this) f.id?.let { m[it] = f }
+        return m
+    }
+
+    // tvár a jej najlepšia (personId) a druhá najlepšia osoba (secondId = KnnModel.NO_PERSON, ak nie je)
+    class Scored(val face: FaceEntity, val personId: Long, val score: Float, val secondId: Long, val second: Float) {
+        val margin: Float get() = score - second
+    }
+
+    // výsledok classify: osoby s automatickými tvárami, neisté tváre podľa osoby, vlastník automatických
+    // tvárí (faceId → personId), sporné tváre (C11) a model (Návrhy, odhad presnosti)
+    class Classification(
+        val persons: List<Person>,
+        val uncertain: Map<Long, List<Scored>>,
+        val autoOwner: Map<Long, Long>,
+        val contested: List<Scored>,
+        val model: KnnModel?,
+    )
 
     // už priradené tváre a osoby, ktoré na fotke už sú (ručne alebo z rodiny) — tie automatika nemení
     private class Fixed(persons: List<Person>) {
@@ -189,93 +287,27 @@ object PersonGrouper {
         }
     }
 
-    // greedy na fotku: najlepšie skóre vyhráva, každá osoba najviac raz
-    private fun pickPerPhoto(byPhoto: Map<String, List<Candidate>>): Map<Long, List<FaceEntity>> {
-        val extra = HashMap<Long, ArrayList<FaceEntity>>()
+    private class Candidate(val scored: Scored, val isAuto: Boolean)
+
+    private class Picked(val auto: Map<Long, List<Scored>>, val uncertain: Map<Long, List<Scored>>)
+
+    // Greedy na fotku: najlepšie skóre vyhráva, každá osoba najviac raz. Najprv automatické, potom neisté
+    // (len pre osoby, ktoré na fotke ešte nie sú). Tvár, ktorej osobu získala lepšia tvár, ostane bez stavu.
+    private fun pickPerPhoto(byPhoto: Map<String, List<Candidate>>): Picked {
+        val auto = HashMap<Long, ArrayList<Scored>>()
+        val uncertain = HashMap<Long, ArrayList<Scored>>()
         for (cands in byPhoto.values) {
+            val sorted = cands.sortedByDescending { it.scored.score }
             val used = HashSet<Long>()
-            for (c in cands.sortedByDescending { it.score }) {
-                if (used.add(c.personId)) extra.getOrPut(c.personId) { ArrayList() }.add(c.face)
+            for (c in sorted) {
+                if (c.isAuto && used.add(c.scored.personId)) auto.getOrPut(c.scored.personId) { ArrayList() }.add(c.scored)
+            }
+            for (c in sorted) {
+                if (c.isAuto) continue
+                if (used.add(c.scored.personId)) uncertain.getOrPut(c.scored.personId) { ArrayList() }.add(c.scored)
             }
         }
-        return extra
-    }
-
-    private class Candidate(val face: FaceEntity, val personId: Long, val score: Float)
-
-    private class Best(val personId: Long, val score: Float, val second: Float)
-
-    // Ťažiská všetkých osôb v jednom súvislom poli — vnútorná slučka (10 000 tvárí × 100 osôb) bez alokácií.
-    private class Model(val ids: LongArray, val assignable: BooleanArray, val flat: FloatArray, val dim: Int) {
-        fun best(v: FloatArray, banned: Set<Long>?, blocked: Set<Long>?): Best? {
-            if (v.size != dim) return null
-            var bestIdx = -1
-            var best = Float.NEGATIVE_INFINITY
-            var second = Float.NEGATIVE_INFINITY
-            for (p in ids.indices) {
-                val pid = ids[p]
-                if (banned?.contains(pid) == true || blocked?.contains(pid) == true) continue
-                val s = dot(v, flat, p * dim)
-                if (s > best) {
-                    second = best
-                    best = s
-                    bestIdx = p
-                } else if (s > second) {
-                    second = s
-                }
-            }
-            if (bestIdx < 0 || !assignable[bestIdx]) return null
-            return Best(ids[bestIdx], best, second)
-        }
-
-        // štyri nezávislé súčty — JIT/ART ich počíta súbežne (cca 2× rýchlejšie než jeden reťazec súčtov)
-        private fun dot(v: FloatArray, flat: FloatArray, off: Int): Float {
-            var s0 = 0f
-            var s1 = 0f
-            var s2 = 0f
-            var s3 = 0f
-            var i = 0
-            val end4 = dim - dim % UNROLL
-            while (i < end4) {
-                val i1 = i + 1
-                val i2 = i1 + 1
-                val i3 = i2 + 1
-                s0 += v[i] * flat[off + i]
-                s1 += v[i1] * flat[off + i1]
-                s2 += v[i2] * flat[off + i2]
-                s3 += v[i3] * flat[off + i3]
-                i += UNROLL
-            }
-            while (i < dim) {
-                s0 += v[i] * flat[off + i]
-                i++
-            }
-            return (s0 + s1) + (s2 + s3)
-        }
-    }
-
-    private fun buildModel(
-        persons: List<Person>,
-        anchorsByPerson: Map<Long, Anchors>,
-        decode: (ByteArray) -> FloatArray,
-    ): Model? {
-        val ids = ArrayList<Long>()
-        val assignable = ArrayList<Boolean>()
-        val cents = ArrayList<FloatArray>()
-        for (p in persons) {
-            val pid = p.id ?: continue
-            val ev = evidenceOf(p, anchorsByPerson[pid], decode)
-            val c = competitorCentroid(ev) ?: continue
-            if (cents.isNotEmpty() && c.size != cents[0].size) continue
-            ids.add(pid)
-            assignable.add(ev.own.isNotEmpty())
-            cents.add(c)
-        }
-        if (cents.isEmpty() || !assignable.contains(true)) return null
-        val dim = cents[0].size
-        val flat = FloatArray(cents.size * dim)
-        cents.forEachIndexed { i, c -> c.copyInto(flat, i * dim) }
-        return Model(ids.toLongArray(), assignable.toBooleanArray(), flat, dim)
+        return Picked(auto, uncertain)
     }
 
     // Osoba v UI podľa viditeľnosti tvárí (FaceVisibility). Ak sú skryté všetky jej tváre:
