@@ -1800,11 +1800,17 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
                 val faces = org.fossify.gallery.faces.FacesDatabase.getInstance(this).FaceDao()
                     .getAllFaces().filter { it.mediaFullPath == path }
                 faceCount = faces.size
-                val faceIds = faces.mapNotNull { it.id }.toHashSet()
-                val peopleDao = org.fossify.gallery.faces.PeopleDatabase.getInstance(this).PeopleDao()
-                val personById = peopleDao.getPersons().associate { it.id to (it.name ?: "") }
-                peopleDao.getAssignments().filter { faceIds.contains(it.faceId) }
-                    .mapNotNull { personById[it.personId] }.filter { it.isNotBlank() }.distinct()
+                // C9: osoby na fotke z jedného zdroja pravdy (ako Ľudia); automaticky zaradené s poznámkou
+                org.fossify.gallery.faces.PeopleIndex.get(this).personsOnPhoto(path)
+                    .filter { (p, _) -> !p.name.isNullOrBlank() }
+                    .map { (p, state) ->
+                        if (state == org.fossify.gallery.faces.PeopleIndex.State.AUTO) {
+                            getString(R.string.tc2_info_auto_name, p.name)
+                        } else {
+                            p.name.orEmpty()
+                        }
+                    }
+                    .distinct()
             } catch (e: Throwable) {
                 emptyList<String>()
             }

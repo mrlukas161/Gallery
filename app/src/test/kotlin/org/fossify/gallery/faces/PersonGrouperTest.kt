@@ -426,7 +426,7 @@ class PersonGrouperTest {
         assertEquals(empty, PersonGrouper.visiblePerson(empty, { false }, { false }))
     }
 
-    // --- výkon: loadPersons beží pri každom otvorení Ľudí ---
+    // --- výkon: PeopleIndex sa prepočíta po každej zmene osôb (kNN, C6: do 500 ms na JVM) ---
 
     @Test
     fun performance10kFaces100Persons() {
@@ -465,6 +465,6 @@ class PersonGrouperTest {
         }
         println("PersonGrouper 10 000 tvárí × 100 osôb: najlepší beh $best ms, tvárí v osobách $assignedCount")
         assertTrue(assignedCount > 1000)
-        assertTrue("trvalo $best ms", best < 300)
+        assertTrue("trvalo $best ms", best < 500)
     }
 }

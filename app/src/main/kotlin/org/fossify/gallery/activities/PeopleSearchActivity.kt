@@ -19,9 +19,9 @@ import org.fossify.gallery.R
 import org.fossify.gallery.adapters.PhotoPathsAdapter
 import org.fossify.gallery.databinding.ActivityPeopleSearchBinding
 import org.fossify.gallery.faces.FaceMediaMeta
-import org.fossify.gallery.faces.FacesDatabase
 import org.fossify.gallery.faces.OcrDatabase
 import org.fossify.gallery.faces.PeopleDatabase
+import org.fossify.gallery.faces.PeopleIndex
 import org.fossify.gallery.faces.PersonEntity
 import org.fossify.gallery.faces.QrDatabase
 import org.fossify.gallery.helpers.GridZoom
@@ -189,16 +189,10 @@ class PeopleSearchActivity : SimpleActivity() {
 
     private fun loadIndex() {
         ensureBackgroundThread {
-            val facesDao = FacesDatabase.getInstance(this).FaceDao()
             val peopleDao = PeopleDatabase.getInstance(this).PeopleDao()
             val pers = peopleDao.getPersons()
-            val pidByFace = peopleDao.getAssignments().associate { it.faceId to it.personId }
-            val pp = HashMap<String, MutableSet<Long>>()
-            for (f in facesDao.getAllFaces()) {
-                val id = f.id ?: continue
-                val pid = pidByFace[id] ?: continue
-                pp.getOrPut(f.mediaFullPath) { HashSet() }.add(pid)
-            }
+            // C9: fotky osoby z jedného zdroja pravdy (ručne aj automaticky zaradené, rovnako ako v Ľuďoch)
+            val pp = PeopleIndex.get(this).photoPersons
             val m = FaceMediaMeta.load(this, pp.keys)
             runOnUiThread {
                 if (isDestroyed || isFinishing) return@runOnUiThread

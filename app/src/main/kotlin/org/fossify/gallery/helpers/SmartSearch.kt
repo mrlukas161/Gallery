@@ -1,9 +1,9 @@
 package org.fossify.gallery.helpers
 
 import android.content.Context
-import org.fossify.gallery.faces.FacesDatabase
 import org.fossify.gallery.faces.OcrDatabase
 import org.fossify.gallery.faces.PeopleDatabase
+import org.fossify.gallery.faces.PeopleIndex
 import org.fossify.gallery.faces.QrDatabase
 
 // Rozšírenie ŠTANDARDNÉHO hľadania galérie: okrem názvu súboru vráti aj cesty fotiek, ktoré
@@ -47,12 +47,9 @@ object SmartSearch {
             }.mapNotNull { it.id }.toHashSet()
             if (matchedIds.isNotEmpty()) {
                 namedPersonQuery = true
-                val pidByFace = people.getAssignments().associate { it.faceId to it.personId }
-                val faces = FacesDatabase.getInstance(context).FaceDao()
-                for (f in faces.getAllFaces()) {
-                    val id = f.id ?: continue
-                    val pid = pidByFace[id] ?: continue
-                    if (matchedIds.contains(pid)) exact.add(f.mediaFullPath)
+                // C9: fotky osoby z jedného zdroja pravdy (ručne aj automaticky zaradené, rovnako ako v Ľuďoch)
+                for ((path, pids) in PeopleIndex.get(context).photoPersons) {
+                    if (pids.any { matchedIds.contains(it) }) exact.add(path)
                 }
             }
         } catch (ignored: Throwable) {

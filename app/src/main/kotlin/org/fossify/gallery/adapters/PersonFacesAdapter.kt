@@ -15,6 +15,8 @@ import org.fossify.gallery.faces.FaceEntity
 // Mriežka výrezov tvárí jednej osoby. Ťuk = otvor fotku, dlhé podržanie = VÝBEROVÝ REŽIM (rovnako ako
 // v mriežkach fotiek): oprava tvárí (presun k inej osobe / „toto nie je táto osoba") je v menu výberu
 // a robí sa nad celým výberom naraz. Samotné akcie vykonáva obrazovka (potvrdenie, databáza).
+// C7: [badgeOf] označí tváre, ktoré nie sú ručne potvrdené (automaticky / neisté). [confirmMode] = sekcia
+// „Potvrď“ na karte osoby: ťuk = áno (onClick), vo výbere „Áno, je to táto osoba“ a „Nie je táto osoba“.
 class PersonFacesAdapter(
     activity: BaseSimpleActivity,
     val faces: MutableList<FaceEntity>,
@@ -24,6 +26,9 @@ class PersonFacesAdapter(
     val onClick: (FaceEntity) -> Unit,
     val onMove: (List<FaceEntity>) -> Unit,
     val onReject: (List<FaceEntity>) -> Unit,
+    private val badgeOf: (FaceEntity) -> Int = { BADGE_NONE },
+    private val confirmMode: Boolean = false,
+    private val onConfirm: (List<FaceEntity>) -> Unit = {},
 ) : MyRecyclerViewAdapter(activity, recyclerView, { any -> onClick(any as FaceEntity) }) {
 
     init {
@@ -56,6 +61,8 @@ class PersonFacesAdapter(
 
     override fun prepareActionMode(menu: Menu) {
         menu.findItem(R.id.cab_not_this_person)?.isVisible = canReject
+        menu.findItem(R.id.cab_confirm_person)?.isVisible = confirmMode
+        menu.findItem(R.id.cab_move_to_person)?.isVisible = !confirmMode
     }
 
     override fun actionItemPressed(id: Int) {
@@ -65,7 +72,8 @@ class PersonFacesAdapter(
 
         val selected = getSelectedFaces()
         when (id) {
-            R.id.cab_move_to_person -> onMove(selected)
+            R.id.cab_confirm_person -> if (confirmMode) onConfirm(selected)
+            R.id.cab_move_to_person -> if (!confirmMode) onMove(selected)
             R.id.cab_not_this_person -> if (canReject) onReject(selected)
             R.id.cab_select_all -> selectAll()
         }
@@ -100,13 +108,32 @@ class PersonFacesAdapter(
                 itemBinding.photoCheck.background?.applyColorFilter(properPrimaryColor)
                 itemBinding.photoCheck.applyColorFilter(contrastColor)
             }
+            bindBadge(itemBinding, badgeOf(face))
         }
         bindViewHolder(holder)
     }
 
     override fun getItemCount() = faces.size
 
+    private fun bindBadge(itemBinding: ItemPersonPhotoBinding, badge: Int) {
+        val badgeView = itemBinding.photoBadge
+        badgeView.beVisibleIf(badge != BADGE_NONE)
+        if (badge == BADGE_NONE) return
+        val uncertain = badge == BADGE_UNCERTAIN
+        badgeView.text = resources.getString(if (uncertain) R.string.tc2_badge_uncertain else R.string.tc2_badge_auto)
+        badgeView.contentDescription =
+            resources.getString(if (uncertain) R.string.tc2_badge_uncertain_desc else R.string.tc2_badge_auto_desc)
+        badgeView.background?.applyColorFilter(properPrimaryColor)
+        badgeView.setTextColor(contrastColor)
+    }
+
     // vybrané tváre v poradí, v akom sú v mriežke
     private fun getSelectedFaces(): List<FaceEntity> =
         faces.filter { f -> f.id?.let { selectedKeys.contains(it.hashCode()) } == true }
+
+    companion object {
+        const val BADGE_NONE = 0
+        const val BADGE_AUTO = 1
+        const val BADGE_UNCERTAIN = 2
+    }
 }

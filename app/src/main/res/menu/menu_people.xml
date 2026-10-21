@@ -22,6 +22,10 @@
         android:title="@string/tag_faces_title"
         app:showAsAction="ifRoom" />
     <item
+        android:id="@+id/decide_faces"
+        android:title="@string/tc2_decide_title"
+        app:showAsAction="never" />
+    <item
         android:id="@+id/manage_groups"
         android:title="@string/c2_manage_groups"
         app:showAsAction="never" />

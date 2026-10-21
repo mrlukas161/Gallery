@@ -53,6 +53,19 @@
             android:textSize="@dimen/bigger_text_size"
             android:visibility="gone" />
 
+        <!-- C10: dvojica osôb, ktorá sa pletie (odhad presnosti) → „Pomôž mi rozhodnúť“ -->
+        <org.fossify.commons.views.MyTextView
+            android:id="@+id/people_confused_banner"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:background="?attr/selectableItemBackground"
+            android:paddingStart="@dimen/activity_margin"
+            android:paddingTop="@dimen/medium_margin"
+            android:paddingEnd="@dimen/activity_margin"
+            android:paddingBottom="@dimen/medium_margin"
+            android:textSize="@dimen/bigger_text_size"
+            android:visibility="gone" />
+
         <org.fossify.commons.views.MyRecyclerView
             android:id="@+id/people_grid"
             android:layout_width="match_parent"

@@ -144,6 +144,7 @@ class SettingsActivity : SimpleActivity() {
         setupNewPhotosFirst()
         setupFaceIndexing()
         setupFaceAuto()
+        setupFaceAccuracy()
         setupPicasaImport()
         setupReembed()
         setupFaceV2()
@@ -1045,6 +1046,36 @@ class SettingsActivity : SimpleActivity() {
         binding.settingsFaceAutoSummary.text = getString(org.fossify.gallery.helpers.FaceAuto.labelRes(v))
     }
 
+    // C10: odhad presnosti rozpoznávania tvárí — ťuk prepočíta na pozadí, pri nabíjaní sa starý obnoví sám
+    private fun setupFaceAccuracy() {
+        updateFaceAccuracySummary(org.fossify.gallery.helpers.FaceAccuracy.load(this))
+        binding.settingsFaceAccuracyHolder.setOnClickListener {
+            binding.settingsFaceAccuracySummary.text = getString(R.string.tc2_accuracy_running)
+            ensureBackgroundThread {
+                val result = try {
+                    org.fossify.gallery.helpers.FaceAccuracy.compute(this)
+                } catch (ignored: android.database.SQLException) {
+                    null
+                } catch (ignored: IllegalStateException) {
+                    null
+                } ?: org.fossify.gallery.helpers.FaceAccuracy.load(this)
+                runOnUiThread { updateFaceAccuracySummary(result) }
+            }
+        }
+        org.fossify.gallery.helpers.FaceAccuracy.refreshWhileCharging(this) { r ->
+            runOnUiThread { updateFaceAccuracySummary(r) }
+        }
+    }
+
+    private fun updateFaceAccuracySummary(r: org.fossify.gallery.faces.AccuracyEstimate.Result?) {
+        if (isDestroyed) return
+        binding.settingsFaceAccuracySummary.text = if (r == null) {
+            getString(R.string.tc2_accuracy_none)
+        } else {
+            org.fossify.gallery.helpers.FaceAccuracy.describe(this, r)
+        }
+    }
+
     private fun setupPicasaImport() {
         updatePicasaImportSummary()
         binding.settingsPicasaImportHolder.setOnClickListener {
@@ -1480,6 +1511,7 @@ class SettingsActivity : SimpleActivity() {
     private fun advancedHolders(): List<android.view.View> = listOf(
         binding.settingsFaceIndexingHolder,
         binding.settingsFaceAutoHolder,
+        binding.settingsFaceAccuracyHolder,
         binding.settingsPicasaImportHolder,
         binding.settingsReembedHolder,
         binding.settingsOcrHolder,

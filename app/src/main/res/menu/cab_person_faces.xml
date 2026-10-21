@@ -4,6 +4,13 @@
     xmlns:tools="http://schemas.android.com/tools"
     tools:ignore="AppCompatResource,AlwaysShowAction">
     <item
+        android:id="@+id/cab_confirm_person"
+        android:icon="@drawable/ic_check_vector"
+        android:showAsAction="always"
+        android:title="@string/tc2_confirm_action"
+        android:visible="false"
+        app:showAsAction="always" />
+    <item
         android:id="@+id/cab_move_to_person"
         android:icon="@drawable/ic_move_vector"
         android:showAsAction="always"
