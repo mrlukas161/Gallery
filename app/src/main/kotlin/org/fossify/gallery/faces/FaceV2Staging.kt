@@ -10,6 +10,7 @@ import android.database.sqlite.SQLiteOpenHelper
 // vektora (prepnutie ho vo faces.db prepíše; záloha umožní návrat bez nového výpočtu).
 // Prerušený prepočet pokračuje od tvárí, ktoré tu ešte nie sú hotové. Nič sa odtiaľ nemaže.
 // Obyčajný SQLiteOpenHelper (nie Room): žiadne entity ani migrácie navyše, dáta sa dajú kedykoľvek prestavať.
+@Suppress("TooManyFunctions") // malé čítania/zápisy jednej tabuľky
 class FaceV2Staging private constructor(context: Context) :
     SQLiteOpenHelper(context.applicationContext, DB_NAME, null, DB_VERSION) {
 
@@ -33,60 +34,48 @@ class FaceV2Staging private constructor(context: Context) :
     // Hotové v2 vektory jednej fotky naraz (v1 = pôvodný vektor ako záloha, môže chýbať).
     fun putDone(items: List<Triple<Long, ByteArray, ByteArray?>>) {
         if (items.isEmpty()) return
-        val db = writableDatabase
-        db.beginTransaction()
-        try {
-            val now = System.currentTimeMillis()
-            for ((id, v2, v1) in items) {
-                val old = entry(db, id)
-                val cv = ContentValues().apply {
-                    put("face_id", id)
-                    put("state", EmbedVersionRules.STATE_DONE)
-                    put("tries", (old?.tries ?: 0) + 1)
-                    put("v2", v2)
-                    put("updated_at", now)
-                }
-                // zálohu v1 nikdy neprepísať (pri opakovanom zápise už môže byť vo faces.db v2)
-                if (old == null) {
-                    if (v1 != null) cv.put("v1", v1)
-                    db.insertWithOnConflict(TABLE, null, cv, SQLiteDatabase.CONFLICT_REPLACE)
-                } else {
-                    db.update(TABLE, cv, "face_id = ?", arrayOf(id.toString()))
-                }
-            }
-            db.setTransactionSuccessful()
-        } finally {
-            db.endTransaction()
+        inTransaction { db, now ->
+            for ((id, v2, v1) in items) upsert(db, id, EmbedVersionRules.STATE_DONE, v2, v1, now)
         }
     }
 
     // neúspešný pokus (STATE_MISSING / STATE_FAILED); hotový záznam sa nikdy neprepíše
     fun putFailed(ids: List<Pair<Long, ByteArray?>>, state: Int) {
         if (ids.isEmpty()) return
+        inTransaction { db, now ->
+            for ((id, v1) in ids) upsert(db, id, state, null, v1, now)
+        }
+    }
+
+    private fun inTransaction(block: (SQLiteDatabase, Long) -> Unit) {
         val db = writableDatabase
         db.beginTransaction()
         try {
-            val now = System.currentTimeMillis()
-            for ((id, v1) in ids) {
-                val old = entry(db, id)
-                if (old?.state == EmbedVersionRules.STATE_DONE) continue
-                val cv = ContentValues().apply {
-                    put("face_id", id)
-                    put("state", state)
-                    put("tries", (old?.tries ?: 0) + 1)
-                    put("updated_at", now)
-                }
-                if (old == null) {
-                    if (v1 != null) cv.put("v1", v1)
-                    db.insertWithOnConflict(TABLE, null, cv, SQLiteDatabase.CONFLICT_REPLACE)
-                } else {
-                    db.update(TABLE, cv, "face_id = ?", arrayOf(id.toString()))
-                }
-            }
+            block(db, System.currentTimeMillis())
             db.setTransactionSuccessful()
         } finally {
             db.endTransaction()
         }
+    }
+
+    // Zápis jednej tváre: počet pokusov +1, záloha v1 sa nikdy neprepíše (pri opakovanom zápise už môže
+    // byť vo faces.db v2), neúspech neprepíše hotový záznam.
+    private fun upsert(db: SQLiteDatabase, id: Long, state: Int, v2: ByteArray?, v1: ByteArray?, now: Long) {
+        val old = entry(db, id)
+        if (v2 == null && old?.state == EmbedVersionRules.STATE_DONE) return
+        val cv = ContentValues().apply {
+            put("face_id", id)
+            put("state", state)
+            put("tries", (old?.tries ?: 0) + 1)
+            if (v2 != null) put("v2", v2)
+            put("updated_at", now)
+        }
+        if (old != null) {
+            db.update(TABLE, cv, "face_id = ?", arrayOf(id.toString()))
+            return
+        }
+        if (v1 != null) cv.put("v1", v1)
+        db.insertWithOnConflict(TABLE, null, cv, SQLiteDatabase.CONFLICT_REPLACE)
     }
 
     // záloha v1 vektora tváre, ktorá pri prepnutí ostane bez odtlačku a nebola v prepočte

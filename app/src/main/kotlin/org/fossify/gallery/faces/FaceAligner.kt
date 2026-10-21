@@ -23,11 +23,15 @@ object FaceAligner {
 
     fun cropRegion(src: Bitmap, l: Int, t: Int, r: Int, b: Int, marginFrac: Float): Bitmap? {
         val region = FullResMath.regionWithMargin(l, t, r, b, marginFrac, src.width, src.height) ?: return null
-        return try {
-            Bitmap.createBitmap(src, region[0], region[1], region[2] - region[0], region[3] - region[1])
-        } catch (e: Throwable) {
-            null
-        }
+        return cropOf(src, region)
+    }
+
+    // výrez [left, top, right, bottom]; null pri nedostatku pamäte
+    @Suppress("MagicNumber")
+    private fun cropOf(src: Bitmap, region: IntArray): Bitmap? = try {
+        Bitmap.createBitmap(src, region[0], region[1], region[2] - region[0], region[3] - region[1])
+    } catch (ignored: Throwable) {
+        null
     }
 
     // Odtlačok jednej detegovanej tváre z celej (upright) fotky ako bajty do DB, alebo null.
@@ -38,7 +42,8 @@ object FaceAligner {
         embedder: FaceEmbedder,
         detector: FaceDetectionHelper?,
         full: FullResCrop? = null,
-    ): ByteArray? = embedDetectedEmb(bmp, face, landmarker, embedder, detector, full)?.let { FaceEmbedder.toBytes(it.vec) }
+    ): ByteArray? =
+        embedDetectedEmb(bmp, face, landmarker, embedder, detector, full)?.let { FaceEmbedder.toBytes(it.vec) }
 
     // Výrez sa uvoľní VŽDY, aj keď embedCrop vyhodí výnimku, a nikdy sa neuvoľní samotná fotka
     // (createBitmap vráti tú istú inštanciu, keď výrez pokryje celú fotku — recycle by ju zničil a ďalšie
@@ -69,32 +74,36 @@ object FaceAligner {
             }
         }
         // 2) výrez zo zmenšenej fotky
-        val region = FullResMath.regionWithMargin(face.left, face.top, face.right, face.bottom, MARGIN, bmp.width, bmp.height)
-        if (region != null) {
-            val crop = try {
-                Bitmap.createBitmap(bmp, region[0], region[1], region[2] - region[0], region[3] - region[1])
-            } catch (e: Throwable) {
-                null
-            }
-            if (crop != null) {
-                val expected = floatArrayOf(
-                    (face.left - region[0]).toFloat(), (face.top - region[1]).toFloat(),
-                    (face.right - region[0]).toFloat(), (face.bottom - region[1]).toFloat(),
-                )
-                try {
-                    return embedCrop(crop, landmarker, embedder, detector, expected)
-                } catch (ignored: Throwable) {
-                    // pokračuj náhradnou cestou nižšie
-                } finally {
-                    if (crop !== bmp) crop.recycle()
-                }
-            }
-        }
+        embedDownscaled(bmp, face, landmarker, embedder, detector)?.let { return it }
         // 3) 2-bodové zarovnanie nad celou fotkou
         return try {
             Emb(embedder.embed(bmp, face), if (face.hasEyes) M2 else MR)
         } catch (e: Throwable) {
             null
+        }
+    }
+
+    private fun embedDownscaled(
+        bmp: Bitmap,
+        face: FaceDetectionHelper.DetectedFace,
+        landmarker: FaceLandmarkHelper,
+        embedder: FaceEmbedder,
+        detector: FaceDetectionHelper?,
+    ): Emb? {
+        val region = FullResMath.regionWithMargin(
+            face.left, face.top, face.right, face.bottom, MARGIN, bmp.width, bmp.height,
+        ) ?: return null
+        val crop = cropOf(bmp, region) ?: return null
+        val expected = floatArrayOf(
+            (face.left - region[0]).toFloat(), (face.top - region[1]).toFloat(),
+            (face.right - region[0]).toFloat(), (face.bottom - region[1]).toFloat(),
+        )
+        return try {
+            embedCrop(crop, landmarker, embedder, detector, expected)
+        } catch (ignored: Throwable) {
+            null // pokračuj náhradnou cestou
+        } finally {
+            if (crop !== bmp) crop.recycle()
         }
     }
 
@@ -127,7 +136,7 @@ object FaceAligner {
             }
         }
         val ptsUp = try {
-            landmarker.landmarks5(up, FloatArray(4) { target[it] * upScale })
+            landmarker.landmarks5(up, FloatArray(target.size) { target[it] * upScale })
         } catch (e: Throwable) {
             null
         }

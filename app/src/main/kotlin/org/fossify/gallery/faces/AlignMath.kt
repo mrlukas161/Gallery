@@ -12,6 +12,8 @@ import kotlin.math.sqrt
 // = kruh 33…133, dúhovka 469–472 so stredom 468; „ľavé" oko (na fotke vpravo) = kruh 263…362, dúhovka
 // 474–477 so stredom 473. Nos = 1, kútiky úst 61 (na fotke vľavo) a 291 (vpravo). Model
 // face_landmarker.task vracia 478 bodov (468 siete + 10 dúhovky).
+// MagicNumber: súradnice šablóny, indexy landmarkov a prvkov transformácie [a, b, tx, ty]
+@Suppress("MagicNumber")
 object AlignMath {
     // ArcFace šablóna (insightface) v poradí: oko vľavo na obrázku, oko vpravo, nos, kútik úst vľavo, vpravo
     val ARCFACE_112 = floatArrayOf(

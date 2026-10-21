@@ -57,7 +57,8 @@ class FaceEmbedder(context: Context) {
         try {
             while (cur.width >= inputSize * 4 && cur.height >= inputSize * 4) cur = halve(cur, cur !== source)
             val out = Bitmap.createBitmap(inputSize, inputSize, Bitmap.Config.ARGB_8888)
-            Canvas(out).drawBitmap(cur, Rect(0, 0, cur.width, cur.height), Rect(0, 0, inputSize, inputSize), Paint(Paint.FILTER_BITMAP_FLAG))
+            val paint = Paint(Paint.FILTER_BITMAP_FLAG)
+            Canvas(out).drawBitmap(cur, Rect(0, 0, cur.width, cur.height), Rect(0, 0, inputSize, inputSize), paint)
             return runModel(out, true)
         } finally {
             if (cur !== source) cur.recycle()
@@ -79,7 +80,8 @@ class FaceEmbedder(context: Context) {
             val fy = source.height.toFloat() / cur.height
             val m = AlignMath.forScaledSource(transform, fx, fy)
             val out = Bitmap.createBitmap(inputSize, inputSize, Bitmap.Config.ARGB_8888)
-            val matrix = Matrix().apply { setValues(floatArrayOf(m[0], m[1], m[2], m[3], m[4], m[5], 0f, 0f, 1f)) }
+            // afinná 2×3 matica doplnená na 3×3
+            val matrix = Matrix().apply { setValues(m + floatArrayOf(0f, 0f, 1f)) }
             Canvas(out).drawBitmap(cur, matrix, Paint(Paint.FILTER_BITMAP_FLAG))
             return runModel(out, true)
         } finally {

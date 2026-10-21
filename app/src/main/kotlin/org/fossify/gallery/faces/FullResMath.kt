@@ -4,6 +4,8 @@ package org.fossify.gallery.faces
 // Rámčeky tvárí sú uložené v „upright" priestore fotky zmenšenej na najviac 1024 px (UprightDecoder,
 // inSampleSize po mocninách dvoch). Výrez sa premietne späť do surových súradníc plného rozlíšenia
 // a dekóduje sa len tento región (vzor: FaceCropLoader.decodeCropRegion).
+// MagicNumber: indexy rámčeka [left, top, right, bottom] a stupne otočenia EXIF
+@Suppress("MagicNumber")
 object FullResMath {
     // tvár vo výreze aspoň takto široká (ArcFace šablóna ju potom zmenší na ~70 px postupne po polovici)
     const val TARGET_FACE_PX = 224

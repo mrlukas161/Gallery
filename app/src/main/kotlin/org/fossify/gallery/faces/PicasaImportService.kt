@@ -139,7 +139,8 @@ object PicasaImportService {
                     }
                     // manifest až po úplnom dokončení (aj nad starým manifestom v1 importu)
                     db.openHelper.writableDatabase.execSQL(
-                        "INSERT OR REPLACE INTO import_manifests (manifest_hash, imported_at, person_count) VALUES (?, ?, ?)",
+                        "INSERT OR REPLACE INTO import_manifests (manifest_hash, imported_at, person_count) " +
+                            "VALUES (?, ?, ?)",
                         arrayOf<Any>(hash, System.currentTimeMillis(), personsTouched),
                     )
                     clearFinishedFolders(appCtx, hash)
@@ -196,7 +197,8 @@ object PicasaImportService {
     ): List<Long> = db.runInTransaction(
         Callable {
             val now = System.currentTimeMillis()
-            val personId = dao.findPersonByName(name)?.id ?: dao.insertPerson(PersonEntity(name = name, createdAt = now))
+            val personId = dao.findPersonByName(name)?.id
+                ?: dao.insertPerson(PersonEntity(name = name, createdAt = now))
             val sql = db.openHelper.writableDatabase
             ready.map { (_, vec) ->
                 val cv = ContentValues().apply {

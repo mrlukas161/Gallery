@@ -34,6 +34,14 @@ object EmbedVersionRules {
     fun manifestStillValid(importedAt: Long, switchedAt: Long?): Boolean =
         switchedAt == null || importedAt >= switchedAt
 
+    // Skúsiť tvár v tomto behu? Bez záznamu raz, chýbajúci súbor raz za beh (relinker ho mohol nájsť),
+    // zlyhaný výpočet najviac MAX_TRIES-krát spolu; hotová nikdy.
+    fun needsAttempt(state: Int?, tries: Int, attemptsThisRun: Int): Boolean = when (state) {
+        null, STATE_MISSING -> attemptsThisRun == 0
+        STATE_DONE -> false
+        else -> tries < MAX_TRIES && attemptsThisRun < MAX_TRIES
+    }
+
     class Tally(
         val total: Int,
         val done: Int,
@@ -53,6 +61,7 @@ object EmbedVersionRules {
 
     // Koreň úložiska cesty (/storage/emulated/0, /storage/XXXX-XXXX). Keď koreň chýba, karta nie je
     // pripojená a chýbajúce súbory sú len dočasne nedostupné.
+    @Suppress("MagicNumber") // počty a poradie úsekov cesty
     fun volumeRoot(path: String): String? {
         val parts = path.split('/').filter { it.isNotEmpty() }
         if (parts.isEmpty()) return null

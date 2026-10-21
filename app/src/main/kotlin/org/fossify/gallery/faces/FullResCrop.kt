@@ -14,6 +14,8 @@ import java.io.File
 // pixelov; odtlačok z nej bol rozmazaný. Vzor mapovania: FaceCropLoader.decodeCropRegion.
 // Jedna inštancia na fotku (dekodér sa otvorí raz pre všetky jej tváre), po spracovaní close().
 // Zrkadlené EXIF orientácie a formáty bez region dekodéra vrátia null — volajúci použije zmenšenú fotku.
+// MagicNumber: indexy rámčeka [left, top, right, bottom] a stupne otočenia EXIF
+@Suppress("MagicNumber")
 class FullResCrop private constructor(
     private val path: String,
     private val rawW: Int,
@@ -39,27 +41,32 @@ class FullResCrop private constructor(
         val rect = FullResMath.rawRect(region, deg, rawW / sample, rawH / sample, sample, rawW, rawH) ?: return null
         val dec = decoder() ?: return null
         val raw = try {
-            dec.decodeRegion(Rect(rect[0], rect[1], rect[2], rect[3]), BitmapFactory.Options().apply {
+            val opts = BitmapFactory.Options().apply {
                 inSampleSize = regionSample
                 inPreferredConfig = Bitmap.Config.ARGB_8888
-            })
-        } catch (e: Throwable) {
+            }
+            dec.decodeRegion(Rect(rect[0], rect[1], rect[2], rect[3]), opts)
+        } catch (ignored: Throwable) {
             null
         } ?: return null
         val up = if (deg == 0) {
             raw
         } else {
             try {
-                Bitmap.createBitmap(raw, 0, 0, raw.width, raw.height, Matrix().apply { postRotate(deg.toFloat()) }, true)
+                val rotation = Matrix().apply { postRotate(deg.toFloat()) }
+                Bitmap.createBitmap(raw, 0, 0, raw.width, raw.height, rotation, true)
                     .also { if (it !== raw) raw.recycle() }
-            } catch (e: Throwable) {
+            } catch (ignored: Throwable) {
                 raw.recycle()
                 return null
             }
         }
         val fx = up.width.toFloat() / (region[2] - region[0])
         val fy = up.height.toFloat() / (region[3] - region[1])
-        val expected = floatArrayOf((l - region[0]) * fx, (t - region[1]) * fy, (r - region[0]) * fx, (b - region[1]) * fy)
+        val expected = floatArrayOf(
+            (l - region[0]) * fx, (t - region[1]) * fy,
+            (r - region[0]) * fx, (b - region[1]) * fy,
+        )
         return Crop(up, expected)
     }
 
@@ -69,7 +76,7 @@ class FullResCrop private constructor(
         return try {
             @Suppress("DEPRECATION")
             BitmapRegionDecoder.newInstance(path, false).also { decoder = it }
-        } catch (e: Throwable) {
+        } catch (ignored: Throwable) {
             decoderFailed = true
             null
         }
@@ -86,33 +93,40 @@ class FullResCrop private constructor(
     companion object {
         // [expectW]×[expectH] = rozmery zmenšenej upright fotky, v ktorej sú rámčeky (0 = nekontrolovať).
         // Keď nesedia (UprightDecoder pri nedostatku pamäte neotočil), plné rozlíšenie sa nepoužije.
-        fun open(path: String, maxSize: Int, expectW: Int, expectH: Int): FullResCrop? {
-            return try {
-                if (!File(path).exists()) return null
-                val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-                BitmapFactory.decodeFile(path, bounds)
-                val rawW = bounds.outWidth
-                val rawH = bounds.outHeight
-                if (rawW <= 0 || rawH <= 0) return null
-                val orientation = try {
-                    ExifInterface(path).getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL)
-                } catch (e: Throwable) {
-                    ExifInterface.ORIENTATION_NORMAL
-                }
-                val deg = when (orientation) {
-                    ExifInterface.ORIENTATION_NORMAL, ExifInterface.ORIENTATION_UNDEFINED -> 0
-                    ExifInterface.ORIENTATION_ROTATE_90 -> 90
-                    ExifInterface.ORIENTATION_ROTATE_180 -> 180
-                    ExifInterface.ORIENTATION_ROTATE_270 -> 270
-                    else -> return null // zrkadlené orientácie (zriedkavé) → zmenšená fotka
-                }
-                val sample = FullResMath.sampleFor(rawW, rawH, maxSize)
-                if (sample <= 1) return null // fotka už je v plnom rozlíšení
-                val dims = FullResMath.uprightDims(rawW, rawH, sample, deg)
-                if (expectW > 0 && (dims[0] != expectW || dims[1] != expectH)) return null
-                FullResCrop(path, rawW, rawH, deg, sample, dims[0], dims[1])
-            } catch (e: Throwable) {
-                null
+        fun open(path: String, maxSize: Int, expectW: Int, expectH: Int): FullResCrop? = try {
+            openOrNull(path, maxSize, expectW, expectH)
+        } catch (ignored: Throwable) {
+            null
+        }
+
+        private fun openOrNull(path: String, maxSize: Int, expectW: Int, expectH: Int): FullResCrop? {
+            if (!File(path).exists()) return null
+            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeFile(path, bounds)
+            val rawW = bounds.outWidth
+            val rawH = bounds.outHeight
+            val deg = rotationOf(path) ?: return null
+            val sample = if (rawW > 0 && rawH > 0) FullResMath.sampleFor(rawW, rawH, maxSize) else 0
+            // sample 1 = fotka už je v plnom rozlíšení, výrez by nebol ostrejší
+            if (sample <= 1) return null
+            val dims = FullResMath.uprightDims(rawW, rawH, sample, deg)
+            if (expectW > 0 && (dims[0] != expectW || dims[1] != expectH)) return null
+            return FullResCrop(path, rawW, rawH, deg, sample, dims[0], dims[1])
+        }
+
+        // otočenie podľa EXIF; null = zrkadlená orientácia (zriedkavé) → použije sa zmenšená fotka
+        private fun rotationOf(path: String): Int? {
+            val orientation = try {
+                ExifInterface(path).getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL)
+            } catch (ignored: Throwable) {
+                ExifInterface.ORIENTATION_NORMAL
+            }
+            return when (orientation) {
+                ExifInterface.ORIENTATION_NORMAL, ExifInterface.ORIENTATION_UNDEFINED -> 0
+                ExifInterface.ORIENTATION_ROTATE_90 -> 90
+                ExifInterface.ORIENTATION_ROTATE_180 -> 180
+                ExifInterface.ORIENTATION_ROTATE_270 -> 270
+                else -> null
             }
         }
     }

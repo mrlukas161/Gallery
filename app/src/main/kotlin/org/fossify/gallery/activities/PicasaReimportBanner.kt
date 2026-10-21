@@ -53,7 +53,7 @@ class PicasaReimportBanner(
             if (PicasaImportService.isRunning) return@setOnClickListener
             try {
                 picker.launch(arrayOf("*/*"))
-            } catch (e: ActivityNotFoundException) {
+            } catch (ignored: ActivityNotFoundException) {
                 activity.toast(R.string.picasa_import_failed)
             }
         }

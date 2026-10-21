@@ -6,6 +6,8 @@ import kotlin.math.sqrt
 // 30 %, takže na skupinovej fotke v ňom býva aj kus suseda — predtým sa brala prvá (landmarker) alebo
 // najistejšia (BlazeFace) tvár vo výreze a tvár mohla dostať odtlačok suseda.
 // Rámčeky sú [left, top, right, bottom] v rovnakých súradniciach. Bez Android tried (JUnit testy).
+// MagicNumber: indexy rámčeka [left, top, right, bottom]
+@Suppress("MagicNumber")
 object FaceSelect {
     // bez prekryvu sa berie najbližší stred, ale len keď je bližšie ako polovica uhlopriečky
     const val MAX_CENTER_DIST = 0.5f
@@ -33,7 +35,8 @@ object FaceSelect {
         for ((i, c) in candidates.withIndex()) {
             val v = iou(c, target)
             val d = centerDist(c, target)
-            if (v > bestIou || (v > 0f && v == bestIou && d < bestDist)) {
+            val tieButCloser = v > 0f && v == bestIou && d < bestDist
+            if (v > bestIou || tieButCloser) {
                 best = i
                 bestIou = v
                 bestDist = d

@@ -114,15 +114,16 @@ class ProcessingPolicyTest {
                     Decision.WAIT_FOR_CHARGING,
                     decide(profile = profile, newOnlyFirst = newFirst, batchSize = 1, indexer = Indexer.FACE_V2),
                 )
-                assertEquals(
-                    Decision.RUN,
-                    decide(profile = profile, newOnlyFirst = newFirst, charging = true, batteryPct = 5, indexer = Indexer.FACE_V2),
+                val charging = decide(
+                    profile = profile, newOnlyFirst = newFirst, charging = true, batteryPct = 5,
+                    indexer = Indexer.FACE_V2,
                 )
+                assertEquals(Decision.RUN, charging)
                 // ručné spustenie z Nastavení beží vždy
-                assertEquals(
-                    Decision.RUN,
-                    decide(profile = profile, newOnlyFirst = newFirst, indexer = Indexer.FACE_V2, trigger = Trigger.MANUAL),
+                val manual = decide(
+                    profile = profile, newOnlyFirst = newFirst, indexer = Indexer.FACE_V2, trigger = Trigger.MANUAL,
                 )
+                assertEquals(Decision.RUN, manual)
                 assertTrue(ProcessingPolicy.needsWatching(profile, newFirst, Indexer.FACE_V2))
             }
         }

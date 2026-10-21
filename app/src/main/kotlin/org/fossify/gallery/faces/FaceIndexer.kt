@@ -87,7 +87,8 @@ object FaceIndexer {
                             try {
                                 // detekcia + FaceFilter + odtlačky v2 + zápis (počas prepočtu na v2 bez odtlačku)
                                 faceCount = FaceStore.detectAndInsert(
-                                    appCtx, dao, path, mediaStoreId, bmp, MAX_DECODE_SIZE, detector, landmarker, embedder,
+                                    appCtx, dao, path, mediaStoreId, bmp, MAX_DECODE_SIZE,
+                                    detector, landmarker, embedder,
                                 )
                             } finally {
                                 bmp.recycle()

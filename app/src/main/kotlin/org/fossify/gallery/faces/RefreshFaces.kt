@@ -75,7 +75,8 @@ object RefreshFaces {
                             try {
                                 val detected = det.detect(bmp).filter { FaceFilter.isUsable(it) }
                                 val old = byPath[path].orEmpty()
-                                val pair = matchAndStore(dao, path, old, detected, bmp, res, lm, emb, det, full)
+                                val pair =
+                                    matchAndStore(dao, path, old, detected, res, lm, emb, det, Target(full, null))
                                 updated += pair.first
                                 added += pair.second
                             } finally {
@@ -122,8 +123,10 @@ object RefreshFaces {
             val det = FaceDetectionHelper(appCtx).also { detector = it }
             val emb = FaceEmbedder(appCtx).also { embedder = it }
             val lm = FaceLandmarkHelper(appCtx).also { landmarker = it }
+            // počas prepočtu na v2 idú nové vektory bokom (FaceV2Staging), rámčeky sa opravia hneď
+            val staging = if (FaceEmbedVersion.isPending(appCtx)) FaceV2Staging.get(appCtx) else null
             for (path in paths.asSequence().takeWhile { isRunning }) {
-                if (!java.io.File(path).exists() || refreshOne(dao, path, det, emb, lm)) done.add(path)
+                if (!java.io.File(path).exists() || refreshOne(dao, path, det, emb, lm, staging)) done.add(path)
             }
         } catch (ignored: Throwable) {
         } finally {
@@ -141,14 +144,19 @@ object RefreshFaces {
         det: FaceDetectionHelper,
         emb: FaceEmbedder,
         lm: FaceLandmarkHelper,
+        staging: FaceV2Staging?,
     ): Boolean = try {
         val res = UprightDecoder.decode(path, MAX_DECODE)
         if (res != null) {
             val bmp = res.bitmap
+            val full = FullResCrop.open(path, MAX_DECODE, bmp.width, bmp.height)
             try {
                 val detected = det.detect(bmp).filter { FaceFilter.isUsable(it) }
-                matchAndStore(dao, path, dao.getFacesForPath(path), detected, bmp, res, lm, emb, det)
+                matchAndStore(
+                    dao, path, dao.getFacesForPath(path), detected, res, lm, emb, det, Target(full, staging),
+                )
             } finally {
+                full?.close()
                 bmp.recycle()
             }
         }
@@ -200,60 +208,94 @@ object RefreshFaces {
         return repaired
     }
 
+    // Kam sa zapíšu nové odtlačky: výrez z plného rozlíšenia (ak sa dá) a pri bežiacom prepočte na v2
+    // staging (vo faces.db sú ešte v1 vektory, nové v2 preto čakajú vo faces_v2.db a do faces.db ich
+    // zapíše až prepnutie vo FaceReembedV2; rámčeky sa menia hneď).
+    private class Target(val full: FullResCrop?, val staging: FaceV2Staging?)
+
     private fun matchAndStore(
         dao: FaceDao,
         path: String,
         old: List<FaceEntity>,
         detected: List<FaceDetectionHelper.DetectedFace>,
-        bmp: Bitmap,
         res: UprightDecoder.Result,
         landmarker: FaceLandmarkHelper,
         embedder: FaceEmbedder,
         detector: FaceDetectionHelper,
-        full: FullResCrop?,
+        target: Target,
     ): Pair<Int, Int> {
         if (detected.isEmpty()) return 0 to 0
+        val bmp = res.bitmap
         val match = matchOldFaces(old, detected, res, bmp.width, bmp.height)
         var updated = 0
-        var added = 0
         val toInsert = ArrayList<FaceEntity>()
+        val newVectors = HashMap<Int, ByteArray>()
         var nextIndex = (old.maxOfOrNull { it.faceIndex } ?: -1) + 1
 
         for ((di, d) in detected.withIndex()) {
-            val emb = FaceAligner.embedDetected(bmp, d, landmarker, embedder, detector, full)
+            val emb = FaceAligner.embedDetected(bmp, d, landmarker, embedder, detector, target.full)
             val oi = match[di]
             if (oi >= 0) {
                 // rovnaká tvár ako predtým -> UPDATE na mieste (id, a teda aj menovka, ostáva)
-                val id = old[oi].id
-                if (id != null) {
-                    try {
-                        dao.updateFaceBox(id, d.left, d.top, d.right, d.bottom, d.score)
-                        if (emb != null) dao.updateEmbedding(id, emb)
-                        updated++
-                    } catch (ignored: Throwable) {
-                    }
-                }
+                val id = old[oi].id ?: continue
+                if (updateMatched(dao, id, d, emb, target.staging)) updated++
             } else {
+                val index = nextIndex++
                 toInsert.add(
                     FaceEntity(
                         id = null, mediaFullPath = path,
                         mediaStoreId = old.firstOrNull()?.mediaStoreId ?: 0L,
-                        faceIndex = nextIndex++,
+                        faceIndex = index,
                         bboxLeft = d.left, bboxTop = d.top, bboxRight = d.right, bboxBottom = d.bottom,
-                        score = d.score, embedding = emb, detectedAt = System.currentTimeMillis(),
+                        score = d.score, embedding = if (target.staging != null) null else emb,
+                        detectedAt = System.currentTimeMillis(),
                     )
                 )
-                added++
+                if (emb != null) newVectors[index] = emb
             }
         }
-        if (toInsert.isNotEmpty()) {
-            try {
-                dao.insertFaces(toInsert)
-            } catch (ignored: Throwable) {
-                added -= toInsert.size
-            }
-        }
+        val added = if (insertNew(dao, path, toInsert, newVectors, target.staging)) toInsert.size else 0
         return updated to added
+    }
+
+    private fun updateMatched(
+        dao: FaceDao,
+        id: Long,
+        d: FaceDetectionHelper.DetectedFace,
+        emb: ByteArray?,
+        staging: FaceV2Staging?,
+    ): Boolean = try {
+        dao.updateFaceBox(id, d.left, d.top, d.right, d.bottom, d.score)
+        if (emb != null) {
+            if (staging != null) staging.putDone(listOf(Triple(id, emb, null))) else dao.updateEmbedding(id, emb)
+        }
+        true
+    } catch (ignored: Throwable) {
+        false
+    }
+
+    // nové tváre; pri prepočte na v2 bez odtlačku a ich v2 vektor do stagingu (podľa poradia na fotke)
+    private fun insertNew(
+        dao: FaceDao,
+        path: String,
+        toInsert: List<FaceEntity>,
+        vectors: Map<Int, ByteArray>,
+        staging: FaceV2Staging?,
+    ): Boolean {
+        if (toInsert.isEmpty()) return true
+        return try {
+            dao.insertFaces(toInsert)
+            if (staging != null && vectors.isNotEmpty()) {
+                val items = dao.getFacesForPath(path).mapNotNull { f ->
+                    val id = f.id ?: return@mapNotNull null
+                    vectors[f.faceIndex]?.let { Triple(id, it, null as ByteArray?) }
+                }
+                staging.putDone(items)
+            }
+            true
+        } catch (ignored: Throwable) {
+            false
+        }
     }
 
     // Spáruje staré záznamy fotky s novými detekciami (IoU, pažravo). Staré rámčeky môžu byť

@@ -11,6 +11,7 @@ import android.content.Context
 // v jednej transakcii prepíšu odtlačky a v ďalšej sa odložia v1 vzory. Keď appka spadne uprostred,
 // príznak „dokončiť" zostane a prepnutie sa pri ďalšom behu zopakuje (je idempotentné).
 // Nová inštalácia (ešte bez faces.db a people.db) začína rovno vo v2.
+@Suppress("TooManyFunctions") // malé prístupové funkcie k jednému stavu
 object FaceEmbedVersion {
     private const val PREFS = "galeria_faces"
     private const val KEY_VERSION = "face_embed_version"

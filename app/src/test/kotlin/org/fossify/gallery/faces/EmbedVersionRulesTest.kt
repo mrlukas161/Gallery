@@ -60,4 +60,18 @@ class EmbedVersionRulesTest {
         assertEquals("/data", EmbedVersionRules.volumeRoot("/data/x.jpg"))
         assertNull(EmbedVersionRules.volumeRoot("/"))
     }
+
+    @Test
+    fun attemptsPerRun() {
+        val max = EmbedVersionRules.MAX_TRIES
+        assertTrue(EmbedVersionRules.needsAttempt(null, 0, 0))
+        assertFalse(EmbedVersionRules.needsAttempt(null, 0, 1))
+        assertFalse(EmbedVersionRules.needsAttempt(EmbedVersionRules.STATE_DONE, 1, 0))
+        // chýbajúci súbor: raz v každom behu (relinker mohol fotku medzitým nájsť)
+        assertTrue(EmbedVersionRules.needsAttempt(EmbedVersionRules.STATE_MISSING, 7, 0))
+        assertFalse(EmbedVersionRules.needsAttempt(EmbedVersionRules.STATE_MISSING, 7, 1))
+        // zlyhaný výpočet: spolu najviac MAX_TRIES pokusov
+        assertTrue(EmbedVersionRules.needsAttempt(EmbedVersionRules.STATE_FAILED, max - 1, 1))
+        assertFalse(EmbedVersionRules.needsAttempt(EmbedVersionRules.STATE_FAILED, max, 0))
+    }
 }
