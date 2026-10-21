@@ -103,17 +103,16 @@ object PersonGrouper {
     fun familyWeight(ownCount: Int, familyCount: Int): Float =
         if (familyCount == 0) 0f else min(FAMILY_WEIGHT, ownCount.toFloat() / familyCount)
 
-    // Ťažisko pre automatické zaradenie. Bez vlastného vektora žiadne — osoba len z rodinného prepojenia
-    // sa automaticky nedopĺňa (chyba z druhého telefónu by sa šírila), návrhy dostane (suggestionCentroids).
+    // Pozn. C6: automatika aj Návrhy dnes hodnotia tvár kNN skóre (KnnModel, classify). Ťažiská nižšie
+    // ostávajú ako jednoduchý jednopriemerový model (KnnModel z rovnakého váženia robí predvýber osôb).
+    // Ťažisko z vlastných vektorov a rodinných so zníženou váhou. Bez vlastného vektora žiadne — osoba len
+    // z rodinného prepojenia sa automaticky nedopĺňa (chyba z druhého telefónu by sa šírila).
     fun autoCentroid(ev: Evidence): FloatArray? {
         if (ev.own.isEmpty()) return null
         return weightedCentroid(ev.own, ev.family, familyWeight(ev.own.size, ev.family.size))
     }
 
-    // Ťažisko, ktoré slúži len ako súper pri teste rozostupu (aj osoba len z rodiny „berie" podobné tváre).
-    private fun competitorCentroid(ev: Evidence): FloatArray? = autoCentroid(ev) ?: centroidOf(ev.family)
-
-    // Ťažiská pre Návrhy (FaceTagging). Rodinné vektory sa len pridávajú k pod-ťažiskám z vlastných tvárí
+    // Pod-ťažiská osoby. Rodinné vektory sa len pridávajú k pod-ťažiskám z vlastných tvárí
     // a nezakladajú vlastné. Osoba bez vlastných vektorov dostane jedno ťažisko z rodinných.
     fun suggestionCentroids(ev: Evidence): List<FloatArray> = if (ev.own.isEmpty()) {
         listOfNotNull(centroidOf(ev.family))
@@ -165,38 +164,52 @@ object PersonGrouper {
             ?: return Classification(persons, emptyMap(), emptyMap(), emptyList(), null)
         val banned = HashMap<Long, HashSet<Long>>()
         cannotLinks.forEach { banned.getOrPut(it.faceId) { HashSet() }.add(it.personId) }
-        val fixed = Fixed(persons)
-        val ranker = model.newRanker()
-        val low = uncertainFloor(threshold)
-        val byPhoto = HashMap<String, ArrayList<Candidate>>()
-        val contested = ArrayList<Scored>()
-        for (f in pool) {
-            val fid = f.id ?: continue
-            val e = f.embedding ?: continue
-            if (fixed.assigned.contains(fid) || ignoredFaceIds.contains(fid)) continue
-            val r = ranker.rank(decode(e), banned[fid], fixed.onPhoto[f.mediaFullPath]) ?: continue
-            if (r.best < low) continue
-            val scored = Scored(f, r.bestId, r.best, r.secondId, r.second)
-            val isAuto = threshold > 0f && model.isAssignable(r.bestIndex) &&
-                r.best >= model.autoThreshold(r.bestIndex, threshold) && r.margin >= margin
-            byPhoto.getOrPut(f.mediaFullPath) { ArrayList() }.add(Candidate(scored, isAuto))
-            if (r.hasSecond && r.second >= low) contested.add(scored)
-        }
-        val picked = pickPerPhoto(byPhoto)
-        val autoIds = picked.auto.values.flatten().mapNotNullTo(HashSet()) { it.face.id }
+        val scan = Scan(model, Fixed(persons), banned, ignoredFaceIds, threshold, margin)
+        pool.forEach { scan.add(it, decode) }
+        val picked = pickPerPhoto(scan.byPhoto)
+        val autoOwner = HashMap<Long, Long>()
+        picked.auto.forEach { (pid, list) -> list.forEach { s -> s.face.id?.let { autoOwner[it] = pid } } }
         val result = persons.map { p ->
             val add = p.id?.let { picked.auto[it] } ?: return@map p
             if (add.isEmpty()) p else p.copy(faces = (p.faces + add.map { it.face }).sortedByDescending { it.score })
         }.sortedWith(personOrder)
-        val autoOwner = HashMap<Long, Long>()
-        picked.auto.forEach { (pid, list) -> list.forEach { s -> s.face.id?.let { autoOwner[it] = pid } } }
         return Classification(
             result,
             picked.uncertain.mapValues { (_, list) -> list.sortedByDescending { it.score } },
             autoOwner,
-            contested.filter { !autoIds.contains(it.face.id) },
+            scan.contested.filter { s -> s.face.id?.let { autoOwner.containsKey(it) } != true },
             model,
         )
+    }
+
+    // prechod nepriradenými tvárami: kandidáti podľa fotky (pre greedy) a sporné tváre (C11)
+    @Suppress("LongParameterList")
+    private class Scan(
+        val model: KnnModel,
+        val fixed: Fixed,
+        val banned: Map<Long, Set<Long>>,
+        val ignored: Set<Long>,
+        val threshold: Float,
+        val margin: Float,
+    ) {
+        private val ranker = model.newRanker()
+        private val low = uncertainFloor(threshold)
+        val byPhoto = HashMap<String, ArrayList<Candidate>>()
+        val contested = ArrayList<Scored>()
+
+        fun add(f: FaceEntity, decode: (ByteArray) -> FloatArray) {
+            val fid = f.id ?: return
+            val e = f.embedding ?: return
+            if (fixed.assigned.contains(fid) || ignored.contains(fid)) return
+            val r = ranker.rank(decode(e), banned[fid], fixed.onPhoto[f.mediaFullPath]) ?: return
+            if (r.best < low) return
+            val scored = Scored(f, r.bestId, r.best, r.secondId, r.second)
+            byPhoto.getOrPut(f.mediaFullPath) { ArrayList() }.add(Candidate(scored, isAuto(r)))
+            if (r.hasSecond && r.second >= low) contested.add(scored)
+        }
+
+        private fun isAuto(r: KnnModel.Ranking): Boolean = threshold > 0f && model.isAssignable(r.bestIndex) &&
+            r.best >= model.autoThreshold(r.bestIndex, threshold) && r.margin >= margin
     }
 
     // dolná hranica pásma „neisté“
@@ -300,7 +313,8 @@ object PersonGrouper {
             val sorted = cands.sortedByDescending { it.scored.score }
             val used = HashSet<Long>()
             for (c in sorted) {
-                if (c.isAuto && used.add(c.scored.personId)) auto.getOrPut(c.scored.personId) { ArrayList() }.add(c.scored)
+                if (!c.isAuto || !used.add(c.scored.personId)) continue
+                auto.getOrPut(c.scored.personId) { ArrayList() }.add(c.scored)
             }
             for (c in sorted) {
                 if (c.isAuto) continue

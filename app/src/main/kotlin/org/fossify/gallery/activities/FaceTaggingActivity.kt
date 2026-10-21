@@ -37,10 +37,11 @@ import org.fossify.gallery.faces.FaceSorter
 import org.fossify.gallery.faces.FaceVisibility
 import org.fossify.gallery.faces.FacesDatabase
 import org.fossify.gallery.faces.PeopleDatabase
-import org.fossify.gallery.faces.Person
+import org.fossify.gallery.faces.PeopleIndex
 import org.fossify.gallery.faces.PersonGrouper
 import org.fossify.gallery.family.FamilyRecorder
 import org.fossify.gallery.helpers.DragSelectListener
+import org.fossify.gallery.helpers.FaceDecisions
 import org.fossify.gallery.helpers.GridZoom
 
 // UNLABELED   = všetky NEoznačené tváre, multi-výber -> priradiť k osobe (triedenie jednotným dialógom)
@@ -340,37 +341,26 @@ class FaceTaggingActivity : SimpleActivity() {
             .toList()
     }
 
+    // C6: návrhy s rovnakým skóre ako automatika — kNN k potvrdeným tváram a vzorom osoby (rodinné so
+    // zníženou váhou), penalizácia za podobnosť s odmietnutými tvárami (C8). Model je z jedného zdroja
+    // pravdy (PeopleIndex), takže Návrhy, Ľudia aj karta osoby hodnotia tvár rovnako.
     private fun computeCandidates(): List<Pair<FaceEntity, Float>> {
         val facesDao = FacesDatabase.getInstance(this).FaceDao()
         val peopleDao = PeopleDatabase.getInstance(this).PeopleDao()
-        val allFaces = facesDao.getAllFaces()
-        val pool = allFaces.filter { FaceFilter.isGood(it) }
-        val assignments = peopleDao.getAssignments()
-        val assigned = assignments.map { it.faceId }.toHashSet()
-        val mine = assignments.filter { it.personId == personId }
-        val mineIds = mine.map { it.faceId }.toHashSet()
-        // tváre osoby BEZ filtra skóre (používateľ ich potvrdil, musia rátať do učenia); is_manual=false
-        // = prišli z rodinného prepojenia → znížená váha (rovnaké pravidlá ako automatika v Ľuďoch)
-        val person = Person(
-            personId, personName,
-            allFaces.filter { it.id != null && mineIds.contains(it.id) },
-            manualFaceIds = mineIds,
-            familyFaceIds = mine.filter { !it.isManual }.map { it.faceId }.toHashSet(),
-        )
-        val anchors = PersonGrouper.splitAnchors(peopleDao.getAllAnchors().filter { it.personId == personId }) {
-            FaceEmbedder.toFloats(it)
-        }[personId]
-        // viac ťažísk (okuliare/starnutie/deti) → porovnaj s najbližším; rodinné vzory ťažisko netvoria
-        val evidence = PersonGrouper.evidenceOf(person, anchors) { FaceEmbedder.toFloats(it) }
-        val centroids = PersonGrouper.suggestionCentroids(evidence)
-        if (centroids.isEmpty()) return emptyList()
+        val model = PeopleIndex.get(this).model ?: return emptyList()
+        val index = model.indexOf(personId)
+        if (index < 0) return emptyList()
+        val ranker = model.newRanker()
+        val pool = facesDao.getAllFaces().filter { FaceFilter.isGood(it) }
+        val assigned = peopleDao.getAssignments().map { it.faceId }.toHashSet()
         val cannot = peopleDao.getCannotLinks().filter { it.personId == personId }.map { it.faceId }.toHashSet()
         val ignored = ExtrasDatabase.getInstance(this).ExtrasDao().getIgnoredIds().toHashSet()
         // applyThreshold ukáže najviac SUGGEST_MAX najpodobnejších nad prahom = vždy začiatok tohto
         // zoradeného zoznamu, preto stačí zistiť viditeľnosť (disk) len pre prvých SUGGEST_MAX viditeľných
         return pool
             .filter { val id = it.id; id != null && !assigned.contains(id) && !cannot.contains(id) && !ignored.contains(id) }
-            .mapNotNull { f -> f.embedding?.let { b -> f to PersonGrouper.maxCosine(FaceEmbedder.toFloats(b), centroids) } }
+            .mapNotNull { f -> f.embedding?.let { b -> f to ranker.score(FaceEmbedder.toFloats(b), index) } }
+            .filter { it.second > Float.NEGATIVE_INFINITY }
             .sortedByDescending { it.second }
             .asSequence()
             .filter { faceVisibility.isVisible(it.first.mediaFullPath) }
@@ -386,10 +376,9 @@ class FaceTaggingActivity : SimpleActivity() {
 
     private fun assignConfirmed(ids: List<Long>) {
         ensureBackgroundThread {
-            val dao = PeopleDatabase.getInstance(this).PeopleDao()
-            // všetky potvrdené tváre naraz v jednej transakcii
-            dao.assignFaces(ids, personId, System.currentTimeMillis())
-            FamilyRecorder.facesAssigned(this, ids, personId)
+            // všetky potvrdené tváre naraz v jednej transakcii; tvár, ktorú automatika dala inej osobe,
+            // dostane „nie je tá osoba“ (C8)
+            FaceDecisions.move(this, ids, personId)
             runOnUiThread {
                 toast(R.string.person_saved)
                 load() // prepočítaj návrhy z nového vzoru = real-time učenie
@@ -448,16 +437,13 @@ class FaceTaggingActivity : SimpleActivity() {
     private fun doAssign(ids: List<Long>, existingId: Long?, newName: String?) {
         ensureBackgroundThread {
             try {
-                val dao = PeopleDatabase.getInstance(this).PeopleDao()
                 val extras = ExtrasDatabase.getInstance(this).ExtrasDao()
-                val now = System.currentTimeMillis()
-                // priradenie (aj založenie novej osoby) naraz v jednej transakcii
+                // priradenie (aj založenie novej osoby) naraz v jednej transakcii; tvár, ktorú automatika
+                // dala inej osobe, dostane „nie je tá osoba“ (C8: presun z A na B)
                 if (existingId != null) {
-                    dao.assignFaces(ids, existingId, now)
-                    FamilyRecorder.facesAssigned(this, ids, existingId)
+                    FaceDecisions.move(this, ids, existingId)
                 } else {
-                    val newId = dao.createPersonWithFaces(newName.orEmpty(), ids, now)
-                    FamilyRecorder.personCreated(this, newId, ids)
+                    FaceDecisions.moveToNewPerson(this, ids, newName.orEmpty())
                 }
                 ids.forEach {
                     extras.deleteIgnored(it) // priradenie zruší prípadné ignorovanie
@@ -479,6 +465,7 @@ class FaceTaggingActivity : SimpleActivity() {
         ensureBackgroundThread {
             val dao = ExtrasDatabase.getInstance(this).ExtrasDao()
             ids.forEach { dao.insertIgnored(IgnoredFaceEntity(it)) }
+            PeopleIndex.invalidate()
             runOnUiThread { adapter?.removeSelected() }
         }
     }
@@ -489,6 +476,7 @@ class FaceTaggingActivity : SimpleActivity() {
         ensureBackgroundThread {
             val dao = ExtrasDatabase.getInstance(this).ExtrasDao()
             ids.forEach { dao.deleteIgnored(it) }
+            PeopleIndex.invalidate()
             runOnUiThread { adapter?.removeSelected() }
         }
     }

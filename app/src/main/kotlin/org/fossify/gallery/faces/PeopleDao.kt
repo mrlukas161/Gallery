@@ -41,6 +41,7 @@ interface PeopleDao {
         reassignPerson(from, to)
         deleteConflictingCannotLinks(from, to)
         reassignCannotLinks(from, to)
+        deleteContradictingCannotLinks(to)
         reassignAnchors(from, to)
         deletePerson(from)
     }
@@ -106,6 +107,15 @@ interface PeopleDao {
 
     @Query("UPDATE cannot_links SET person_id = :to WHERE person_id = :from")
     fun reassignCannotLinks(from: Long, to: Long)
+
+    // C8 — po zlúčení: „tvár nie je osoba“ pri tvári, ktorá je osobe priradená, si protirečí (napr. tvár
+    // odmietnutá pri Jánovi a potvrdená pri „Jankovi“, ktorý sa do Jána zlúčil). Priradenie má prednosť,
+    // inak by tvár ako negatívny prototyp (KnnModel) ťahala skóre vlastnej osoby nadol. Len dotaz, bez zmeny schémy.
+    @Query(
+        "DELETE FROM cannot_links WHERE person_id = :personId AND face_id IN " +
+            "(SELECT face_id FROM face_assignments WHERE person_id = :personId)"
+    )
+    fun deleteContradictingCannotLinks(personId: Long)
 
     // „Toto nie je táto osoba" pre viac tvárí naraz: zruší ich priradenie k osobe a zapíše negatívne pravidlo
     // (aby sa už nenavrhli) — atomicky.

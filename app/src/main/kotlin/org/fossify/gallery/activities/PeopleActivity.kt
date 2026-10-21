@@ -2,10 +2,12 @@ package org.fossify.gallery.activities
 
 import android.content.Context
 import android.content.Intent
+import android.database.SQLException
 import android.os.Bundle
 import android.util.TypedValue
 import android.widget.LinearLayout
 import android.widget.ScrollView
+import androidx.annotation.WorkerThread
 import androidx.appcompat.app.AlertDialog
 import androidx.recyclerview.widget.GridLayoutManager
 import org.fossify.commons.dialogs.ConfirmationDialog
@@ -28,21 +30,20 @@ import org.fossify.commons.views.MyTextView
 import org.fossify.gallery.R
 import org.fossify.gallery.adapters.PeopleAdapter
 import org.fossify.gallery.databinding.ActivityPeopleBinding
+import org.fossify.gallery.dialogs.DecideFacesDialog
 import org.fossify.gallery.dialogs.FamilyProposalsDialog
 import org.fossify.gallery.faces.ExtrasDatabase
-import org.fossify.gallery.faces.FaceEmbedder
-import org.fossify.gallery.faces.FaceFilter
 import org.fossify.gallery.faces.FaceVisibility
 import org.fossify.gallery.faces.GroupMemberEntity
-import org.fossify.gallery.faces.FacesDatabase
 import org.fossify.gallery.faces.PeopleDatabase
+import org.fossify.gallery.faces.PeopleIndex
 import org.fossify.gallery.faces.Person
 import org.fossify.gallery.faces.PersonEntity
 import org.fossify.gallery.faces.PersonGroupEntity
 import org.fossify.gallery.faces.PersonGrouper
 import org.fossify.gallery.family.FamilyProposals
 import org.fossify.gallery.family.FamilyRecorder
-import org.fossify.gallery.helpers.FaceAuto
+import org.fossify.gallery.helpers.FaceAccuracy
 import org.fossify.gallery.helpers.GridZoom
 
 class PeopleActivity : SimpleActivity() {
@@ -103,6 +104,11 @@ class PeopleActivity : SimpleActivity() {
                     true
                 }
 
+                R.id.decide_faces -> {
+                    DecideFacesDialog(this) { loadPeople() }
+                    true
+                }
+
                 R.id.show_map -> {
                     startActivity(Intent(this, MapActivity::class.java))
                     true
@@ -116,6 +122,46 @@ class PeopleActivity : SimpleActivity() {
         loadPeople()
         refreshFamilyBanner()
         picasaReimport.refresh()
+        refreshConfusedBanner()
+        // C10: pri nabíjaní sa starý odhad presnosti prepočíta (jedno krátke vlákno)
+        FaceAccuracy.refreshWhileCharging(this) { runOnUiThread { refreshConfusedBanner() } }
+    }
+
+    // C10: „Ján ↔ Peter sa pletú – pomôž mi ich rozlíšiť“ → „Pomôž mi rozhodnúť“ (C11) pre túto dvojicu
+    private fun refreshConfusedBanner() {
+        ensureBackgroundThread {
+            val candidate = FaceAccuracy.load(this)?.worstPair()
+            // upozornenie len vtedy, keď je pre dvojicu naozaj o čom rozhodovať (fronta C11 nie je prázdna)
+            val snapshot = try {
+                if (candidate == null) null else PeopleIndex.get(this)
+            } catch (ignored: SQLException) {
+                null
+            } catch (ignored: IllegalStateException) {
+                null
+            }
+            val worst = candidate?.takeIf {
+                snapshot != null && PersonGrouper.decisionQueue(
+                    snapshot.contested, it.personId to it.otherId, limit = 1,
+                ).isNotEmpty()
+            }
+            val names = snapshot?.persons?.associate { it.id to it.name }.orEmpty()
+            runOnUiThread {
+                if (isDestroyed || isFinishing) return@runOnUiThread
+                val banner = binding.peopleConfusedBanner
+                val a = worst?.let { names[it.personId] }
+                val b = worst?.let { names[it.otherId] }
+                if (worst == null || a.isNullOrBlank() || b.isNullOrBlank()) {
+                    banner.beGone()
+                    return@runOnUiThread
+                }
+                banner.text = getString(R.string.tc2_confused_banner, a, b)
+                banner.setTextColor(getProperPrimaryColor())
+                banner.setOnClickListener {
+                    DecideFacesDialog(this, worst.personId to worst.otherId) { loadPeople() }
+                }
+                banner.beVisible()
+            }
+        }
     }
 
     // Lišta „Máš N návrhov z telefónu …“ (rodinné prepojenie). reopen = po rozhodnutí rovno ukáž ďalšie návrhy.
@@ -587,38 +633,9 @@ class PeopleActivity : SimpleActivity() {
         private const val COLUMNS = 3
 
         // Zloženie osôb: ručne potvrdené tváre + (pri zapnutom automatickom zaraďovaní) tváre zaradené podľa
-        // podobnosti. Volá sa z pozadia. Zdieľané s PersonActivity, aby karta osoby pri návrate ukazovala
-        // presne to isté ako zoznam Ľudia (vrátane auto-zaradených tvárí, ktoré nemajú riadok v priradeniach).
-        fun loadPersons(context: Context): List<Person> {
-            val facesDao = FacesDatabase.getInstance(context).FaceDao()
-            val peopleDao = PeopleDatabase.getInstance(context).PeopleDao()
-            val allFaces = facesDao.getAllFaces()
-            // základ = priradené tváre BEZ filtra skóre/veľkosti — ručné potvrdenie má prednosť (C5)
-            var all = PersonGrouper.confirmedPersons(allFaces, peopleDao.getPersons(), peopleDao.getAssignments())
-            // + automatické zaradenie tvárí nad zvolenou istotou (0 = vypnuté); automatika len z „dobrých" tvárí
-            val threshold = FaceAuto.threshold(context)
-            if (threshold > 0f) {
-                val anchors = try {
-                    PersonGrouper.splitAnchors(peopleDao.getAllAnchors()) { FaceEmbedder.toFloats(it) }
-                } catch (e: Throwable) {
-                    emptyMap()
-                }
-                val links = try {
-                    peopleDao.getCannotLinks()
-                } catch (e: Throwable) {
-                    emptyList()
-                }
-                // ignorované tváre (extras.db) sa automaticky nezaraďujú (C1)
-                val ignored = try {
-                    ExtrasDatabase.getInstance(context).ExtrasDao().getIgnoredIds().toHashSet()
-                } catch (e: Throwable) {
-                    // bez zoznamu ignorovaných radšej nezaraďovať nič automaticky
-                    return all
-                }
-                val pool = allFaces.filter { FaceFilter.isGood(it) }
-                all = PersonGrouper.withAutoMatches(all, pool, anchors, links, ignored, threshold, FaceAuto.MARGIN)
-            }
-            return all
-        }
+        // podobnosti. Volá sa z pozadia. Jeden zdroj pravdy (PeopleIndex, C9) zdieľajú Ľudia, karta osoby,
+        // Návrhy, hľadanie, mapa aj prehliadač — všade sú tie isté tváre osoby.
+        @WorkerThread
+        fun loadPersons(context: Context): List<Person> = PeopleIndex.get(context).persons
     }
 }

@@ -21,7 +21,8 @@ import java.util.IdentityHashMap
 //
 // Výkon: kNN pre všetky osoby by bolo 10 000 tvárí × (100 osôb × desiatky prototypov). Preto sa najprv
 // spočíta kosínus k ťažisku každej osoby (jeden riadok na osobu) a kNN sa počíta len pre SHORTLIST
-// najbližších. Osoba, ktorej ťažisko nie je ani medzi SHORTLIST najbližšími, by nevyhrala ani v kNN.
+// najbližších (a len tie blízko najlepšieho, SHORTLIST_DELTA). Osoba, ktorej ťažisko nie je ani medzi
+// nimi, by nevyhrala ani v kNN.
 //
 // Model je nemenný (zdieľa sa medzi vláknami). Výpočty robí Ranker — ten má vlastné pracovné polia,
 // preto jeden Ranker na vlákno. Čistá logika bez Androidu (testy v KnnModelTest / PersonGrouperTest).
@@ -89,9 +90,14 @@ class KnnModel private constructor(
 
         // najlepšia a druhá osoba; [banned] = osoby zakázané cannot-linkom, [blocked] = osoby, ktoré na fotke
         // už sú; [exclude] = id tváre, ktorá sa medzi prototypmi aj negatívami nepočíta (leave-one-out)
-        fun rank(v: FloatArray, banned: Set<Long>? = null, blocked: Set<Long>? = null, exclude: Long = NO_FACE): Ranking? {
+        fun rank(
+            v: FloatArray,
+            banned: Set<Long>? = null,
+            blocked: Set<Long>? = null,
+            exclude: Long = NO_FACE,
+        ): Ranking? {
             if (v.size != m.dim) return null
-            val n = fillShortlist(v, banned, blocked)
+            val n = withinDelta(fillShortlist(v, banned, blocked))
             var bestIdx = -1
             var best = Float.NEGATIVE_INFINITY
             var secondIdx = -1
@@ -132,6 +138,15 @@ class KnnModel private constructor(
                 }
             }
             return n
+        }
+
+        // z predvýberu len osoby, ktorých ťažisko nie je o viac ako SHORTLIST_DELTA horšie než najlepšie
+        private fun withinDelta(n: Int): Int {
+            if (n == 0) return 0
+            val floor = centroidScore[shortlist[0]] - SHORTLIST_DELTA
+            var k = 1
+            while (k < n && centroidScore[shortlist[k]] >= floor) k++
+            return k
         }
 
         // zoznam je zoradený zostupne podľa skóre ťažiska — vlož posledný prvok na správne miesto
@@ -244,6 +259,12 @@ class KnnModel private constructor(
 
         // koľko osôb s najbližším ťažiskom dostane presné kNN skóre
         const val SHORTLIST = 8
+
+        // … a len tie, ktorých kosínus k ťažisku je najviac o toľko nižší než u najbližšej osoby. kNN skóre
+        // presahuje kosínus k ťažisku pri osobe z viacerých podôb o niekoľko desatín (dieťa v troch vekoch:
+        // 0,86 oproti 0,58, test childAtDifferentAgesMatchesNearestCluster); osoba, ktorej ťažisko je o 0,4
+        // ďalej, by nevyhrala ani neohrozila rozostup. Cudzie osoby (kosínus ~0) tak kNN vôbec nepočítajú.
+        const val SHORTLIST_DELTA = 0.4f
 
         const val NO_FACE = Long.MIN_VALUE
         const val NO_PERSON = Long.MIN_VALUE

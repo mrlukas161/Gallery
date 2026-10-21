@@ -1238,6 +1238,30 @@
 
             </RelativeLayout>
 
+            <!-- C10: odhad presnosti rozpoznávania tvárí (leave-one-out), ťuk = prepočet -->
+            <RelativeLayout
+                android:id="@+id/settings_face_accuracy_holder"
+                style="@style/SettingsHolderTextViewStyle"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content">
+
+                <org.fossify.commons.views.MyTextView
+                    android:id="@+id/settings_face_accuracy_label"
+                    style="@style/SettingsTextLabelStyle"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/tc2_accuracy_title" />
+
+                <org.fossify.commons.views.MyTextView
+                    android:id="@+id/settings_face_accuracy_summary"
+                    style="@style/SettingsTextValueStyle"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_below="@+id/settings_face_accuracy_label"
+                    tools:text="Odhad presnosti: 96 % (z 1 234 potvrdených tvárí)" />
+
+            </RelativeLayout>
+
             <RelativeLayout
                 android:id="@+id/settings_picasa_import_holder"
                 style="@style/SettingsHolderTextViewStyle"

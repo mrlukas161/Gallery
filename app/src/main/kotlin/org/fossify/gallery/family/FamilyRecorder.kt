@@ -4,6 +4,7 @@ import android.content.Context
 import org.fossify.gallery.faces.ExtrasDatabase
 import org.fossify.gallery.faces.FacesDatabase
 import org.fossify.gallery.faces.PeopleDatabase
+import org.fossify.gallery.faces.PeopleIndex
 import java.io.Closeable
 import java.util.UUID
 import java.util.concurrent.ExecutorService
@@ -48,6 +49,8 @@ object FamilyRecorder {
     }
 
     private fun record(context: Context, block: (OpRecorder) -> Unit) {
+        // C9: každá zmena osôb z UI ide cez recorder → jeden zdroj pravdy sa hneď prepočíta (aj bez prepojenia)
+        PeopleIndex.invalidate()
         val app = context.applicationContext
         try {
             worker.execute {

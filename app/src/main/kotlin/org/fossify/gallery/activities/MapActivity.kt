@@ -26,11 +26,11 @@ import org.fossify.commons.helpers.ensureBackgroundThread
 import org.fossify.commons.views.MyAppCompatCheckbox
 import org.fossify.gallery.R
 import org.fossify.gallery.databinding.ActivityMapBinding
-import org.fossify.gallery.faces.FacesDatabase
 import org.fossify.gallery.faces.GeoDatabase
 import org.fossify.gallery.faces.GeoEntity
 import org.fossify.gallery.faces.GeoIndexer
 import org.fossify.gallery.faces.PeopleDatabase
+import org.fossify.gallery.faces.PeopleIndex
 import org.fossify.gallery.faces.QrDatabase
 import org.osmdroid.config.Configuration
 import org.osmdroid.events.DelayedMapListener
@@ -205,19 +205,11 @@ class MapActivity : SimpleActivity() {
         if (!showVideos) result = result.filter { !it.path.isVideoFast() }
         val fp = filterPerson
         if (fp != null && fp.isNotEmpty()) {
+            // C9: fotky osoby z jedného zdroja pravdy (ručne aj automaticky zaradené, rovnako ako v Ľuďoch)
             val photoPersons = try {
-                val facesDao = FacesDatabase.getInstance(this).FaceDao()
-                val peopleDao = PeopleDatabase.getInstance(this).PeopleDao()
-                val pidByFace = peopleDao.getAssignments().associate { it.faceId to it.personId }
-                val pp = HashMap<String, MutableSet<Long>>()
-                for (f in facesDao.getAllFaces()) {
-                    val id = f.id ?: continue
-                    val pid = pidByFace[id] ?: continue
-                    pp.getOrPut(f.mediaFullPath) { HashSet() }.add(pid)
-                }
-                pp
+                PeopleIndex.get(this).photoPersons
             } catch (e: Throwable) {
-                emptyMap<String, MutableSet<Long>>()
+                emptyMap()
             }
             result = result.filter { geo -> photoPersons[geo.path]?.any { fp.contains(it) } == true }
         }

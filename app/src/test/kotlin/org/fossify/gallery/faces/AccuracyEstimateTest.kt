@@ -39,7 +39,11 @@ class AccuracyEstimateTest {
     )
 
     // osoby s tvárami okolo daných základov → (osoby, vzorky na LOO)
-    private fun setup(bases: List<FloatArray>, perPerson: Int, cos: Float): Pair<List<Person>, List<AccuracyEstimate.Sample>> {
+    private fun setup(
+        bases: List<FloatArray>,
+        perPerson: Int,
+        cos: Float,
+    ): Pair<List<Person>, List<AccuracyEstimate.Sample>> {
         val entities = bases.indices.map { PersonEntity((it + 1).toLong(), "P$it") }
         val faces = bases.map { b -> List(perPerson) { face(around(b, cos)) } }
         val persons = PersonGrouper.confirmedPersons(

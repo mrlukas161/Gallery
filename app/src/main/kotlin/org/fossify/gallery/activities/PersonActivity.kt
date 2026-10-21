@@ -1,6 +1,7 @@
 package org.fossify.gallery.activities
 
 import android.content.Intent
+import android.database.SQLException
 import android.os.Bundle
 import android.util.TypedValue
 import android.view.Gravity
@@ -11,6 +12,8 @@ import androidx.appcompat.app.AlertDialog
 import androidx.recyclerview.widget.GridLayoutManager
 import org.fossify.commons.dialogs.ConfirmationDialog
 import org.fossify.commons.dialogs.RadioGroupDialog
+import org.fossify.commons.extensions.beGone
+import org.fossify.commons.extensions.beVisible
 import org.fossify.commons.extensions.getAlertDialogBuilder
 import org.fossify.commons.extensions.getProperPrimaryColor
 import org.fossify.commons.extensions.setupDialogStuff
@@ -35,7 +38,9 @@ import org.fossify.gallery.faces.FaceSorter
 import org.fossify.gallery.faces.FaceVisibility
 import org.fossify.gallery.faces.FacesDatabase
 import org.fossify.gallery.faces.PeopleDatabase
+import org.fossify.gallery.faces.PeopleIndex
 import org.fossify.gallery.family.FamilyRecorder
+import org.fossify.gallery.helpers.FaceDecisions
 import org.fossify.gallery.helpers.GridZoom
 import org.fossify.gallery.helpers.PATH
 import org.fossify.gallery.helpers.SHOW_ALL
@@ -45,8 +50,14 @@ class PersonActivity : SimpleActivity() {
     private val binding by viewBinding(ActivityPersonBinding::inflate)
     private var personId: Long = -1L
     private var personName: String? = null
+    // ručne potvrdené tváre karty — ostatné sú zaradené automaticky a v mriežke majú značku (C7)
     private var manualIds: Set<Long> = emptySet()
     private var facesAdapter: PersonFacesAdapter? = null
+
+    // C7: sekcia „Potvrď“ — neisté tváre osoby z jedného zdroja pravdy (PeopleIndex)
+    private var confirmAdapter: PersonFacesAdapter? = null
+    private var uncertainFaces: List<FaceEntity> = emptyList()
+    private var confirmMode = false
     private var photosAdapter: PhotoPathsAdapter? = null
     private var loadedFaces: List<FaceEntity> = emptyList()
     private var photoPaths: ArrayList<String> = arrayListOf()
@@ -76,6 +87,7 @@ class PersonActivity : SimpleActivity() {
             padBottomSystem = listOf(binding.personGrid),
         )
         setupMaterialScrollListener(binding.personGrid, binding.personAppbar)
+        binding.personConfirmBanner.setOnClickListener { toggleConfirmMode() }
         loadFaces(faceIds)
     }
 
@@ -95,6 +107,8 @@ class PersonActivity : SimpleActivity() {
 
                 R.id.toggle_view -> {
                     showFullPhotos = !showFullPhotos
+                    confirmMode = false
+                    updateConfirmBanner()
                     updateMenuTitles()
                     render()
                     true
@@ -128,14 +142,53 @@ class PersonActivity : SimpleActivity() {
             } catch (e: Throwable) {
                 emptyList()
             }
+            val uncertain = loadUncertain()
             val loadedMeta = FaceMediaMeta.load(this, faces.map { it.mediaFullPath }.distinct())
             runOnUiThread {
                 if (isDestroyed || isFinishing) return@runOnUiThread
                 loadedFaces = faces
                 meta = loadedMeta
+                uncertainFaces = uncertain
+                updateConfirmBanner()
                 render()
             }
         }
+    }
+
+    // neisté tváre osoby (C7), len viditeľné; volať z pozadia
+    private fun loadUncertain(): List<FaceEntity> {
+        if (personId < 0) return emptyList()
+        return try {
+            faceVisibility.filterFaces(PeopleIndex.get(this).uncertain[personId].orEmpty().map { it.face })
+        } catch (ignored: SQLException) {
+            emptyList()
+        } catch (ignored: IllegalStateException) {
+            emptyList()
+        }
+    }
+
+    private fun updateConfirmBanner() {
+        val banner = binding.personConfirmBanner
+        if (personId < 0 || (uncertainFaces.isEmpty() && !confirmMode)) {
+            banner.beGone()
+            return
+        }
+        banner.text = if (confirmMode) {
+            getString(R.string.tc2_confirm_hint, personName ?: "")
+        } else {
+            resources.getQuantityString(R.plurals.tc2_confirm_banner, uncertainFaces.size, uncertainFaces.size)
+        }
+        banner.setTextColor(getProperPrimaryColor())
+        banner.beVisible()
+    }
+
+    // prepnutie medzi tvárami osoby a sekciou „Potvrď“
+    private fun toggleConfirmMode() {
+        confirmMode = !confirmMode && uncertainFaces.isNotEmpty()
+        if (confirmMode) showFullPhotos = false
+        updateMenuTitles()
+        updateConfirmBanner()
+        render()
     }
 
     // Prepočet osoby rovnakou logikou ako zoznam Ľudia (ručne potvrdené + auto-zaradené tváre) — NIE holým
@@ -151,6 +204,7 @@ class PersonActivity : SimpleActivity() {
             } catch (e: Throwable) {
                 null
             } ?: return@ensureBackgroundThread
+            val uncertain = loadUncertain()
             val visibleFaces = faceVisibility.filterFaces(person.faces)
             val newIds = visibleFaces.mapNotNullTo(HashSet()) { it.id }
             val newMeta = if (newIds == knownIds) {
@@ -162,7 +216,20 @@ class PersonActivity : SimpleActivity() {
                 if (isDestroyed || isFinishing) return@runOnUiThread
                 manualIds = person.manualFaceIds
                 personName = person.name ?: personName
-                if (newIds == knownIds) return@runOnUiThread
+                val uncertainChanged = uncertain.map { it.id } != uncertainFaces.map { it.id }
+                uncertainFaces = uncertain
+                val wasConfirm = confirmMode
+                if (uncertain.isEmpty()) confirmMode = false
+                updateConfirmBanner()
+                if (newIds == knownIds) {
+                    // značky (ručne/automaticky) a sekcia „Potvrď“ sa mohli zmeniť aj bez zmeny množiny tvárí
+                    if (wasConfirm && (uncertainChanged || !confirmMode)) {
+                        render()
+                    } else {
+                        facesAdapter?.notifyDataSetChanged()
+                    }
+                    return@runOnUiThread
+                }
                 loadedFaces = visibleFaces
                 meta = newMeta
                 render()
@@ -182,7 +249,9 @@ class PersonActivity : SimpleActivity() {
             runOnUiThread {
                 if (isDestroyed || isFinishing) return@runOnUiThread
                 photoPaths = sortedPaths
-                if (showFullPhotos) {
+                if (confirmMode) {
+                    showConfirmGrid()
+                } else if (showFullPhotos) {
                     // jednotná mriežka s výberovým režimom; „toto nie je osoba" je kontextová akcia
                     // vo výbere (predtým deštruktívny long-press v rozpore so zvyškom appky)
                     val existing = photosAdapter
@@ -218,6 +287,7 @@ class PersonActivity : SimpleActivity() {
                             onClick = { face -> openPhoto(face.mediaFullPath) },
                             onMove = { selected -> moveFaces(selected) },
                             onReject = { selected -> confirmRejectFaces(selected) },
+                            badgeOf = { face -> badgeOf(face) },
                         )
                         facesAdapter = adapter
                         binding.personGrid.adapter = adapter
@@ -225,6 +295,67 @@ class PersonActivity : SimpleActivity() {
                 }
             }
         }
+    }
+
+    // ručne potvrdená tvár bez značky, ostatné (automaticky zaradené) so značkou „A“ (C7)
+    private fun badgeOf(face: FaceEntity): Int {
+        val id = face.id ?: return PersonFacesAdapter.BADGE_NONE
+        val manual = personId < 0 || manualIds.contains(id)
+        return if (manual) PersonFacesAdapter.BADGE_NONE else PersonFacesAdapter.BADGE_AUTO
+    }
+
+    // sekcia „Potvrď“: ťuk = áno, podržanie = výberový režim (Áno / Nie je táto osoba)
+    private fun showConfirmGrid() {
+        val faces = uncertainFaces
+        val existing = confirmAdapter
+        if (existing != null && binding.personGrid.adapter === existing) {
+            existing.updateItems(faces)
+            return
+        }
+        val adapter = PersonFacesAdapter(
+            this, faces.toMutableList(), binding.personGrid,
+            canReject = true,
+            onClick = { face -> confirmFaces(listOf(face)) },
+            onMove = {},
+            onReject = { selected -> confirmRejectFaces(selected) },
+            badgeOf = { PersonFacesAdapter.BADGE_UNCERTAIN },
+            confirmMode = true,
+            onConfirm = { selected -> confirmFaces(selected) },
+        )
+        confirmAdapter = adapter
+        binding.personGrid.adapter = adapter
+    }
+
+    // „Áno, je to táto osoba“ — ručné potvrdenie neistých tvárí (s upozornením, ak by osoba bola na fotke dvakrát)
+    private fun confirmFaces(selected: List<FaceEntity>) {
+        val ids = selected.mapNotNull { it.id }
+        if (personId < 0 || ids.isEmpty()) return
+        FaceTaggingActivity.confirmSamePhoto(this, ids, personId, personName) {
+            ensureBackgroundThread {
+                PeopleDatabase.getInstance(this).PeopleDao().assignFaces(ids, personId, System.currentTimeMillis())
+                FamilyRecorder.facesAssigned(this, ids, personId)
+                runOnUiThread {
+                    if (isDestroyed || isFinishing) return@runOnUiThread
+                    val confirmed = ids.toHashSet()
+                    val known = loadedFaces.mapNotNullTo(HashSet()) { it.id }
+                    loadedFaces = loadedFaces + selected.filter { f -> f.id?.let { !known.contains(it) } == true }
+                    manualIds = manualIds + confirmed
+                    uncertainFaces = uncertainFaces.filter { f -> f.id?.let { !confirmed.contains(it) } ?: true }
+                    confirmAdapter?.removeFaces(confirmed)
+                    afterConfirmChange()
+                }
+            }
+        }
+    }
+
+    // po potvrdení/odmietnutí v sekcii „Potvrď“: prázdna sekcia sa zavrie
+    private fun afterConfirmChange() {
+        if (uncertainFaces.isEmpty() && confirmMode) {
+            confirmMode = false
+            toast(R.string.tc2_confirm_empty)
+            render()
+        }
+        updateConfirmBanner()
     }
 
     // po zmazaní fotiek vo výberovom režime — adaptér si mriežku upravil sám, tu len zosúladíme
@@ -255,6 +386,11 @@ class PersonActivity : SimpleActivity() {
         loadedFaces = loadedFaces.filter { f -> f.id?.let { !ids.contains(it) } ?: true }
         manualIds = manualIds - ids
         facesAdapter?.removeFaces(ids)
+        if (uncertainFaces.any { f -> f.id?.let { ids.contains(it) } == true }) {
+            uncertainFaces = uncertainFaces.filter { f -> f.id?.let { !ids.contains(it) } ?: true }
+            confirmAdapter?.removeFaces(ids)
+            afterConfirmChange()
+        }
     }
 
     // výber tvárí → presun k inej (alebo novej) osobe
@@ -283,11 +419,10 @@ class PersonActivity : SimpleActivity() {
         }
     }
 
+    // presun z tejto osoby na inú: priradenie + „nie je táto osoba“ (C8) v jednej transakcii
     private fun assignToPerson(faceIds: List<Long>, targetId: Long) {
         ensureBackgroundThread {
-            // všetky tváre výberu naraz v jednej transakcii
-            PeopleDatabase.getInstance(this).PeopleDao().assignFaces(faceIds, targetId, System.currentTimeMillis())
-            FamilyRecorder.facesAssigned(this, faceIds, targetId)
+            FaceDecisions.move(this, faceIds, targetId, knownFrom = personId.takeIf { it >= 0 })
             runOnUiThread {
                 toast(R.string.person_saved)
                 removeFacesLocally(faceIds.toHashSet())
@@ -297,10 +432,8 @@ class PersonActivity : SimpleActivity() {
 
     private fun assignToNewPerson(faceIds: List<Long>, name: String) {
         ensureBackgroundThread {
-            // nová osoba + priradenie tvárí v jednej transakcii
-            val newId = PeopleDatabase.getInstance(this).PeopleDao()
-                .createPersonWithFaces(name, faceIds, System.currentTimeMillis())
-            FamilyRecorder.personCreated(this, newId, faceIds)
+            // nová osoba + priradenie tvárí + „nie je táto osoba“ (C8) v jednej transakcii
+            FaceDecisions.moveToNewPerson(this, faceIds, name, knownFrom = personId.takeIf { it >= 0 })
             runOnUiThread {
                 toast(R.string.person_saved)
                 removeFacesLocally(faceIds.toHashSet())

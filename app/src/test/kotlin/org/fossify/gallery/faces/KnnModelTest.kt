@@ -52,7 +52,11 @@ class KnnModelTest {
         byPerson.flatMap { (p, fs) -> fs.map { manual(it, p.id) } },
     )
 
-    private fun model(persons: List<Person>, links: List<CannotLinkEntity> = emptyList(), extra: List<FaceEntity> = emptyList()) =
+    private fun model(
+        persons: List<Person>,
+        links: List<CannotLinkEntity> = emptyList(),
+        extra: List<FaceEntity> = emptyList(),
+    ) =
         PersonGrouper.buildKnn(
             persons, emptyMap(), links,
             (persons.flatMap { it.faces } + extra).associateBy { it.id!! },
@@ -82,6 +86,18 @@ class KnnModelTest {
         val u = face(newTeen)
         val result = PersonGrouper.withAutoMatches(ps, faces + u, emptyMap(), emptyList(), emptySet(), th)
         assertTrue(ids(result.single()).contains(u.id))
+        // Peter leží „v strede“ medzi vekmi dieťaťa: jeho ťažisko je tvári bližšie než ťažisko dieťaťa,
+        // rozhodne však kNN (dieťa ostane v predvýbere a vyhrá)
+        val middle = PersonGrouper.centroidOf(faces.map { vec(it) })!!
+        val peterBase = normalize(FloatArray(dim) { middle[it] * 0.8f + teen[it] * 0.2f })
+        val pf = List(5) { face(peterBase) }
+        val both = persons(mapOf(jan to faces, peter to pf))
+        val m2 = model(both)
+        val peterCentroid = PersonGrouper.cosine(newTeen, PersonGrouper.centroidOf(pf.map { vec(it) })!!)
+        assertTrue(peterCentroid > centroid)
+        val r = m2.newRanker().rank(newTeen)!!
+        assertEquals(1L, r.bestId)
+        assertTrue(r.margin >= PersonGrouper.AUTO_MARGIN)
     }
 
     // --- C6: okuliare (malá podskupina vedľa veľkej) ---
@@ -148,7 +164,8 @@ class KnnModelTest {
         val base = gaussUnit()
         val anchors = List(120) { around(base, 0.8f) }
         val p = Person(1, "Ján", emptyList())
-        val m = PersonGrouper.buildKnn(listOf(p), mapOf(1L to PersonGrouper.Anchors(anchors, emptyList())), emptyList(), emptyMap())!!
+        val byPerson = mapOf(1L to PersonGrouper.Anchors(anchors, emptyList()))
+        val m = PersonGrouper.buildKnn(listOf(p), byPerson, emptyList(), emptyMap())!!
         assertEquals(KnnModel.MAX_ANCHORS_PER_PERSON, m.prototypeCount(0))
     }
 
@@ -181,7 +198,8 @@ class KnnModelTest {
         val maxPos = jf.maxOf { PersonGrouper.cosine(vec(u), vec(it)) }
         val expected = KnnModel.NEGATIVE_LAMBDA * maxOf(0f, PersonGrouper.cosine(vec(u), vec(rejected)) - maxPos)
         assertEquals(before - expected, after, 1e-4f)
-        val c = PersonGrouper.classify(ps, jf + u, emptyMap(), links, emptySet(), th, negativeFaces = mapOf(rejected.id!! to rejected))
+        val negatives = mapOf(rejected.id!! to rejected)
+        val c = PersonGrouper.classify(ps, jf + u, emptyMap(), links, emptySet(), th, negativeFaces = negatives)
         assertFalse(ids(c.persons.single()).contains(u.id))
     }
 
@@ -290,7 +308,9 @@ class KnnModelTest {
         val baseP = around(baseJ, 0.8f)
         val jf = List(5) { face(around(baseJ, 0.95f)) }
         val pf = List(5) { face(around(baseP, 0.95f)) }
-        val mids = List(3) { face(normalize(FloatArray(dim) { i -> baseJ[i] * (0.5f + it * 0.01f) + baseP[i] * 0.5f })) }
+        val mids = List(3) { k ->
+            face(normalize(FloatArray(dim) { baseJ[it] * (0.5f + k * 0.01f) + baseP[it] * 0.5f }))
+        }
         var ps = persons(mapOf(jan to jf, peter to pf))
         val q1 = PersonGrouper.decisionQueue(
             PersonGrouper.classify(ps, jf + pf + mids, emptyMap(), emptyList(), emptySet(), 0.7f).contested,
@@ -306,5 +326,31 @@ class KnnModelTest {
             ).contested,
         )
         assertFalse(q2.any { it.face.id == answered.id })
+    }
+
+    // výkon pri veľkých osobách: 100 osôb × (60 potvrdených + 50 vzorov), 10 000 nezaradených tvárí
+    @Test
+    fun performanceWithManyPrototypes() {
+        val bases = List(100) { gaussUnit() }
+        val entities = bases.indices.map { PersonEntity((it + 1).toLong(), "P$it") }
+        val own = bases.map { b -> List(60) { face(around(b, 0.85f)) } }
+        val ps = PersonGrouper.confirmedPersons(
+            own.flatten(), entities,
+            own.flatMapIndexed { i, fs -> fs.map { manual(it, (i + 1).toLong()) } },
+        )
+        val anchors = bases.indices.associate { i ->
+            (i + 1).toLong() to PersonGrouper.Anchors(List(50) { around(bases[i], 0.8f) }, emptyList())
+        }
+        val pool = own.flatten() + List(10_000) {
+            face(around(bases[rnd.nextInt(100)], 0.5f + rnd.nextFloat() * 0.4f), "/u/${it / 3}.jpg")
+        }
+        var best = Long.MAX_VALUE
+        repeat(3) {
+            val t0 = System.nanoTime()
+            PersonGrouper.classify(ps, pool, anchors, emptyList(), emptySet(), 0.72f)
+            best = minOf(best, (System.nanoTime() - t0) / 1_000_000)
+        }
+        println("kNN 10 000 tvárí × 100 osôb × 110 prototypov: najlepší beh $best ms")
+        assertTrue("trvalo $best ms", best < 1000)
     }
 }
