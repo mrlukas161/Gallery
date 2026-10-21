@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Stringy balíka „Ochrana dát“ (tváre A1–A4, A7): poškodená DB, automatická záloha osôb, dáta z novšej verzie -->
+<resources>
+    <!-- A4: dáta z novšej verzie appky; %1$s = názvy databáz -->
+    <string name="ta1_newer_message">Dáta sú z novšej verzie appky – nainštaluj novšiu verziu Galérie+.\n\nTáto verzia nevie otvoriť %1$s, preto ich nemení ani nemaže. Po inštalácii novšej verzie bude všetko na mieste.</string>
+    <string name="ta1_close">Zavrieť</string>
+
+    <!-- A1: poškodená databáza; %1$s = názov uloženého poškodeného súboru, %2$s = dátum a čas zálohy -->
+    <string name="ta1_corrupt_title">Databáza osôb je poškodená – obnoviť zo zálohy?</string>
+    <string name="ta1_corrupt_detail">Poškodený súbor ostal uložený (%1$s), nič sa nezmazalo. Posledná automatická záloha je z %2$s.</string>
+    <string name="ta1_corrupt_no_backup">Poškodený súbor ostal uložený (%1$s), nič sa nezmazalo. Automatická záloha sa nenašla. Ak máš súbor .galeria-family, obnov osoby v Nastaveniach cez „Obnoviť osoby“.</string>
+    <string name="ta1_corrupt_faces">Databáza tvárí bola poškodená. Poškodený súbor ostal uložený (%1$s). Tváre sa pri spracovaní knižnice rozpoznajú nanovo. Potom v Nastaveniach použi „Obnoviť zo zálohy“, aby sa mená vrátili k tváram.</string>
+    <string name="ta1_restore_from_backup">Obnoviť zo zálohy</string>
+    <string name="ta1_later">Neskôr</string>
+    <string name="ta1_dont_ask">Nepýtať sa</string>
+    <!-- %1$s = názvy databáz, %2$s = dátum a čas zálohy -->
+    <string name="ta1_raw_restore_confirm">Obnoviť %1$s zo zálohy z %2$s? Súčasná databáza sa premenuje, nezmaže. Zmeny po čase zálohy v nej ostanú uložené.</string>
+    <string name="ta1_raw_restore_restart">Obnova je pripravená a dokončí sa pri ďalšom spustení. Appka sa teraz zavrie, potom ju znova otvor.</string>
+    <string name="ta1_raw_restore_failed">Zálohu sa nepodarilo pripraviť na obnovu</string>
+    <!-- %1$s = názvy obnovených databáz -->
+    <string name="ta1_restored_notice">Databáza bola obnovená zo zálohy (%1$s). Pôvodný súbor ostal uložený.</string>
+
+    <!-- A3: Nastavenia → automatická záloha; %1$s = dátum a čas -->
+    <string name="ta1_auto_backup_title">Automatická záloha osôb</string>
+    <string name="ta1_auto_backup_on_last">Zapnutá, posledná záloha %1$s</string>
+    <string name="ta1_auto_backup_on_never">Zapnutá, raz týždenne pri nabíjaní do Documents/Galeria+/zalohy. Zatiaľ žiadna záloha.</string>
+    <string name="ta1_auto_backup_off">Vypnutá</string>
+    <!-- %1$d = počet tvárí, ktoré sa nedostali do zálohy -->
+    <string name="ta1_auto_backup_omitted">· vynechané tváre: %1$d</string>
+    <string name="ta1_auto_backup_failed">· posledný pokus zlyhal</string>
+    <string name="ta1_auto_backup_enable">Zapnúť</string>
+    <string name="ta1_auto_backup_disable">Vypnúť</string>
+    <string name="ta1_auto_backup_now">Zálohovať teraz</string>
+    <string name="ta1_auto_backup_done">Záloha je v priečinku Documents/Galeria+/zalohy. Ponechávajú sa 4 posledné.</string>
+    <string name="ta1_restore_auto_title">Obnoviť zo zálohy</string>
+    <string name="ta1_restore_auto_summary">Vyber automatickú zálohu. Chýbajúce osoby, mená a priradenia sa doplnia, nič sa neprepíše ani neodstráni.</string>
+    <string name="ta1_restore_auto_none">Automatická záloha sa nenašla. Vyber súbor zálohy ručne.</string>
+
+    <!-- A3: súhrn doplnených častí zálohy osôb -->
+    <string name="ta1_backup_extras">Automatické priradenia: %1$d · „Toto nie je táto osoba“: %2$d · ignorované tváre: %3$d.</string>
+    <string name="ta1_backup_omitted">Vynechané tváre (zamknuté alebo vylúčené priečinky, chýbajúce fotky): %1$d.</string>
+    <string name="ta1_restore_extras">Doplnené automatické priradenia: %1$d · „Toto nie je táto osoba“: %2$d · ignorované tváre: %3$d · tváre, ktoré tu zatiaľ nie sú: %4$d.</string>
+
+    <!-- A7 -->
+    <string name="ta1_assign_failed">Tváre sa nepodarilo priradiť</string>
+</resources>

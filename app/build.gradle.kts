@@ -155,6 +155,13 @@ android {
     }
 }
 
+// A4: Room zapisuje JSON schémy všetkých DB do app/schemas (commitujú sa). CI (room-schemas.yml)
+// zlyhá, keď sa vygenerované schémy líšia od commitnutých — zmena entít bez novej verzie a migrácie
+// sa tak nedostane do vydania nepovšimnutá. Schémy sú zároveň podkladom pre budúce migračné testy.
+ksp {
+    arg("room.schemaLocation", "$projectDir/schemas")
+}
+
 detekt {
     baseline = file("detekt-baseline.xml")
     config.setFrom("$rootDir/detekt.yml")

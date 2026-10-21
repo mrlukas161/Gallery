@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
+import org.fossify.gallery.safety.SafeOpenHelperFactory
 import androidx.sqlite.db.SupportSQLiteDatabase
 
 // Samostatná databáza pre tváre (faces.db) — úplne oddelená od gallery.db, aby žiadna
@@ -12,11 +13,14 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 // cannot_links) a extras.db (ignored_faces) — zmazanie faces.db = stratené menovky, a nové
 // autoincrement id by sa navyše prilepili na cudzie tváre. Pri zmene entít zvýš `version`
 // A pridaj Migration, pozri PeopleDatabase.
-@Database(entities = [FaceEntity::class, IndexedPhotoEntity::class], version = 2)
+@Database(entities = [FaceEntity::class, IndexedPhotoEntity::class], version = FacesDatabase.SCHEMA_VERSION)
 abstract class FacesDatabase : RoomDatabase() {
     abstract fun FaceDao(): FaceDao
 
     companion object {
+        // verzia schémy (= @Database.version); DbVersionGuard podľa nej spozná DB z novšej appky
+        const val SCHEMA_VERSION = 2
+
         private var db: FacesDatabase? = null
 
         fun getInstance(context: Context): FacesDatabase {
@@ -24,6 +28,8 @@ abstract class FacesDatabase : RoomDatabase() {
                 synchronized(FacesDatabase::class) {
                     if (db == null) {
                         db = Room.databaseBuilder(context.applicationContext, FacesDatabase::class.java, "faces.db")
+                            // A1: poškodený súbor sa premenuje, nezmaže (inak by SQLite vytvoril prázdnu DB)
+                            .openHelperFactory(SafeOpenHelperFactory())
                             .build()
                     }
                 }

@@ -36,6 +36,8 @@ class App : FossifyApp() {
         // Nastav EŠTE PRED super, aby prípadný starý zapamätaný stav TRUE nič nevyvolal.
         baseConfig.appSideloadingStatus = SIDELOADING_FALSE
         super.onCreate()
+        // A3: núdzová obnova DB potvrdená pred reštartom sa nasadí skôr, než sa ktorákoľvek DB otvorí
+        org.fossify.gallery.safety.DbRestore.applyPending(this)
         Reprint.initialize(this)
         // rodinné prepojenie: op-log osôb sa aplikuje po prijatí z druhého telefónu
         FamilyHandlers.register(OpLogHandler(this))

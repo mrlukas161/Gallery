@@ -38,6 +38,8 @@ class FamilySyncJob : JobService() {
     private var stopSignal: CountDownLatch? = null
 
     override fun onStartJob(params: JobParameters): Boolean {
+        // A4: dáta z novšej verzie appky — nič neotvárať (Room by vyhodil výnimku a appka by spadla)
+        if (org.fossify.gallery.safety.DbVersionGuard.hasNewerData(applicationContext)) return false
         val stop = CountDownLatch(1)
         stopSignal = stop
         running = true

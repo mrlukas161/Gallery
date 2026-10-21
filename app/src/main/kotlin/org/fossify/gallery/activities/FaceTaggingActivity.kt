@@ -442,25 +442,33 @@ class FaceTaggingActivity : SimpleActivity() {
         }
     }
 
+    // A7: chyba DB (napr. poškodený súbor, plný disk) nesmie zhodiť appku na vlákne na pozadí —
+    // priradenie je jedna transakcia, takže sa buď zapíše celé, alebo vôbec
+    @Suppress("TooGenericExceptionCaught")
     private fun doAssign(ids: List<Long>, existingId: Long?, newName: String?) {
         ensureBackgroundThread {
-            val dao = PeopleDatabase.getInstance(this).PeopleDao()
-            val extras = ExtrasDatabase.getInstance(this).ExtrasDao()
-            val now = System.currentTimeMillis()
-            // priradenie (aj založenie novej osoby) naraz v jednej transakcii
-            if (existingId != null) {
-                dao.assignFaces(ids, existingId, now)
-                FamilyRecorder.facesAssigned(this, ids, existingId)
-            } else {
-                val newId = dao.createPersonWithFaces(newName.orEmpty(), ids, now)
-                FamilyRecorder.personCreated(this, newId, ids)
-            }
-            ids.forEach {
-                extras.deleteIgnored(it) // priradenie zruší prípadné ignorovanie
-            }
-            runOnUiThread {
-                toast(R.string.person_saved)
-                adapter?.removeSelected()
+            try {
+                val dao = PeopleDatabase.getInstance(this).PeopleDao()
+                val extras = ExtrasDatabase.getInstance(this).ExtrasDao()
+                val now = System.currentTimeMillis()
+                // priradenie (aj založenie novej osoby) naraz v jednej transakcii
+                if (existingId != null) {
+                    dao.assignFaces(ids, existingId, now)
+                    FamilyRecorder.facesAssigned(this, ids, existingId)
+                } else {
+                    val newId = dao.createPersonWithFaces(newName.orEmpty(), ids, now)
+                    FamilyRecorder.personCreated(this, newId, ids)
+                }
+                ids.forEach {
+                    extras.deleteIgnored(it) // priradenie zruší prípadné ignorovanie
+                }
+                runOnUiThread {
+                    toast(R.string.person_saved)
+                    adapter?.removeSelected()
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("FaceTagging", "priradenie tvárí zlyhalo", e)
+                runOnUiThread { toast(R.string.ta1_assign_failed) }
             }
         }
     }

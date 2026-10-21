@@ -4,6 +4,7 @@ import android.content.Context
 import android.graphics.Bitmap
 import org.fossify.commons.helpers.ensureBackgroundThread
 import org.fossify.gallery.R
+import java.util.concurrent.atomic.AtomicLong
 
 // „Prepracovať tváre" — jednorazová oprava + doplnenie:
 //  1) fotka sa dekóduje SPRÁVNE OTOČENÁ (EXIF) -> detektor nájde aj tváre na fotkách na výšku,
@@ -17,9 +18,14 @@ import org.fossify.gallery.R
 // Staré záznamy bez páru sa NEMAŽÚ (radšej nechať niečo navyše, než prísť o menovku).
 // Opakované spustenie (aj po prerušení) je bezpečné: už opravené rámčeky sa spárujú bez prepočtu.
 object RefreshFaces {
-    @Volatile
-    var isRunning = false
-        private set
+    // A7: beh sa „privlastní“ cez compareAndSet(0, id) — dve súbežné volania nespustia dva behy naraz.
+    // owner = id bežiaceho behu (0 = nebeží). stop() ho vynuluje; koniec behu ho vynuluje len vtedy,
+    // keď je ešte jeho (compareAndSet), takže nový beh spustený hneď po stop() neprepíše.
+    private val owner = AtomicLong(0)
+    private val runIds = AtomicLong(0)
+
+    val isRunning: Boolean
+        get() = owner.get() != 0L
 
     @Volatile
     var lastResult: String = ""
@@ -34,8 +40,8 @@ object RefreshFaces {
         onDone: (updated: Int, added: Int) -> Unit,
         onError: (String) -> Unit,
     ) {
-        if (isRunning) return
-        isRunning = true
+        val myRun = runIds.incrementAndGet()
+        if (!owner.compareAndSet(0, myRun)) return
         val appCtx = context.applicationContext
         ensureBackgroundThread {
             var detector: FaceDetectionHelper? = null
@@ -61,7 +67,7 @@ object RefreshFaces {
                 val total = paths.size
                 var done = 0
                 for (path in paths) {
-                    if (!isRunning) break
+                    if (owner.get() != myRun) break
                     try {
                         val res = UprightDecoder.decode(path, MAX_DECODE)
                         if (res != null) {
@@ -89,21 +95,22 @@ object RefreshFaces {
                 detector?.close()
                 embedder?.close()
                 landmarker?.close()
-                isRunning = false
+                owner.compareAndSet(myRun, 0)
             }
         }
     }
 
     fun stop() {
-        isRunning = false
+        owner.set(0)
     }
 
     // A6: prepracovanie LEN vybraných fotiek (po otočení/prepísaní, keď sa rámčeky nedali otočiť
     // bezpečne — FaceRotation). Rovnaké párovanie ako run() (IoU, obe hypotézy priestoru), takže
     // menovky ostanú na mieste. Vráti vybavené cesty (spracované alebo už neexistujúce). Volať z pozadia.
     internal fun refreshPaths(context: Context, paths: Collection<String>): Set<String> {
-        if (paths.isEmpty() || isRunning) return emptySet()
-        isRunning = true
+        if (paths.isEmpty()) return emptySet()
+        val myRun = runIds.incrementAndGet()
+        if (!owner.compareAndSet(0, myRun)) return emptySet()
         val appCtx = context.applicationContext
         val done = HashSet<String>()
         var detector: FaceDetectionHelper? = null
@@ -115,7 +122,7 @@ object RefreshFaces {
             val det = FaceDetectionHelper(appCtx).also { detector = it }
             val emb = FaceEmbedder(appCtx).also { embedder = it }
             val lm = FaceLandmarkHelper(appCtx).also { landmarker = it }
-            for (path in paths.asSequence().takeWhile { isRunning }) {
+            for (path in paths.asSequence().takeWhile { owner.get() == myRun }) {
                 if (!java.io.File(path).exists() || refreshOne(dao, path, det, emb, lm)) done.add(path)
             }
         } catch (ignored: Throwable) {
@@ -123,7 +130,7 @@ object RefreshFaces {
             detector?.close()
             embedder?.close()
             landmarker?.close()
-            isRunning = false
+            owner.compareAndSet(myRun, 0)
         }
         return done
     }
