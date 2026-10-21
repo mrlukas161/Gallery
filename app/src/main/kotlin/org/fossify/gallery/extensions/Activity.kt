@@ -44,6 +44,7 @@ import org.fossify.gallery.dialogs.AllFilesPermissionDialog
 import org.fossify.gallery.dialogs.PickDirectoryDialog
 import org.fossify.gallery.dialogs.ResizeMultipleImagesDialog
 import org.fossify.gallery.dialogs.ResizeWithPathDialog
+import org.fossify.gallery.faces.FaceRotation
 import org.fossify.gallery.helpers.DIRECTORY
 import org.fossify.gallery.helpers.RECYCLE_BIN
 import org.fossify.gallery.helpers.TEMP_FOLDER_NAME
@@ -666,6 +667,9 @@ fun BaseSimpleActivity.saveRotatedImageToFile(oldPath: String, newPath: String, 
         newDegrees += 360
     }
 
+    // A6: stav pred otočením (rámčeky tvárí sú v jeho priestore) — pred tryRotateByExif, ktorý môže
+    // zapísať EXIF aj vtedy, keď potom vráti false
+    val faceSnapshot = if (oldPath == newPath) FaceRotation.snapshot(oldPath) else null
     if (oldPath == newPath && oldPath.isJpg()) {
         if (tryRotateByExif(oldPath, newDegrees, showToasts, callback)) {
             return
@@ -696,6 +700,11 @@ fun BaseSimpleActivity.saveRotatedImageToFile(oldPath: String, newPath: String, 
             copyFile(tmpPath, newPath)
             rescanPaths(arrayListOf(newPath))
             fileRotatedSuccessfully(newPath, oldLastModified)
+            if (oldPath == newPath) {
+                FaceRotation.onRotated(this, newPath, faceSnapshot, newDegrees, pixelsRewritten = !oldPath.isJpg())
+            } else {
+                FaceRotation.onRewritten(this, newPath) // „Uložiť ako" cez existujúci súbor
+            }
 
             it.flush()
             it.close()
@@ -718,8 +727,10 @@ fun Activity.tryRotateByExif(path: String, degrees: Int, showToasts: Boolean, ca
     return try {
         val file = File(path)
         val oldLastModified = file.lastModified()
+        val faceSnapshot = FaceRotation.snapshot(path)
         if (saveImageRotation(path, degrees)) {
             fileRotatedSuccessfully(path, oldLastModified)
+            FaceRotation.onRotated(this, path, faceSnapshot, degrees, pixelsRewritten = false)
             callback.invoke()
             if (showToasts) {
                 toast(org.fossify.commons.R.string.file_saved)

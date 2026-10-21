@@ -21,6 +21,12 @@ object FaceContextLoader {
         override fun sizeOf(key: String, value: Bitmap): Int = value.byteCount
     }
 
+    // A6: fotka sa otočila alebo prepísala — výrezy jej tvárí v cache už nesedia
+    fun invalidate(path: String) {
+        val prefix = "ctx:$path#"
+        cache.snapshot().keys.filter { it.startsWith(prefix) }.forEach { cache.remove(it) }
+    }
+
     fun load(face: FaceEntity, imageView: ImageView) {
         val key = "ctx:${face.mediaFullPath}#${face.faceIndex}"
         imageView.tag = key
