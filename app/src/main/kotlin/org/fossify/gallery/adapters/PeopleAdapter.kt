@@ -104,8 +104,14 @@ class PeopleAdapter(
             } else {
                 itemBinding.personImage.setImageBitmap(null)
             }
-            // potvrdená osoba ukáže meno, návrh ukáže počet tvárí
-            itemBinding.personCount.text = person.name ?: person.faceCount.toString()
+            // potvrdená osoba ukáže meno, návrh ukáže počet tvárí; osoba, ktorej fotky sa nenašli, je sivá
+            val label = person.name ?: if (person.photosMissing) "#${person.id}" else person.faceCount.toString()
+            itemBinding.personCount.text = if (person.photosMissing) {
+                activity.getString(R.string.tc_person_missing_label, label)
+            } else {
+                label
+            }
+            itemBinding.personImage.alpha = if (person.photosMissing) MISSING_ALPHA else 1f
 
             val isSelected = selectedKeys.contains(keyOf(person))
             itemBinding.personCheck.beVisibleIf(isSelected)
@@ -127,5 +133,10 @@ class PeopleAdapter(
     private fun keyOf(person: Person): Int {
         val id = person.id
         return if (id != null) id.hashCode() else -1 - (person.cover?.id ?: 0L).hashCode()
+    }
+
+    private companion object {
+        // osoba so stratenými fotkami (A8) — dlaždica stlmená na sivo, text ostáva čitateľný
+        const val MISSING_ALPHA = 0.35f
     }
 }
