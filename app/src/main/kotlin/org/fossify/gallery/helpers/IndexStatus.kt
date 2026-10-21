@@ -154,20 +154,26 @@ object IndexStatus {
         val keepWhere: String? = null,
     )
 
-    private fun cleanupIndexes(context: Context, prefs: SharedPreferences) {
-        if (!canReadAllMedia(context)) return
-        val known = mediaStorePaths(context) ?: return
-        if (known.isEmpty() || !fileApiReliable(known)) return
+    // Test „fotka naozaj zmizla" (pozri maybeCleanup), alebo null, keď súborové API práve nie je
+    // spoľahlivé a nemá sa rozhodovať nič. Používa ho aj FaceRelinker (A5). Volať mimo hlavného vlákna.
+    fun reallyMissingTester(context: Context): ((String) -> Boolean)? {
+        if (!canReadAllMedia(context)) return null
+        val known = mediaStorePaths(context) ?: return null
+        if (known.isEmpty() || !fileApiReliable(known)) return null
         val storage = try {
             context.getSystemService(StorageManager::class.java)
         } catch (e: Throwable) {
             null
         }
         val mountedByParent = HashMap<String, Boolean>()
-        val reallyMissing: (String) -> Boolean = { path ->
+        return { path ->
             path !in known && !File(path).exists() &&
                 mountedByParent.getOrPut(path.substringBeforeLast('/', "")) { volumeMounted(storage, path) }
         }
+    }
+
+    private fun cleanupIndexes(context: Context, prefs: SharedPreferences) {
+        val reallyMissing = reallyMissingTester(context) ?: return
         val targets = listOf(
             CleanupTarget(
                 org.fossify.gallery.faces.FacesDatabase.getInstance(context), "indexed_photos", "path",

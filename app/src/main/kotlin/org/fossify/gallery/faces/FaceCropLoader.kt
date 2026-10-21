@@ -38,6 +38,12 @@ object FaceCropLoader {
         override fun sizeOf(key: String, value: Bitmap): Int = value.byteCount
     }
 
+    // A6: fotka sa otočila alebo prepísala — výrezy jej tvárí v cache už nesedia
+    fun invalidate(path: String) {
+        val prefix = "$path#"
+        cache.snapshot().keys.filter { it.startsWith(prefix) }.forEach { cache.remove(it) }
+    }
+
     fun load(face: FaceEntity, imageView: ImageView) {
         val key = "${face.mediaFullPath}#${face.faceIndex}"
         imageView.tag = key
