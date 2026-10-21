@@ -113,6 +113,8 @@ class IndexingService : Service() {
     // fotky nezaostávali za zvyškom knižnice. Volá sa mimo hlavného vlákna (Room).
     private fun autoTasks(): List<String> {
         val list = arrayListOf(TASK_FACES, TASK_GEO, TASK_QR)
+        // jednorazový prepočet odtlačkov tvárí na v2 (len pri nabíjaní, ProcessingPolicy) — pred tvárami
+        if (org.fossify.gallery.faces.FaceEmbedVersion.isPending(this)) list.add(0, TASK_FACE_V2)
         if (autoOcrEnabled() || hasData { org.fossify.gallery.faces.OcrDatabase.getInstance(this).OcrDao().count() }) {
             list.add(TASK_OCR)
         }
@@ -162,7 +164,6 @@ class IndexingService : Service() {
         } else {
             emptyMap()
         }
-        val watch = trigger == ProcessingPolicy.Trigger.AUTO && ProcessingPolicy.needsWatching(profile, newFirst)
         val run = ArrayList<String>()
         for (task in tasks) {
             // už bežiacu úlohu preskočí launch(); nesledovať ju (mohla ju spustiť ručne iná cesta)
@@ -174,6 +175,8 @@ class IndexingService : Service() {
             when (decision) {
                 ProcessingPolicy.Decision.RUN -> {
                     run.add(task)
+                    val watch = trigger == ProcessingPolicy.Trigger.AUTO &&
+                        ProcessingPolicy.needsWatching(profile, newFirst, kindOf(task))
                     if (watch) watched[task] = batch
                 }
 
@@ -293,6 +296,7 @@ class IndexingService : Service() {
         TASK_CLIP -> ClipIndexer.isRunning
         TASK_CLIP_ML -> org.fossify.gallery.clip.ClipMlModels.isRunning
         TASK_REEMBED -> org.fossify.gallery.faces.RefreshFaces.isRunning
+        TASK_FACE_V2 -> org.fossify.gallery.faces.FaceReembedV2.isRunning
         else -> false
     }
 
@@ -314,6 +318,7 @@ class IndexingService : Service() {
             TASK_CLIP -> runClip(done)
             TASK_CLIP_ML -> runClipMl(done)
             TASK_REEMBED -> runReembed(done)
+            TASK_FACE_V2 -> runFaceV2(done)
             else -> done()
         }
     }
@@ -415,6 +420,25 @@ class IndexingService : Service() {
             onProgress = { d, t -> prog("reembed", getString(R.string.q1_prog_reembed, d, t)) },
             onDone = { _, _ -> clearProg("reembed"); next() },
             onError = { fail("reembed", it); next() },
+        )
+    }
+
+    // Jednorazový prepočet odtlačkov tvárí na v2 (FaceReembedV2): priebeh v notifikácii služby
+    // a v Nastaveniach; prerušený (nabíjačka, časový limit) pokračuje pri ďalšom nabíjaní
+    private fun runFaceV2(next: () -> Unit) {
+        if (org.fossify.gallery.faces.FaceReembedV2.isRunning) {
+            next(); return
+        }
+        org.fossify.gallery.faces.FaceReembedV2.run(
+            applicationContext,
+            onProgress = { d, t -> prog("facev2", getString(R.string.tb_prog_face_v2, d, t)) },
+            onDone = { switched ->
+                clearProg("facev2")
+                // nedokončené (prerušenie, nepripojená karta) → počká na ďalšie nabíjanie
+                if (!switched) deferred = true
+                next()
+            },
+            onError = { fail("facev2", it); next() },
         )
     }
 
@@ -524,6 +548,7 @@ class IndexingService : Service() {
             TASK_CLIP -> ClipIndexer.stop()
             TASK_CLIP_ML -> org.fossify.gallery.clip.ClipMlModels.stop()
             TASK_REEMBED -> org.fossify.gallery.faces.RefreshFaces.stop()
+            TASK_FACE_V2 -> org.fossify.gallery.faces.FaceReembedV2.stop()
         }
     }
 
@@ -629,6 +654,7 @@ class IndexingService : Service() {
         const val TASK_CLIP = "clip"
         const val TASK_CLIP_ML = "clipml"
         const val TASK_REEMBED = "reembed"
+        const val TASK_FACE_V2 = "facev2"
         private const val CHANNEL_ID = "indexing_service"
         private const val NOTIF_ID = 49240
 
@@ -642,6 +668,7 @@ class IndexingService : Service() {
             TASK_OCR -> ProcessingPolicy.Indexer.OCR
             TASK_PHASH -> ProcessingPolicy.Indexer.PHASH
             TASK_CLIP -> ProcessingPolicy.Indexer.CLIP
+            TASK_FACE_V2 -> ProcessingPolicy.Indexer.FACE_V2
             else -> ProcessingPolicy.Indexer.OTHER
         }
 

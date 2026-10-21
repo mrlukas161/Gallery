@@ -146,6 +146,7 @@ class SettingsActivity : SimpleActivity() {
         setupFaceAuto()
         setupPicasaImport()
         setupReembed()
+        setupFaceV2()
         setupOcrIndexing()
         setupAutoOcr()
         setupQrIndexing()
@@ -1075,6 +1076,7 @@ class SettingsActivity : SimpleActivity() {
                         } else {
                             getString(R.string.picasa_import_done, persons, anchors, skipped)
                         }
+                        updateFaceV2Summary()
                     }
                 }
             },
@@ -1091,17 +1093,21 @@ class SettingsActivity : SimpleActivity() {
     private fun updatePicasaImportSummary() {
         ensureBackgroundThread {
             val dao = org.fossify.gallery.faces.PeopleDatabase.getInstance(this).PeopleDao()
+            // len používané vzory (v1 vzory sú po prepnutí na v2 odložené so záporným person_id)
             val anchors = try {
-                dao.getAnchorCount()
+                dao.getAllAnchors().count { it.personId > 0 }
             } catch (e: Exception) {
                 0
             }
+            val waitV2 = org.fossify.gallery.faces.FaceEmbedVersion.isPending(this)
+            val reimport = org.fossify.gallery.faces.FaceEmbedVersion.needsPicasaReimport(this)
             runOnUiThread {
                 if (!isDestroyed) {
-                    binding.settingsPicasaImportSummary.text = if (anchors > 0) {
-                        getString(R.string.picasa_import_state, anchors)
-                    } else {
-                        getString(R.string.picasa_import_tap)
+                    binding.settingsPicasaImportSummary.text = when {
+                        waitV2 -> getString(R.string.tb_picasa_wait_v2)
+                        reimport -> getString(R.string.tb_picasa_reimport)
+                        anchors > 0 -> getString(R.string.picasa_import_state, anchors)
+                        else -> getString(R.string.picasa_import_tap)
                     }
                 }
             }
@@ -1130,6 +1136,75 @@ class SettingsActivity : SimpleActivity() {
             } else {
                 getString(R.string.reembed_tap)
             }
+        }
+    }
+
+    // Nová verzia rozpoznávania tvárí (odtlačky v2): stav a priebeh jednorazového prepočtu pri nabíjaní,
+    // po prepnutí výzva na nový import vzorov z Picasy.
+    private var faceV2ShownRunning = false
+
+    private fun setupFaceV2() {
+        updateFaceV2Summary()
+        binding.settingsFaceV2Holder.setOnClickListener {
+            if (org.fossify.gallery.faces.FaceReembedV2.isRunning) {
+                org.fossify.gallery.faces.FaceReembedV2.stop()
+                updateFaceV2Summary()
+                return@setOnClickListener
+            }
+            ensureBackgroundThread {
+                val pending = org.fossify.gallery.faces.FaceEmbedVersion.isPending(this)
+                val reimport = org.fossify.gallery.faces.FaceEmbedVersion.needsPicasaReimport(this)
+                runOnUiThread {
+                    if (isDestroyed || isFinishing) return@runOnUiThread
+                    when {
+                        pending -> ConfirmationDialog(this, getString(R.string.tb_face_v2_confirm)) {
+                            org.fossify.gallery.services.IndexingService.start(
+                                this, org.fossify.gallery.services.IndexingService.TASK_FACE_V2,
+                            )
+                            binding.settingsFaceV2Summary.text = getString(R.string.indexing_started_bg)
+                        }
+
+                        reimport && !org.fossify.gallery.faces.PicasaImportService.isRunning -> try {
+                            picasaImportPicker.launch(arrayOf("*/*"))
+                        } catch (e: ActivityNotFoundException) {
+                            binding.settingsPicasaImportSummary.text = getString(R.string.picasa_import_failed)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private fun updateFaceV2Summary() {
+        faceV2ShownRunning = org.fossify.gallery.faces.FaceReembedV2.isRunning
+        ensureBackgroundThread {
+            val running = org.fossify.gallery.faces.FaceReembedV2.isRunning
+            val pending = org.fossify.gallery.faces.FaceEmbedVersion.isPending(this)
+            val reimport = org.fossify.gallery.faces.FaceEmbedVersion.needsPicasaReimport(this)
+            val progress = if (pending) org.fossify.gallery.faces.FaceReembedV2.progress(this) else intArrayOf(0, 0)
+            runOnUiThread {
+                if (isDestroyed || isFinishing) return@runOnUiThread
+                // po dokončení (a bez výzvy na Picasu) riadok netreba; počas hľadania rozhoduje filter
+                if (!settingsFilterActive) binding.settingsFaceV2Holder.beVisibleIf(running || pending || reimport)
+                binding.settingsFaceV2Summary.text = when {
+                    running -> getString(R.string.tb_face_v2_running, progress[0], progress[1])
+                    pending -> getString(R.string.tb_face_v2_pending, progress[0], progress[1])
+                    reimport -> getString(R.string.tb_picasa_reimport)
+                    else -> getString(R.string.tb_face_v2_done)
+                }
+            }
+        }
+    }
+
+    // z overviewPoll: počas prepočtu živý priebeh (bez DB), po jeho skončení raz celý stav
+    private fun pollFaceV2Summary() {
+        val r = org.fossify.gallery.faces.FaceReembedV2
+        if (r.isRunning) {
+            faceV2ShownRunning = true
+            binding.settingsFaceV2Summary.text = getString(R.string.tb_face_v2_running, r.progressDone, r.progressTotal)
+        } else if (faceV2ShownRunning) {
+            updateFaceV2Summary()
+            updatePicasaImportSummary()
         }
     }
 
@@ -1254,6 +1329,7 @@ class SettingsActivity : SimpleActivity() {
         override fun run() {
             if (isDestroyed || isFinishing) return
             refreshIndexOverview()
+            pollFaceV2Summary()
             binding.settingsIndexOverviewSummary.postDelayed(this, 1500)
         }
     }

@@ -92,21 +92,11 @@ object FaceIndexer {
                         val bmp = decodeDownscaled(path)
                         if (bmp != null) {
                             try {
-                                val detected = detector.detect(bmp)
-                                faceCount = detected.size
-                                if (detected.isNotEmpty()) {
-                                    val theEmbedder = embedder
-                                    val theLandmarker = landmarker
-                                    dao.insertFaces(detected.mapIndexed { i, f ->
-                                        FaceEntity(
-                                            id = null, mediaFullPath = path, mediaStoreId = mediaStoreId, faceIndex = i,
-                                            bboxLeft = f.left, bboxTop = f.top, bboxRight = f.right, bboxBottom = f.bottom,
-                                            score = f.score,
-                                            embedding = FaceAligner.embedDetected(bmp, f, theLandmarker, theEmbedder, detector),
-                                            detectedAt = System.currentTimeMillis(),
-                                        )
-                                    })
-                                }
+                                // detekcia + FaceFilter + odtlačky v2 + zápis (počas prepočtu na v2 bez odtlačku)
+                                faceCount = FaceStore.detectAndInsert(
+                                    appCtx, dao, path, mediaStoreId, bmp, MAX_DECODE_SIZE,
+                                    detector, landmarker, embedder,
+                                )
                             } finally {
                                 bmp.recycle()
                             }
@@ -154,6 +144,8 @@ object FaceIndexer {
         active: () -> Boolean,
     ) {
         try {
+            // počas prepočtu na v2 by oprava zapísala v2 vektor medzi v1 — doplní ho prepnutie
+            if (FaceEmbedVersion.isPending(context)) return
             val prefs = context.getSharedPreferences("galeria_faces", Context.MODE_PRIVATE)
             if (System.currentTimeMillis() - prefs.getLong(KEY_REPAIR_AT, 0L) < REPAIR_INTERVAL_MS) return
             prefs.edit().putLong(KEY_REPAIR_AT, System.currentTimeMillis()).apply()

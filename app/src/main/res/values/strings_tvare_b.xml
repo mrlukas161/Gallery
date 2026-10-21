@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Odtlačky tvárí v2: jednorazový prepočet pri nabíjaní (FaceReembedV2, Nastavenia, notifikácia) -->
+    <string name="tb_face_v2_title">Nová verzia rozpoznávania tvárí</string>
+    <string name="tb_face_v2_pending">Odtlačky tvárí sa prepočítajú pri nabíjaní (hotové %1$d z %2$d). Mená ostanú. Ťuknutím spustíš prepočet hneď.</string>
+    <string name="tb_face_v2_running">Prepočítavam odtlačky tvárí… %1$d / %2$d (ťuknutím zastavíš, pokračuje sa pri nabíjaní)</string>
+    <string name="tb_face_v2_done">Hotovo — rozpoznávanie tvárí používa novú verziu odtlačkov</string>
+    <string name="tb_face_v2_confirm">Prepočet odtlačkov tvárí môže trvať aj hodinu a míňa batériu. Najlepšie ho necháš na nabíjanie, spustí sa sám. Spustiť ho teraz?</string>
+    <string name="tb_prog_face_v2">Prepočet odtlačkov tvárí: %1$d / %2$d</string>
+
+    <!-- Vzory z Picasy po prepnutí na v2 (Nastavenia, Ľudia) -->
+    <string name="tb_picasa_reimport">Vzory z Picasy treba znova naimportovať (nová verzia rozpoznávania). Ťuknutím vyberieš ZIP z Picasy.</string>
+    <string name="tb_picasa_wait_v2">Import z Picasy počká, kým sa pri nabíjaní prepočítajú odtlačky tvárí (Nová verzia rozpoznávania tvárí)</string>
+    <string name="tb_picasa_interrupted">Import z Picasy sa prerušil — po novom spustení s tým istým ZIP-om pokračuje od nedokončených osôb</string>
+
+    <!-- „Prepracovať tváre“ počas prepočtu na v2 (RefreshFaces) -->
+    <string name="tb_refresh_wait_v2">„Prepracovať tváre“ počká, kým sa dokončí prepočet odtlačkov na novú verziu (pri nabíjaní)</string>
+</resources>
