@@ -1,5 +1,7 @@
 # Spoľahlivosť tvárí — analýza a návrh úprav (21.10.2026)
 
+**Stav 21.10.2026:** balíky A, B, C (C1–C11) a D sú implementované a zlúčené v `rodina-0.66`, CI zelené. Balík E (zmeny schémy) zatiaľ nie. Čaká sa na lokálny test (emulátor + Xiaomi). Riziko na overenie: k-NN skóre má inú škálu, treba skontrolovať prah automatiky podľa odporúčania v Nastaveniach.
+
 Analýzu robili 4 nezávislí analytici nad vetvou `rodina-0.66`: detekcia a odtlačky, zaraďovanie do osôb, integrita dát a prenos medzi telefónmi. Zistenia sú podložené odkazmi do kódu, plné znenia sú v histórii session. Tu je zhrnutie a návrh poradia.
 
 ## Najvážnejšie zistenia
