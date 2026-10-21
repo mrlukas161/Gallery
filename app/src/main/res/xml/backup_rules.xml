@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A2: záloha Androidu (Auto Backup) pre Android 11 a starší. Zálohujú sa len nenahraditeľné DB osôb
+     (people.db, extras.db, family.db aj s -wal/-shm) a nastavenia. Nič iné sa neuvádza, takže faces.db,
+     clip.db, ocr/geo/phash/qr DB, gallery.db, cache a stiahnuté modely sa nezálohujú (dajú sa prestavať
+     a s nimi by záloha prekročila limit 25 MB). Rovnaké pravidlá sú v data_extraction_rules.xml. -->
+<full-backup-content>
+    <include domain="database" path="people.db" />
+    <include domain="database" path="people.db-wal" />
+    <include domain="database" path="people.db-shm" />
+    <include domain="database" path="extras.db" />
+    <include domain="database" path="extras.db-wal" />
+    <include domain="database" path="extras.db-shm" />
+    <include domain="database" path="family.db" />
+    <include domain="database" path="family.db-wal" />
+    <include domain="database" path="family.db-shm" />
+    <include domain="sharedpref" path="." />
+    <!-- kľúče párov sú zabalené v Android Keystore, ktorý sa nezálohuje: po obnove sú nepoužiteľné,
+         prepojené telefóny sa musia spárovať znova -->
+    <exclude domain="sharedpref" path="galeria_family_keys.xml" />
+    <!-- záznamy o poškodení, čakajúcej obnove a čase poslednej automatickej zálohy patria len tomuto telefónu -->
+    <exclude domain="sharedpref" path="galeria_db_safety.xml" />
+    <exclude domain="sharedpref" path="galeria_auto_backup.xml" />
+</full-backup-content>

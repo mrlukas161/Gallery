@@ -44,7 +44,7 @@ class PeopleBackupUi(private val activity: BaseSimpleActivity) {
                     val text = activity.getString(
                         R.string.fb_backup_done, summary.persons, summary.assignments, summary.groups, summary.anchors,
                     )
-                    message(text)
+                    message(text + "\n\n" + extrasSummary(summary))
                 }
             }
         }
@@ -96,21 +96,40 @@ class PeopleBackupUi(private val activity: BaseSimpleActivity) {
                 when (result) {
                     is PeopleBackup.RestoreResult.Done -> {
                         val r = result.report
-                        message(
-                            activity.getString(
-                                R.string.fb_restore_done,
-                                maxOf(0, r.applied - r.proposals),
-                                r.proposals,
-                                r.deferred,
-                                r.skipped + r.duplicates,
-                            )
+                        val e = result.extras
+                        val base = activity.getString(
+                            R.string.fb_restore_done,
+                            maxOf(0, r.applied - r.proposals),
+                            r.proposals,
+                            r.deferred,
+                            r.skipped + r.duplicates,
                         )
+                        val extras = if (e.auto + e.cannot + e.ignored + e.missing + e.kept == 0) {
+                            ""
+                        } else {
+                            "\n\n" + activity.getString(
+                                R.string.ta1_restore_extras, e.auto, e.cannot, e.ignored, e.missing,
+                            )
+                        }
+                        message(base + extras)
                     }
 
                     PeopleBackup.RestoreResult.Invalid -> activity.toast(R.string.fb_restore_invalid)
                     null -> activity.toast(R.string.fb_restore_failed)
                 }
             }
+        }
+    }
+
+    // A3: čo ešte záloha obsahuje a čo sa do nej nedostalo
+    fun extrasSummary(summary: PeopleBackup.Summary): String {
+        val extras = activity.getString(
+            R.string.ta1_backup_extras, summary.autoAssignments, summary.cannotLinks, summary.ignored,
+        )
+        return if (summary.omitted > 0) {
+            extras + " " + activity.getString(R.string.ta1_backup_omitted, summary.omitted)
+        } else {
+            extras
         }
     }
 

@@ -142,24 +142,54 @@ class LocalActionSink(context: Context, private val state: LocalFamilyState, pri
                 people.insertAnchor(AnchorEmbeddingEntity(0, action.localId, bytes, action.source, clock()))
             }
 
-            is ApplyAction.Propose -> family.proposalDao().insertProposal(
-                ProposalEntity(
-                    fromDeviceId = op.deviceId,
-                    type = action.proposal.type,
-                    payloadJson = OpCodec.encodeProposal(action.proposal),
-                    createdAt = clock(),
-                )
-            )
+            is ApplyAction.Propose -> propose(action, op)
         }
     }
 
+    // A7: návrh sa pri opakovanom aplikovaní tej istej operácie (pád pred markApplied) nezdvojí —
+    // kľúčom je opId, zapísaný v tej istej transakcii family.db ako návrh
+    private fun propose(action: ApplyAction.Propose, op: LoggedOp) {
+        val key = PROPOSAL_OP_PREFIX + op.opId
+        family.runInTransaction(Runnable {
+            if (family.metaDao().get(key) == null) {
+                family.proposalDao().insertProposal(
+                    ProposalEntity(
+                        fromDeviceId = op.deviceId,
+                        type = action.proposal.type,
+                        payloadJson = OpCodec.encodeProposal(action.proposal),
+                        createdAt = clock(),
+                    )
+                )
+                family.metaDao().put(MetaEntity(key, op.lamport.toString()))
+            }
+        })
+    }
+
     // nová osoba z druhého telefónu (aj „ponechať oddelene“ pri rovnakom mene, vtedy op = null)
+    //
+    // A7: osoba (people.db) a mapa UUID (family.db) sú v dvoch DB, spolu sa atomicky zapísať nedajú.
+    // Preto sa najprv do family.db zapíše „rozpracované“ UUID s časom vzniku, potom osoba s tým istým
+    // časom a až nakoniec mapa. Keď appka spadne medzi krokmi, opakované aplikovanie osobu nájde
+    // (rovnaký čas vzniku a meno, zatiaľ bez mapy) a len doplní mapu — duplicitná osoba nevznikne.
     fun createPerson(action: ApplyAction.CreatePerson, op: LoggedOp?) {
         if (state.localPersonId(action.uuid) != null) return // opakované aplikovanie po páde
-        val id = people.insertPerson(PersonEntity(name = action.name, createdAt = clock()))
+        val meta = family.metaDao()
+        val key = PENDING_PERSON_PREFIX + action.uuid
+        val pendingAt = meta.get(key)?.toLongOrNull()
+        val id = pendingAt?.let { unmappedPerson(it, action.name) } ?: run {
+            val createdAt = pendingAt ?: clock().also { meta.put(MetaEntity(key, it.toString())) }
+            people.insertPerson(PersonEntity(name = action.name, createdAt = createdAt))
+        }
         family.familyPersonDao().upsertPerson(FamilyPersonEntity(action.uuid, id, op?.lamport ?: 0, op?.deviceId))
+        meta.delete(key)
         state.onPersonsChanged()
     }
+
+    // osoba vytvorená pred pádom: rovnaký čas vzniku a meno, bez rodinného UUID
+    private fun unmappedPerson(createdAt: Long, name: String?): Long? = people.getPersons()
+        .filter { it.createdAt == createdAt && it.name == name }
+        .firstOrNull { family.familyPersonDao().getPersonByLocalId(it.id) == null }
+        ?.id
 
     private fun renamePerson(action: ApplyAction.RenamePerson, op: LoggedOp) {
         people.renamePerson(action.localId, action.name)
@@ -188,5 +218,8 @@ class LocalActionSink(context: Context, private val state: LocalFamilyState, pri
         }
     }
 }
+
+private const val PENDING_PERSON_PREFIX = "pending_person:"
+private const val PROPOSAL_OP_PREFIX = "proposal_op:"
 
 private fun ExtrasDao.groupByName(name: String): PersonGroupEntity? = getGroups().firstOrNull { it.name == name }

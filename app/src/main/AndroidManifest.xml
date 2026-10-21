@@ -50,6 +50,9 @@
         android:name="org.fossify.gallery.App"
         android:allowBackup="true"
         android:appCategory="image"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:fullBackupContent="@xml/backup_rules"
+        android:hasFragileUserData="true"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name_brand"
         android:requestLegacyExternalStorage="true"
@@ -397,6 +400,17 @@
             android:name=".jobs.NewPhotoFetcher"
             android:exported="true"
             android:permission="android.permission.BIND_JOB_SERVICE" />
+
+        <!-- automatická záloha osôb (A3): raz za týždeň pri nabíjaní, krátky beh jobu -->
+        <service
+            android:name=".jobs.PeopleBackupJob"
+            android:exported="true"
+            android:permission="android.permission.BIND_JOB_SERVICE" />
+
+        <!-- dáta z novšej verzie appky (A4): hláška namiesto pádu -->
+        <activity
+            android:name=".safety.NewerDataActivity"
+            android:exported="false" />
 
         <!-- rodinné prepojenie (F5): okno synchronizácie pri nabíjaní, beží len ako krátke behy jobu -->
         <service
