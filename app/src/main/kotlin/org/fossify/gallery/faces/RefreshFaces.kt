@@ -35,8 +35,13 @@ object RefreshFaces {
         onError: (String) -> Unit,
     ) {
         if (isRunning) return
-        isRunning = true
         val appCtx = context.applicationContext
+        // počas prepočtu na v2 by sa do faces.db dostali v2 vektory medzi v1 (FaceReembedV2)
+        if (FaceEmbedVersion.isPending(appCtx)) {
+            onError(appCtx.getString(R.string.tb_refresh_wait_v2))
+            return
+        }
+        isRunning = true
         ensureBackgroundThread {
             var detector: FaceDetectionHelper? = null
             var embedder: FaceEmbedder? = null
@@ -66,13 +71,15 @@ object RefreshFaces {
                         val res = UprightDecoder.decode(path, MAX_DECODE)
                         if (res != null) {
                             val bmp = res.bitmap
+                            val full = FullResCrop.open(path, MAX_DECODE, bmp.width, bmp.height)
                             try {
                                 val detected = det.detect(bmp).filter { FaceFilter.isUsable(it) }
                                 val old = byPath[path].orEmpty()
-                                val pair = matchAndStore(dao, path, old, detected, bmp, res, lm, emb, det)
+                                val pair = matchAndStore(dao, path, old, detected, bmp, res, lm, emb, det, full)
                                 updated += pair.first
                                 added += pair.second
                             } finally {
+                                full?.close()
                                 bmp.recycle()
                             }
                         }
@@ -116,20 +123,23 @@ object RefreshFaces {
             try {
                 val res = UprightDecoder.decode(path, MAX_DECODE) ?: continue
                 val bmp = res.bitmap
+                var full: FullResCrop? = null
                 try {
                     val old = dao.getFacesForPath(path)
                     val detected = detector.detect(bmp)
                     val match = matchOldFaces(old, detected, res, bmp.width, bmp.height)
+                    full = FullResCrop.open(path, MAX_DECODE, bmp.width, bmp.height)
                     for ((di, d) in detected.withIndex()) {
                         val face = old.getOrNull(match[di]) ?: continue
                         val id = face.id ?: continue
                         if (face.embedding != null) continue
-                        val e = FaceAligner.embedDetected(bmp, d, landmarker, embedder, detector) ?: continue
+                        val e = FaceAligner.embedDetected(bmp, d, landmarker, embedder, detector, full) ?: continue
                         dao.updateFaceBox(id, d.left, d.top, d.right, d.bottom, d.score)
                         dao.updateEmbedding(id, e)
                         repaired++
                     }
                 } finally {
+                    full?.close()
                     bmp.recycle()
                 }
             } catch (ignored: Throwable) {
@@ -148,6 +158,7 @@ object RefreshFaces {
         landmarker: FaceLandmarkHelper,
         embedder: FaceEmbedder,
         detector: FaceDetectionHelper,
+        full: FullResCrop?,
     ): Pair<Int, Int> {
         if (detected.isEmpty()) return 0 to 0
         val match = matchOldFaces(old, detected, res, bmp.width, bmp.height)
@@ -157,7 +168,7 @@ object RefreshFaces {
         var nextIndex = (old.maxOfOrNull { it.faceIndex } ?: -1) + 1
 
         for ((di, d) in detected.withIndex()) {
-            val emb = FaceAligner.embedDetected(bmp, d, landmarker, embedder, detector)
+            val emb = FaceAligner.embedDetected(bmp, d, landmarker, embedder, detector, full)
             val oi = match[di]
             if (oi >= 0) {
                 // rovnaká tvár ako predtým -> UPDATE na mieste (id, a teda aj menovka, ostáva)
@@ -202,7 +213,7 @@ object RefreshFaces {
     // Predtým sa staré rámčeky VŽDY prepočítavali ako surové — pri fotkách na výšku sa súčasné tváre
     // nespárovali, vznikali duplikáty a menovky ostávali na starých záznamoch.
     // Vráti pre každú detekciu index starého záznamu alebo -1.
-    private fun matchOldFaces(
+    internal fun matchOldFaces(
         old: List<FaceEntity>,
         detected: List<FaceDetectionHelper.DetectedFace>,
         res: UprightDecoder.Result,

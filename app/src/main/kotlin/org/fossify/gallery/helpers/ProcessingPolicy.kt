@@ -11,10 +11,12 @@ package org.fossify.gallery.helpers
 // - Ľahký profil alebo zapnutá voľba: pri batérii pod LOW_BATTERY_PCT % (bez nabíjania) sa automatické
 //   spracovanie zastaví.
 // - Ručné spustenie (ťuk používateľa) rešpektuje len výber indexerov podľa profilu.
+// - Jednorazový prepočet odtlačkov tvárí na v2 (FACE_V2) beží automaticky VŽDY len pri nabíjaní
+//   (v každom profile — patrí k tváram), ručne kedykoľvek.
 object ProcessingPolicy {
     enum class Profile { FULL, LIGHT }
 
-    enum class Indexer { FACES, GEO, QR, OCR, PHASH, CLIP, OTHER }
+    enum class Indexer { FACES, GEO, QR, OCR, PHASH, CLIP, OTHER, FACE_V2 }
 
     enum class Trigger { AUTO, MANUAL }
 
@@ -45,6 +47,8 @@ object ProcessingPolicy {
         indexerKind: Indexer,
         trigger: Trigger = Trigger.AUTO,
     ): Decision = when {
+        indexerKind == Indexer.FACE_V2 ->
+            if (trigger == Trigger.MANUAL || charging) Decision.RUN else Decision.WAIT_FOR_CHARGING
         profile == Profile.LIGHT && indexerKind !in LIGHT_INDEXERS -> Decision.SKIP_PROFILE
         trigger == Trigger.MANUAL || charging -> Decision.RUN
         profile == Profile.FULL && !newOnlyFirst -> Decision.RUN
@@ -61,4 +65,8 @@ object ProcessingPolicy {
     // má služba počas behu sledovať batériu a nabíjanie?
     fun needsWatching(profile: Profile, newOnlyFirst: Boolean): Boolean =
         profile == Profile.LIGHT || newOnlyFirst
+
+    // … pre konkrétnu úlohu: prepočet na v2 sa po odpojení nabíjačky zastaví vždy
+    fun needsWatching(profile: Profile, newOnlyFirst: Boolean, indexerKind: Indexer): Boolean =
+        indexerKind == Indexer.FACE_V2 || needsWatching(profile, newOnlyFirst)
 }

@@ -23,7 +23,7 @@ class ProcessingPolicyTest {
     @Test
     fun fullProfileWithoutOptionBehavesAsBefore() {
         // ani slabá batéria, ani veľká dávka nič nemenia — správanie ako doteraz
-        for (indexer in Indexer.values()) {
+        for (indexer in Indexer.values().filter { it != Indexer.FACE_V2 }) {
             assertEquals(Decision.RUN, decide(indexer = indexer, batteryPct = 5, batchSize = 10_000))
             assertEquals(Decision.RUN, decide(indexer = indexer, batteryPct = ProcessingPolicy.UNKNOWN))
         }
@@ -32,7 +32,7 @@ class ProcessingPolicyTest {
     @Test
     fun lightProfileRunsOnlyFacesAndGeo() {
         val allowed = setOf(Indexer.FACES, Indexer.GEO)
-        for (indexer in Indexer.values()) {
+        for (indexer in Indexer.values().filter { it != Indexer.FACE_V2 }) {
             val auto = decide(profile = Profile.LIGHT, charging = true, indexer = indexer)
             val manual = decide(profile = Profile.LIGHT, indexer = indexer, trigger = Trigger.MANUAL)
             if (indexer in allowed) {
@@ -104,5 +104,28 @@ class ProcessingPolicyTest {
         assertEquals(Profile.LIGHT, ProcessingPolicy.profileOf(ProcessingPolicy.PROFILE_LIGHT))
         assertEquals(Profile.FULL, ProcessingPolicy.profileOf(ProcessingPolicy.PROFILE_FULL))
         assertEquals(Profile.FULL, ProcessingPolicy.profileOf(42))
+    }
+
+    @Test
+    fun faceV2RunsOnlyWhileChargingInEveryProfile() {
+        for (profile in Profile.values()) {
+            for (newFirst in listOf(false, true)) {
+                assertEquals(
+                    Decision.WAIT_FOR_CHARGING,
+                    decide(profile = profile, newOnlyFirst = newFirst, batchSize = 1, indexer = Indexer.FACE_V2),
+                )
+                assertEquals(
+                    Decision.RUN,
+                    decide(profile = profile, newOnlyFirst = newFirst, charging = true, batteryPct = 5, indexer = Indexer.FACE_V2),
+                )
+                // ručné spustenie z Nastavení beží vždy
+                assertEquals(
+                    Decision.RUN,
+                    decide(profile = profile, newOnlyFirst = newFirst, indexer = Indexer.FACE_V2, trigger = Trigger.MANUAL),
+                )
+                assertTrue(ProcessingPolicy.needsWatching(profile, newFirst, Indexer.FACE_V2))
+            }
+        }
+        assertFalse(ProcessingPolicy.needsWatching(Profile.FULL, false, Indexer.FACES))
     }
 }

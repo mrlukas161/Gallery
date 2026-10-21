@@ -8,6 +8,8 @@ import com.google.mediapipe.tasks.vision.core.RunningMode
 import com.google.mediapipe.tasks.vision.facelandmarker.FaceLandmarker
 
 // MediaPipe FaceLandmarker — presné body tváre pre 5-bodové zarovnanie (oči/nos/kútiky úst).
+// Až 3 tváre naraz: výrez okolo detekcie má okraj, takže na skupinovej fotke v ňom býva aj sused;
+// berie sa tvár, ktorá najlepšie sedí na očakávaný rámček (FaceSelect, B2).
 class FaceLandmarkHelper(context: Context) {
     private val landmarker: FaceLandmarker = FaceLandmarker.createFromOptions(
         context,
@@ -16,30 +18,30 @@ class FaceLandmarkHelper(context: Context) {
                 BaseOptions.builder().setModelAssetPath("face/face_landmarker.task").build()
             )
             .setRunningMode(RunningMode.IMAGE)
-            .setNumFaces(1)
+            .setNumFaces(MAX_FACES)
             .setOutputFaceBlendshapes(false)
             .setOutputFacialTransformationMatrixes(false)
             .build(),
     )
 
-    // 5 bodov v PIXLOCH daného bitmapu v poradí [pravé oko, ľavé oko, nos, ľavý kútik úst, pravý kútik úst],
-    // alebo null ak tvár nenájdená.
-    fun landmarks5(bitmap: Bitmap): FloatArray? {
+    // 5 bodov v PIXLOCH daného bitmapu v poradí šablóny ArcFace (AlignMath.fivePoints): oko vľavo na
+    // obrázku, oko vpravo, nos, kútik úst vľavo, vpravo. Oči = stredy očí (dúhovka, inak priemer kútikov).
+    // [expected] = očakávaný rámček tváre v pixloch bitmapu (null = stred bitmapu). null = tvár nenájdená
+    // alebo žiadna nesedí na očakávaný rámček.
+    fun landmarks5(bitmap: Bitmap, expected: FloatArray? = null): FloatArray? {
         return try {
             val result = landmarker.detect(BitmapImageBuilder(bitmap).build())
             val faces = result.faceLandmarks()
             if (faces.isEmpty()) return null
-            val lm = faces[0]
-            if (lm.size <= 291) return null
             val w = bitmap.width.toFloat()
             val h = bitmap.height.toFloat()
-            floatArrayOf(
-                lm[33].x() * w, lm[33].y() * h,
-                lm[263].x() * w, lm[263].y() * h,
-                lm[1].x() * w, lm[1].y() * h,
-                lm[61].x() * w, lm[61].y() * h,
-                lm[291].x() * w, lm[291].y() * h,
-            )
+            val coords = faces.map { lm ->
+                FloatArray(lm.size) { lm[it].x() * w } to FloatArray(lm.size) { lm[it].y() * h }
+            }
+            val target = expected ?: FaceSelect.centralBox(bitmap.width, bitmap.height)
+            val pick = FaceSelect.bestMatch(coords.map { FaceSelect.boundsOf(it.first, it.second) }, target)
+            if (pick < 0) return null
+            AlignMath.fivePoints(coords[pick].first, coords[pick].second)
         } catch (e: Throwable) {
             null
         }
@@ -50,5 +52,9 @@ class FaceLandmarkHelper(context: Context) {
             landmarker.close()
         } catch (ignored: Throwable) {
         }
+    }
+
+    companion object {
+        private const val MAX_FACES = 3
     }
 }

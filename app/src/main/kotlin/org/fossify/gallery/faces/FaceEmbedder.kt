@@ -12,125 +12,110 @@ import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.nio.MappedByteBuffer
 import java.nio.channels.FileChannel
-import kotlin.math.atan2
-import kotlin.math.cos
-import kotlin.math.sin
-import kotlin.math.sqrt
 
 // MobileFaceNet odtlačok tváre (TFLite). Vstup = 112x112 zarovnaná tvár, výstup = vektor (L2-normalizovaný).
+// Odtlačky v2: zarovnanie zmenšuje zdroj postupne po polovici (antialiasing, B3) a výsledok je súčet
+// odtlačku tváre a jej zrkadlového obrazu, L2-normalizovaný (B4, stabilnejšie pri selfie a natočení).
 class FaceEmbedder(context: Context) {
     private val interpreter: Interpreter = Interpreter(loadModel(context), Interpreter.Options())
     val outputSize: Int = interpreter.getOutputTensor(0).shape().last()
     private val inputSize = 112
 
+    // 2-bodové zarovnanie (oči z BlazeFace) do rovnakej ArcFace šablóny, bez očí len zmenšený rámček
     fun embed(source: Bitmap, face: FaceDetectionHelper.DetectedFace): FloatArray {
-        val aligned = alignFace(source, face)
-        val result = runModel(aligned)
-        aligned.recycle()
-        return result
+        if (face.hasEyes) {
+            // oko s menším x -> ľavá šablónová pozícia
+            val firstIsLeft = face.eye1X <= face.eye2X
+            val src = if (firstIsLeft) {
+                floatArrayOf(face.eye1X, face.eye1Y, face.eye2X, face.eye2Y)
+            } else {
+                floatArrayOf(face.eye2X, face.eye2Y, face.eye1X, face.eye1Y)
+            }
+            val dst = AlignMath.ARCFACE_112.copyOfRange(0, 4)
+            return warpAndRun(source, AlignMath.similarity(src, dst))
+        }
+        val l = face.left.coerceIn(0, source.width)
+        val t = face.top.coerceIn(0, source.height)
+        val r = face.right.coerceIn(l, source.width)
+        val b = face.bottom.coerceIn(t, source.height)
+        if (r <= l || b <= t) return runModel(Bitmap.createBitmap(inputSize, inputSize, Bitmap.Config.ARGB_8888), true)
+        val crop = Bitmap.createBitmap(source, l, t, r - l, b - t)
+        try {
+            return embedResized(crop)
+        } finally {
+            if (crop !== source) crop.recycle()
+        }
     }
 
     // 5-bodové zarovnanie (oči/nos/kútiky úst -> ArcFace šablóna) cez podobnostnú transformáciu.
-    fun embed5(source: Bitmap, points: FloatArray): FloatArray {
-        val out = Bitmap.createBitmap(inputSize, inputSize, Bitmap.Config.ARGB_8888)
-        val canvas = Canvas(out)
-        canvas.drawBitmap(source, similarityMatrix(points, ARCFACE_TEMPLATE), Paint(Paint.FILTER_BITMAP_FLAG))
-        val result = runModel(out)
-        out.recycle()
-        return result
-    }
+    fun embed5(source: Bitmap, points: FloatArray): FloatArray =
+        warpAndRun(source, AlignMath.similarity(points, AlignMath.ARCFACE_112))
 
-    // Fallback bez bodov: len zmenši výrez na 112x112.
+    // Fallback bez bodov: len zmenší výrez na 112x112 (postupne po polovici).
     fun embedResized(source: Bitmap): FloatArray {
-        val out = Bitmap.createBitmap(inputSize, inputSize, Bitmap.Config.ARGB_8888)
-        val canvas = Canvas(out)
-        canvas.drawBitmap(source, Rect(0, 0, source.width, source.height), Rect(0, 0, inputSize, inputSize), Paint(Paint.FILTER_BITMAP_FLAG))
-        val result = runModel(out)
-        out.recycle()
-        return result
-    }
-
-    // 2D podobnostná transformácia (Procrustes, bez reflexie) z 5 bodov -> šablóna.
-    private fun similarityMatrix(src: FloatArray, dst: FloatArray): Matrix {
-        var sMeanX = 0f
-        var sMeanY = 0f
-        var dMeanX = 0f
-        var dMeanY = 0f
-        for (i in 0..4) {
-            sMeanX += src[i * 2]; sMeanY += src[i * 2 + 1]
-            dMeanX += dst[i * 2]; dMeanY += dst[i * 2 + 1]
-        }
-        sMeanX /= 5f; sMeanY /= 5f; dMeanX /= 5f; dMeanY /= 5f
-        var sumXX = 0f
-        var sumXY = 0f
-        var sumYX = 0f
-        var sumYY = 0f
-        var srcSumSq = 0f
-        for (i in 0..4) {
-            val sx = src[i * 2] - sMeanX
-            val sy = src[i * 2 + 1] - sMeanY
-            val dx = dst[i * 2] - dMeanX
-            val dy = dst[i * 2 + 1] - dMeanY
-            sumXX += sx * dx; sumXY += sx * dy; sumYX += sy * dx; sumYY += sy * dy
-            srcSumSq += sx * sx + sy * sy
-        }
-        // Umeyama (bez SVD) uzavretý tvar: a=Σ(sx·dx+sy·dy), b=Σ(sx·dy-sy·dx) -> rot=atan2(b,a), scale=√(a²+b²)/Σ|s|².
-        // (predtým bola tu chyba: invertované znamienko rot + nekompletná mierka -> tvár sa vykreslila ~37% do čierna.)
-        val a = sumXX + sumYY
-        val b = sumXY - sumYX
-        val rot = atan2(b, a)
-        val cosR = cos(rot)
-        val sinR = sin(rot)
-        val scale = sqrt(a * a + b * b) / (srcSumSq + 1e-8f)
-        val tx = dMeanX - (scale * cosR * sMeanX - scale * sinR * sMeanY)
-        val ty = dMeanY - (scale * sinR * sMeanX + scale * cosR * sMeanY)
-        return Matrix().apply {
-            setValues(floatArrayOf(scale * cosR, -scale * sinR, tx, scale * sinR, scale * cosR, ty, 0f, 0f, 1f))
+        var cur = source
+        try {
+            while (cur.width >= inputSize * 4 && cur.height >= inputSize * 4) cur = halve(cur, cur !== source)
+            val out = Bitmap.createBitmap(inputSize, inputSize, Bitmap.Config.ARGB_8888)
+            Canvas(out).drawBitmap(cur, Rect(0, 0, cur.width, cur.height), Rect(0, 0, inputSize, inputSize), Paint(Paint.FILTER_BITMAP_FLAG))
+            return runModel(out, true)
+        } finally {
+            if (cur !== source) cur.recycle()
         }
     }
 
-    private fun alignFace(source: Bitmap, face: FaceDetectionHelper.DetectedFace): Bitmap {
-        val out = Bitmap.createBitmap(inputSize, inputSize, Bitmap.Config.ARGB_8888)
-        val canvas = Canvas(out)
-        val paint = Paint(Paint.FILTER_BITMAP_FLAG)
-        if (face.hasEyes) {
-            // 2-bodové zarovnanie: oko s menším x -> ľavá šablónová pozícia
-            val firstIsLeft = face.eye1X <= face.eye2X
-            val lx = if (firstIsLeft) face.eye1X else face.eye2X
-            val ly = if (firstIsLeft) face.eye1Y else face.eye2Y
-            val rx = if (firstIsLeft) face.eye2X else face.eye1X
-            val ry = if (firstIsLeft) face.eye2Y else face.eye1Y
-            val src = floatArrayOf(lx, ly, rx, ry)
-            val dst = floatArrayOf(38.3f, 51.7f, 73.5f, 51.5f)
-            val matrix = Matrix()
-            matrix.setPolyToPoly(src, 0, dst, 0, 2)
-            canvas.drawBitmap(source, matrix, paint)
-        } else {
-            // fallback bez očí: orež bbox a zmenši na 112x112
-            val l = face.left.coerceIn(0, source.width)
-            val t = face.top.coerceIn(0, source.height)
-            val r = face.right.coerceIn(l, source.width)
-            val b = face.bottom.coerceIn(t, source.height)
-            if (r > l && b > t) {
-                canvas.drawBitmap(source, Rect(l, t, r, b), Rect(0, 0, inputSize, inputSize), paint)
+    // Zarovnanie podľa transformácie [a, b, tx, ty] (AlignMath.similarity). Pri silnom zmenšení sa zdroj
+    // najprv zmenší po polovici (každý krok spriemeruje 2×2 pixely), aby jeden bilineárny krok nepreskakoval
+    // pixely a odtlačok nezávisel od rozlíšenia výrezu.
+    private fun warpAndRun(source: Bitmap, transform: FloatArray): FloatArray {
+        val k = AlignMath.halvings(AlignMath.scaleOf(transform))
+        var cur = source
+        try {
+            repeat(k) {
+                if (cur.width >= 2 && cur.height >= 2) cur = halve(cur, cur !== source)
             }
+            // presný pomer zmenšeného zdroja k pôvodnému (pri nepárnych rozmeroch nie je presne 2^k)
+            val fx = source.width.toFloat() / cur.width
+            val fy = source.height.toFloat() / cur.height
+            val m = AlignMath.forScaledSource(transform, fx, fy)
+            val out = Bitmap.createBitmap(inputSize, inputSize, Bitmap.Config.ARGB_8888)
+            val matrix = Matrix().apply { setValues(floatArrayOf(m[0], m[1], m[2], m[3], m[4], m[5], 0f, 0f, 1f)) }
+            Canvas(out).drawBitmap(cur, matrix, Paint(Paint.FILTER_BITMAP_FLAG))
+            return runModel(out, true)
+        } finally {
+            if (cur !== source) cur.recycle()
         }
+    }
+
+    private fun halve(b: Bitmap, recycleInput: Boolean): Bitmap {
+        val out = Bitmap.createScaledBitmap(b, maxOf(1, b.width / 2), maxOf(1, b.height / 2), true)
+        if (recycleInput && out !== b) b.recycle()
         return out
     }
 
-    private fun runModel(face112: Bitmap): FloatArray {
-        val input = ByteBuffer.allocateDirect(1 * inputSize * inputSize * 3 * 4).order(ByteOrder.nativeOrder())
+    // Odtlačok tváre + odtlačok jej zrkadlového obrazu (B4). Šablóna ArcFace je súmerná podľa x = 56,
+    // takže zrkadlený zarovnaný obraz je opäť správne zarovnaný.
+    private fun runModel(face112: Bitmap, recycle: Boolean): FloatArray {
         val pixels = IntArray(inputSize * inputSize)
         face112.getPixels(pixels, 0, inputSize, 0, 0, inputSize, inputSize)
-        for (p in pixels) {
-            input.putFloat(((p shr 16 and 0xFF) - 127.5f) / 128f)
-            input.putFloat(((p shr 8 and 0xFF) - 127.5f) / 128f)
-            input.putFloat(((p and 0xFF) - 127.5f) / 128f)
+        if (recycle) face112.recycle()
+        return AlignMath.combineTta(infer(pixels, false), infer(pixels, true))
+    }
+
+    private fun infer(pixels: IntArray, mirrored: Boolean): FloatArray {
+        val input = ByteBuffer.allocateDirect(1 * inputSize * inputSize * 3 * 4).order(ByteOrder.nativeOrder())
+        for (y in 0 until inputSize) {
+            for (x in 0 until inputSize) {
+                val p = pixels[y * inputSize + if (mirrored) inputSize - 1 - x else x]
+                input.putFloat(((p shr 16 and 0xFF) - 127.5f) / 128f)
+                input.putFloat(((p shr 8 and 0xFF) - 127.5f) / 128f)
+                input.putFloat(((p and 0xFF) - 127.5f) / 128f)
+            }
         }
         input.rewind()
         val output = Array(1) { FloatArray(outputSize) }
         interpreter.run(input, output)
-        return l2normalize(output[0])
+        return output[0]
     }
 
     fun close() {
@@ -141,18 +126,17 @@ class FaceEmbedder(context: Context) {
     }
 
     companion object {
-        // Identifikátor modelu odtlačkov (asset face/mobilefacenet.tflite, vstup 112×112, L2-normalizovaný
-        // výstup). Prenáša sa s odtlačkami do druhého telefónu (family.AnchorsSet.faceModelId) — vektory
-        // rôznych modelov sa nesmú miešať. PRI VÝMENE MODELU ALEBO ZMENE PREDSPRACOVANIA ZMEŇ TÚTO HODNOTU.
-        const val MODEL_ID = "mobilefacenet-112-l2-v1"
+        // Identifikátor odtlačkov ULOŽENÝCH vo faces.db a v používaných vzoroch (asset face/mobilefacenet.tflite,
+        // vstup 112×112, L2-normalizovaný výstup). Prenáša sa s odtlačkami do druhého telefónu
+        // (family.AnchorsSet.faceModelId, PhotoBundle, záloha osôb) — vektory rôznych verzií sa nesmú miešať.
+        // Nové výpočty idú vždy cestou v2 (PIPELINE_MODEL_ID); kým jednorazový prepočet pri nabíjaní
+        // (FaceReembedV2) nepreklopí faces.db, sú uložené vektory ešte v1 a táto hodnota vracia v1, aby sa
+        // v1 vektory neposlali ako v2. Po prepnutí (a pri novej inštalácii) vracia v2.
+        // PRI VÝMENE MODELU ALEBO ZMENE PREDSPRACOVANIA ZMEŇ PIPELINE_MODEL_ID A PRIDAJ PREPOČET.
+        val MODEL_ID: String
+            get() = FaceEmbedVersion.storedModelId()
 
-        private val ARCFACE_TEMPLATE = floatArrayOf(
-            38.2946f, 51.6963f,
-            73.5318f, 51.5014f,
-            56.0252f, 71.7366f,
-            41.5493f, 92.3655f,
-            70.7299f, 92.2041f,
-        )
+        const val PIPELINE_MODEL_ID = EmbedVersionRules.MODEL_ID_V2
 
         fun toBytes(vector: FloatArray): ByteArray {
             val bb = ByteBuffer.allocate(vector.size * 4).order(ByteOrder.nativeOrder())
@@ -163,13 +147,6 @@ class FaceEmbedder(context: Context) {
         fun toFloats(bytes: ByteArray): FloatArray {
             val bb = ByteBuffer.wrap(bytes).order(ByteOrder.nativeOrder())
             return FloatArray(bytes.size / 4) { bb.float }
-        }
-
-        private fun l2normalize(v: FloatArray): FloatArray {
-            var sum = 0f
-            for (x in v) sum += x * x
-            val norm = sqrt(sum).coerceAtLeast(1e-9f)
-            return FloatArray(v.size) { v[it] / norm }
         }
 
         private fun loadModel(context: Context): MappedByteBuffer {

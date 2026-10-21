@@ -37,6 +37,8 @@ class App : FossifyApp() {
         baseConfig.appSideloadingStatus = SIDELOADING_FALSE
         super.onCreate()
         Reprint.initialize(this)
+        // verzia uložených odtlačkov tvárí (FaceEmbedder.MODEL_ID) — skôr než ju prečíta rodinné prepojenie
+        org.fossify.gallery.faces.FaceEmbedVersion.init(this)
         // rodinné prepojenie: op-log osôb sa aplikuje po prijatí z druhého telefónu
         FamilyHandlers.register(OpLogHandler(this))
         // … a fotky s hotovými výsledkami (F4: odoslanie fronty, príjem balíkov)

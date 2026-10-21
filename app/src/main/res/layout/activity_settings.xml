@@ -1285,6 +1285,29 @@
             </RelativeLayout>
 
             <RelativeLayout
+                android:id="@+id/settings_face_v2_holder"
+                style="@style/SettingsHolderTextViewStyle"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content">
+
+                <org.fossify.commons.views.MyTextView
+                    android:id="@+id/settings_face_v2_label"
+                    style="@style/SettingsTextLabelStyle"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/tb_face_v2_title" />
+
+                <org.fossify.commons.views.MyTextView
+                    android:id="@+id/settings_face_v2_summary"
+                    style="@style/SettingsTextValueStyle"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_below="@+id/settings_face_v2_label"
+                    tools:text="Prepočet pri nabíjaní" />
+
+            </RelativeLayout>
+
+            <RelativeLayout
                 android:id="@+id/settings_ocr_holder"
                 style="@style/SettingsHolderTextViewStyle"
                 android:layout_width="match_parent"
