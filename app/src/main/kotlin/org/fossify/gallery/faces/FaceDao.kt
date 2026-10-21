@@ -54,6 +54,31 @@ interface FaceDao {
     @Query("UPDATE faces SET bbox_left = :left, bbox_top = :top, bbox_right = :right, bbox_bottom = :bottom, score = :score WHERE id = :id")
     fun updateFaceBox(id: Long, left: Int, top: Int, right: Int, bottom: Int, score: Float)
 
+    // A6: otočenie rámčeka po otočení fotky v appke — id, skóre aj odtlačok ostávajú
+    @Query(
+        "UPDATE faces SET bbox_left = :left, bbox_top = :top, bbox_right = :right, bbox_bottom = :bottom WHERE id = :id"
+    )
+    fun updateBox(id: Long, left: Int, top: Int, right: Int, bottom: Int)
+
+    // A5: presunutá fotka — tváre sa preklopia na novú cestu NA MIESTE (id a menovky ostanú)
+    @Query(
+        "UPDATE faces SET media_full_path = :newPath, media_store_id = :mediaStoreId WHERE media_full_path = :oldPath"
+    )
+    fun relinkPath(oldPath: String, newPath: String, mediaStoreId: Long): Int
+
+    // A5: LEN nepomenované duplikáty z indexera na novej ceste presunutej fotky, ktorých id
+    // FaceRelinker overil, že sa nevyskytujú v people.db, extras.db ani family.db (proposals).
+    // Nikde inde nevolať — žiadne hromadné mazanie tvárí.
+    @Query("DELETE FROM faces WHERE media_full_path = :path AND id IN (:ids)")
+    fun deleteUnreferencedDuplicates(path: String, ids: List<Long>): Int
+
+    @Query("SELECT * FROM indexed_photos WHERE path = :path")
+    fun getIndexedPhoto(path: String): IndexedPhotoEntity?
+
+    // značka „spracovaná" (prestavateľná) — maže sa len pri prenose na novú cestu presunutej fotky
+    @Query("DELETE FROM indexed_photos WHERE path = :path")
+    fun deleteIndexedPhoto(path: String)
+
     @Query("SELECT COUNT(*) FROM indexed_photos WHERE face_count > 0")
     fun getPhotosWithFacesCount(): Int
 
