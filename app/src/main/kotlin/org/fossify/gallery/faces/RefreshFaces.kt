@@ -108,8 +108,9 @@ object RefreshFaces {
     // bezpečne — FaceRotation). Rovnaké párovanie ako run() (IoU, obe hypotézy priestoru), takže
     // menovky ostanú na mieste. Vráti vybavené cesty (spracované alebo už neexistujúce). Volať z pozadia.
     internal fun refreshPaths(context: Context, paths: Collection<String>): Set<String> {
-        if (paths.isEmpty() || isRunning) return emptySet()
-        isRunning = true
+        if (paths.isEmpty()) return emptySet()
+        val myRun = runIds.incrementAndGet()
+        if (!owner.compareAndSet(0, myRun)) return emptySet()
         val appCtx = context.applicationContext
         val done = HashSet<String>()
         var detector: FaceDetectionHelper? = null
@@ -121,7 +122,7 @@ object RefreshFaces {
             val det = FaceDetectionHelper(appCtx).also { detector = it }
             val emb = FaceEmbedder(appCtx).also { embedder = it }
             val lm = FaceLandmarkHelper(appCtx).also { landmarker = it }
-            for (path in paths.asSequence().takeWhile { isRunning }) {
+            for (path in paths.asSequence().takeWhile { owner.get() == myRun }) {
                 if (!java.io.File(path).exists() || refreshOne(dao, path, det, emb, lm)) done.add(path)
             }
         } catch (ignored: Throwable) {
@@ -129,7 +130,7 @@ object RefreshFaces {
             detector?.close()
             embedder?.close()
             landmarker?.close()
-            isRunning = false
+            owner.compareAndSet(myRun, 0)
         }
         return done
     }
