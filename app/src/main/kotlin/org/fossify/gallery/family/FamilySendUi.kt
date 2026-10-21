@@ -47,7 +47,9 @@ private fun Activity.startFamilySend(paths: List<String>, peer: PeerEntity, with
         }
         app.toast(app.resources.getQuantityString(R.plurals.family_send_queued, queued, queued, peer.name))
         val result = FamilySend.syncNow(app, peer.deviceId)
-        if (result?.status != FamilyClient.Status.OK) {
+        if (result?.status == FamilyClient.Status.NEEDS_PAIRING) {
+            app.toast(app.getString(R.string.d_family_send_needs_pairing, peer.name))
+        } else if (result?.status != FamilyClient.Status.OK) {
             // fronta ostáva vo family.db, odíde pri najbližšom stretnutí telefónov
             app.toast(app.getString(R.string.family_send_later, peer.name))
         }

@@ -32,6 +32,10 @@ class FamilyStore(context: Context) {
         return keys.load(peer(deviceId)?.keyAlias ?: FamilyKeys.aliasFor(deviceId))
     }
 
+    // Spárovaný telefón bez kľúča páru (záloha Androidu kľúče vynecháva, Keystore sa neobnovuje): riadok
+    // v family.db prežil obnovu, kľúč nie. Taký telefón treba znova spárovať; synchronizácia ho preskočí.
+    fun needsRepairing(deviceId: String): Boolean = peer(deviceId) != null && pairKey(deviceId) == null
+
     // uloží výsledok párovania; false = kľúč sa nepodarilo uložiť (prepojenie nevznikne)
     fun savePairing(result: PairingProtocol.Result): Boolean {
         val alias = FamilyKeys.aliasFor(result.peerId)
