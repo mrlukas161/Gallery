@@ -2,7 +2,12 @@ package org.fossify.gallery.activities
 
 import android.content.Intent
 import android.os.Bundle
+import android.util.TypedValue
+import android.view.Gravity
+import android.widget.ImageView
 import android.widget.LinearLayout
+import android.widget.ScrollView
+import androidx.appcompat.app.AlertDialog
 import androidx.recyclerview.widget.GridLayoutManager
 import org.fossify.commons.dialogs.ConfirmationDialog
 import org.fossify.commons.dialogs.RadioGroupDialog
@@ -16,12 +21,14 @@ import org.fossify.commons.helpers.NavigationIcon
 import org.fossify.commons.helpers.ensureBackgroundThread
 import org.fossify.commons.models.RadioItem
 import org.fossify.commons.views.MyEditText
+import org.fossify.commons.views.MyTextView
 import org.fossify.gallery.R
 import org.fossify.gallery.adapters.PersonFacesAdapter
 import org.fossify.gallery.adapters.PhotoPathsAdapter
 import org.fossify.gallery.databinding.ActivityPersonBinding
 import org.fossify.gallery.dialogs.ChangeSortingDialog
 import org.fossify.gallery.extensions.config
+import org.fossify.gallery.faces.FaceCropLoader
 import org.fossify.gallery.faces.FaceEntity
 import org.fossify.gallery.faces.FaceMediaMeta
 import org.fossify.gallery.faces.FaceSorter
@@ -266,7 +273,10 @@ class PersonActivity : SimpleActivity() {
                     if (which == persons.size) {
                         promptName(null) { name -> assignToNewPerson(ids, name) }
                     } else {
-                        assignToPerson(ids, persons[which].id)
+                        val target = persons[which]
+                        FaceTaggingActivity.confirmSamePhoto(this, ids, target.id, target.name) {
+                            assignToPerson(ids, target.id)
+                        }
                     }
                 }
             }
@@ -340,18 +350,99 @@ class PersonActivity : SimpleActivity() {
         }
     }
 
-    // odoberie osobe VŠETKY tváre na vybraných fotkách — spracovanie na pozadí, potom re-render
+    // „Toto nie je táto osoba" nad fotkami: odmietne LEN tvár, ktorá na fotke nesie túto osobu (C2). Iné tváre
+    // fotky sa nedotknú. Ak má osoba na fotke viac tvárí, appka sa spýta, ktorú (výber s výrezmi tvárí).
     private fun notThisPersonForPaths(selection: List<String>) {
         if (personId < 0) return
         val pathSet = selection.toHashSet()
-        val faceIds = loadedFaces.filter { pathSet.contains(it.mediaFullPath) }.mapNotNull { it.id }
+        val byPath = loadedFaces.filter { pathSet.contains(it.mediaFullPath) }.groupBy { it.mediaFullPath }
+        val sure = ArrayList<Long>()
+        val ambiguous = ArrayList<List<FaceEntity>>()
+        for (faces in byPath.values) {
+            if (faces.size == 1) faces.first().id?.let { sure.add(it) } else ambiguous.add(faces)
+        }
+        pickAmbiguousFaces(ambiguous, 0, sure)
+    }
+
+    // fotky s viacerými tvárami osoby postupne, jedna po druhej; nakoniec jedno spoločné odmietnutie
+    private fun pickAmbiguousFaces(ambiguous: List<List<FaceEntity>>, index: Int, picked: ArrayList<Long>) {
+        if (isDestroyed || isFinishing) return
+        if (index >= ambiguous.size) {
+            rejectPickedFaces(picked)
+            return
+        }
+        val faces = ambiguous[index]
+        val next = { pickAmbiguousFaces(ambiguous, index + 1, picked) }
+        val margin = resources.getDimensionPixelSize(org.fossify.commons.R.dimen.activity_margin)
+        val holder = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(0, margin / 2, 0, margin / 2)
+        }
+        var dialog: AlertDialog? = null
+        // zľava doprava, ako sú tváre na fotke
+        faces.sortedBy { it.bboxLeft }.forEachIndexed { i, face ->
+            holder.addView(faceRow(getString(R.string.tc_pick_face_item, i + 1), face, margin) {
+                dialog?.dismiss()
+                face.id?.let { picked.add(it) }
+                next()
+            })
+        }
+        holder.addView(faceRow(getString(R.string.tc_pick_face_all, faces.size), null, margin) {
+            dialog?.dismiss()
+            picked.addAll(faces.mapNotNull { it.id })
+            next()
+        })
+        val view = ScrollView(this).apply { addView(holder) }
+        getAlertDialogBuilder()
+            .setNegativeButton(R.string.tc_pick_face_skip) { _, _ -> next() }
+            .setOnCancelListener { next() }
+            .apply {
+                setupDialogStuff(view, this, titleText = getString(R.string.tc_pick_face_title, personName ?: "")) {
+                    dialog = it
+                }
+            }
+    }
+
+    // riadok výberu: výrez tváre (ak je) + text, celý riadok klikateľný
+    private fun faceRow(text: String, face: FaceEntity?, margin: Int, onPick: () -> Unit): LinearLayout {
+        val ripple = TypedValue().also { theme.resolveAttribute(android.R.attr.selectableItemBackground, it, true) }
+        val line = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(margin, margin / 2, margin, margin / 2)
+            setBackgroundResource(ripple.resourceId)
+            setOnClickListener { onPick() }
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+            )
+        }
+        if (face != null) {
+            val thumb = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, FACE_THUMB_DP, resources.displayMetrics)
+            val image = ImageView(this).apply { scaleType = ImageView.ScaleType.CENTER_CROP }
+            line.addView(image, LinearLayout.LayoutParams(thumb.toInt(), thumb.toInt()).apply { marginEnd = margin })
+            FaceCropLoader.load(face, image)
+        }
+        line.addView(
+            MyTextView(this).apply {
+                this.text = text
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, ROW_TEXT_SP)
+            }
+        )
+        return line
+    }
+
+    private fun rejectPickedFaces(faceIds: List<Long>) {
+        if (personId < 0 || faceIds.isEmpty()) return
+        val rejected = faceIds.toHashSet()
         ensureBackgroundThread {
             PeopleDatabase.getInstance(this).PeopleDao().rejectFacesForPerson(faceIds, personId)
             FamilyRecorder.facesRejected(this, faceIds, personId)
             runOnUiThread {
                 if (isDestroyed || isFinishing) return@runOnUiThread
-                loadedFaces = loadedFaces.filter { !pathSet.contains(it.mediaFullPath) }
-                manualIds = manualIds - faceIds.toSet()
+                // fotka ostane, ak na nej osoba má ešte inú (neodmietnutú) tvár
+                loadedFaces = loadedFaces.filter { f -> f.id?.let { !rejected.contains(it) } ?: true }
+                manualIds = manualIds - rejected
                 toast(R.string.person_saved)
                 render()
             }
@@ -407,5 +498,7 @@ class PersonActivity : SimpleActivity() {
         const val FACE_IDS = "face_ids"
         const val MANUAL_IDS = "manual_ids"
         private const val COLUMNS = 3
+        private const val ROW_TEXT_SP = 16f
+        private const val FACE_THUMB_DP = 64f
     }
 }

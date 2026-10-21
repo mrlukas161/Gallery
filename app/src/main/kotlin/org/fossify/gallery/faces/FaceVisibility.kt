@@ -1,6 +1,8 @@
 package org.fossify.gallery.faces
 
 import android.content.Context
+import org.fossify.commons.extensions.getParentPath
+import org.fossify.gallery.extensions.config
 import java.io.File
 
 // Ktoré tváre sa smú UKÁZAŤ v UI osôb (Ľudia, Osoba, Označiť osoby / Návrhy). Skrytá je tvár, ktorej
@@ -14,6 +16,7 @@ import java.io.File
 class FaceVisibility(context: Context) {
     private val appContext = context.applicationContext
     private val byPath = HashMap<String, Boolean>()
+    private val lockedByFolder = HashMap<String, Boolean>()
 
     // IndexScope nie je thread-safe — používa sa len pod zámkom tejto inštancie
     private var scope: IndexScope? = null
@@ -31,19 +34,23 @@ class FaceVisibility(context: Context) {
 
     fun filterFaces(faces: List<FaceEntity>): List<FaceEntity> = faces.filter { isVisible(it.mediaFullPath) }
 
-    // Osoba ukáže len viditeľné tváre (aj počet a titulná tvár sa rátajú z nich). Osoba, ktorej tváre
-    // boli všetky skryté, z výsledku vypadne — v people.db ostáva. Osoba, ktorá tváre nemala ani
-    // predtým (napr. len so vzormi z Picasy), sa správa ako doteraz.
-    fun filterPersons(persons: List<Person>): List<Person> = persons.mapNotNull { person ->
-        val visible = filterFaces(person.faces)
-        when {
-            visible.size == person.faces.size -> person
-            visible.isEmpty() -> null
-            else -> {
-                val visibleIds = visible.mapNotNullTo(HashSet()) { it.id }
-                person.copy(faces = visible, manualFaceIds = person.manualFaceIds.intersect(visibleIds))
-            }
+    // Zamknutý priečinok (PIN/heslo) — tá istá podmienka ako v IndexScope. Pri chybe čítania nastavení
+    // sa berie ako zamknutý (súkromie má prednosť).
+    @Synchronized
+    fun isLocked(path: String): Boolean = lockedByFolder.getOrPut(path.getParentPath()) {
+        try {
+            appContext.config.isFolderProtected(path.getParentPath())
+        } catch (ignored: RuntimeException) {
+            true
         }
+    }
+
+    // Osoba ukáže len viditeľné tváre (aj počet a titulná tvár sa rátajú z nich). Osoba, ktorej tváre
+    // boli všetky skryté, ostane sivo so značkou photosMissing („fotky sa nenašli") — okrem osoby so
+    // zamknutými fotkami, tá sa kvôli súkromiu neukáže (PersonGrouper.visiblePerson). V people.db ostáva.
+    // Osoba, ktorá tváre nemala ani predtým (napr. len so vzormi z Picasy), sa správa ako doteraz.
+    fun filterPersons(persons: List<Person>): List<Person> = persons.mapNotNull { person ->
+        PersonGrouper.visiblePerson(person, ::isVisible, ::isLocked)
     }
 
     // obrazovka sama zmazala/presunula/premenovala tieto fotky — nanovo ich zistiť pri ďalšom načítaní
