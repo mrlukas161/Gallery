@@ -38,14 +38,12 @@ data class StoredBox(val left: Int, val top: Int, val right: Int, val bottom: In
 
 // Rozhodovanie F4 (BundleBuilder, BundleReceiver, FamilyInbox). Čistá logika bez Androidu (BundleRulesTest).
 object BundleRules {
-    // Tváre detegované od tohto času (detected_at) sú vždy v upright priestore: UprightDecoder používa
+    // Posledná záloha (D3, FaceSpaceRules.resolve). Tváre detegované od tohto času (detected_at) sú v upright
+    // priestore: UprightDecoder používa
     // FaceIndexer od 0.47.0 (commit 9b8ca33, 30.7.2026) a RefreshFaces nové tváre vkladá tiež upright.
     // Mesiac rezervy na neskoršiu aktualizáciu appky. Pozor: RefreshFaces pri oprave rámčeka na mieste
     // detected_at NEMENÍ, preto starší detected_at sám o sebe nič nedokazuje (rozhodne až veľkosť rámčeka).
     const val UPRIGHT_SINCE_MS = 1_788_134_400_000L // 31.8.2026 00:00 UTC
-
-    // rámček môže pri nedeliteľných rozmeroch presahovať o 1 px (RelBox.decodedUprightSize)
-    private const val EDGE_TOLERANCE = 1
 
     // balík bez súboru čaká na fotku najviac 30 dní; záloha (pHash) skúša fotky so súborom ± 14 dní od príjmu
     const val WAIT_EXPIRY_MS = 30L * 24 * 60 * 60 * 1000
@@ -82,33 +80,24 @@ object BundleRules {
         bundle.faces != null && bundle.faceModelId == localFaceModel && !have.faces
 
     // Relatívne upright rámčeky tvárí jednej fotky (rawWidth × rawHeight z hlavičky súboru, EXIF transformácia),
-    // alebo null, keď priestor aspoň jedného rámčeka nejde určiť (spec 2.3: také tváre sa neposielajú celé,
-    // prijímateľ si fotku spracuje sám). Neotočená fotka: rámček je jednoznačný. Otočená: upright, keď
-    // detected_at ≥ UPRIGHT_SINCE_MS; inak rozhodne veľkosť — rámček, ktorý sa zmestí len do jedného z
-    // priestorov, patrí doň (surový sa prepočíta do upright), a ak sa zmestí do oboch, je nejasný.
+    // alebo null, keď priestor aspoň jedného rámčeka nejde určiť. Pravidlo je rovnaké ako pre op-log
+    // (FamilyFaces.refFor): FaceSpaceRules.resolve — overenie odtlačkom (cached/verify podľa indexu tváre),
+    // geometria, dátum ako posledná záloha. V op-logu sa nejasná tvár vynechá sama; v balíku k fotke by
+    // vynechaná tvár u prijímateľa chýbala navždy (fotka sa označí ako spracovaná), preto sa vtedy neposielajú
+    // tváre fotky vôbec a prijímateľ si ju spracuje sám (mená prídu cez op-log).
     fun uprightBoxes(
         faces: List<StoredBox>,
         rawWidth: Int,
         rawHeight: Int,
         transform: RelBox.Transform,
+        cached: (Int) -> BoxSpace? = { null },
+        verify: ((Int) -> BoxSpace?)? = null,
     ): List<RelBox>? {
         if (rawWidth <= 0 || rawHeight <= 0) return null
-        val max = FaceMatch.DECODE_MAX_SIZE
-        val rotated = Math.floorMod(transform.rotationDegrees, FULL_TURN) != 0 || transform.mirrored
-        val upright = RelBox.decodedUprightSize(rawWidth, rawHeight, max, transform.rotationDegrees)
-        val raw = RelBox.decodedUprightSize(rawWidth, rawHeight, max, 0)
-        return faces.map { f ->
-            val asUpright = RelBox.fromAbsolute(f.left, f.top, f.right, f.bottom, upright[0], upright[1])
-            if (!rotated || f.detectedAt >= UPRIGHT_SINCE_MS) return@map asUpright
-            val fitsUpright = fits(f, upright)
-            val fitsRaw = fits(f, raw)
-            when {
-                fitsUpright && !fitsRaw -> asUpright
-                fitsRaw && !fitsUpright -> RelBox.fromAbsolute(f.left, f.top, f.right, f.bottom, raw[0], raw[1])
-                    .transformed(transform.rotationDegrees, transform.mirrored)
-
-                else -> return null
-            }
+        return faces.mapIndexed { i, f ->
+            val now = verify?.let { v -> { v(i) } }
+            val space = FaceSpaceRules.resolve(f, rawWidth, rawHeight, transform, cached(i), now)
+            FaceSpaceRules.relBox(f, rawWidth, rawHeight, transform, space) ?: return null
         }
     }
 
@@ -144,9 +133,4 @@ object BundleRules {
         abs(fileMtimeMs - receivedAtMs) <= FUZZY_WINDOW_MS
 
     fun isExpired(receivedAtMs: Long, nowMs: Long): Boolean = nowMs - receivedAtMs > WAIT_EXPIRY_MS
-
-    private const val FULL_TURN = 360
-
-    private fun fits(f: StoredBox, size: IntArray): Boolean =
-        f.right <= size[0] + EDGE_TOLERANCE && f.bottom <= size[1] + EDGE_TOLERANCE
 }

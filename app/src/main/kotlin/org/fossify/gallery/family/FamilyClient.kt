@@ -18,7 +18,8 @@ class FamilyClient(context: Context) {
     private val sync = OpExchange(db)
     private val locator = FamilyLocator(appContext, store.prefs)
 
-    enum class Status { OK, UNREACHABLE, REJECTED, UNPAIRED, ERROR }
+    // NEEDS_PAIRING = spárovaný telefón nemá kľúč (po obnove zálohy Androidu), treba ho znova spárovať
+    enum class Status { OK, UNREACHABLE, REJECTED, UNPAIRED, ERROR, NEEDS_PAIRING }
 
     class PairOutcome(val status: Status, val peerName: String? = null)
 
@@ -61,7 +62,8 @@ class FamilyClient(context: Context) {
 
     // timeoutMs = najdlhšie hľadanie telefónu cez NSD (samotný prenos má vlastné časové limity)
     fun sync(peer: PeerEntity, timeoutMs: Long = DEFAULT_TIMEOUT_MS): SyncResult {
-        val key = store.pairKey(peer.deviceId) ?: return SyncResult(peer.deviceId, Status.ERROR)
+        // bez kľúča (obnova zálohy Androidu) sa telefón preskočí bez chyby; párovacia obrazovka ho označí
+        val key = store.pairKey(peer.deviceId) ?: return SyncResult(peer.deviceId, Status.NEEDS_PAIRING)
         val handshake = ClientHandshake(key, store.selfId(), peer.deviceId)
         val hello = JSONObject()
             .put("v", OpExchange.VERSION)
@@ -77,8 +79,11 @@ class FamilyClient(context: Context) {
             return SyncResult(peer.deviceId, Status.UNPAIRED)
         }
         val counters = Counters()
+        val serverHave = response.optLong("have", 0)
+        // D1: po obnove staršej family.db by nové opy mali lamport ≤ have servera a nikdy by neodišli
+        sync.raiseClock(serverHave)
         return try {
-            val ok = exchangeOps(peer, link, response.optLong("have", 0), counters) &&
+            val ok = exchangeOps(peer, link, serverHave, counters) &&
                 sendOutbox(peer, link, counters) &&
                 finish(peer, link)
             val status = if (ok) Status.OK else Status.REJECTED

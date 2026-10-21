@@ -20,6 +20,7 @@ class OpApplierTest {
         val proposals = ArrayList<Proposal>()
         val ops = LinkedHashMap<String, LoggedOp>()
         val applied = HashSet<String>()
+        val waitKeys = HashMap<String, String?>()
         private var nextId = 100L
 
         fun person(name: String?, uuid: String? = null): Long {
@@ -59,6 +60,10 @@ class OpApplierTest {
             applied.add(opId)
         }
 
+        override fun deferred(op: LoggedOp, waitKey: String?) {
+            waitKeys[op.opId] = waitKey
+        }
+
         override fun execute(action: ApplyAction, op: LoggedOp) {
             when (action) {
                 is ApplyAction.CreatePerson -> person(action.name, action.uuid)
@@ -72,8 +77,10 @@ class OpApplierTest {
                 is ApplyAction.CreateGroup -> groups[action.name] = action.members.toMutableSet()
                 is ApplyAction.AddGroupMembers -> groups.getValue(action.name).addAll(action.members)
                 is ApplyAction.RenameGroup -> groups[action.newName] = groups.remove(action.oldName)!!
-                is ApplyAction.AddAnchors ->
-                    anchorsBySource.getOrPut(action.localId to action.source) { ArrayList() }.addAll(action.vectors)
+                is ApplyAction.ReplaceAnchors -> {
+                    action.clearSources.forEach { anchorsBySource.remove(action.localId to it) }
+                    anchorsBySource[action.localId to action.source] = action.vectors.toMutableList()
+                }
 
                 is ApplyAction.Propose -> proposals.add(action.proposal)
             }
@@ -147,19 +154,31 @@ class OpApplierTest {
         receive(op(AnchorsSet("u1", MODEL, vectors)))
         val stored = world.anchorsBySource[p to "family:$PEER"].orEmpty()
         assertEquals(AnchorsSet.MAX_ANCHORS, stored.size)
-        // opakovaný balík s tými istými vektormi nič nepridá
-        val r = receive(op(AnchorsSet("u1", MODEL, vectors.take(3))))
+        // opakovaná rovnaká sada nič nezmení
+        val r = receive(op(AnchorsSet("u1", MODEL, vectors)))
         assertEquals(1, r.skipped)
         assertEquals(AnchorsSet.MAX_ANCHORS, world.anchorsBySource[p to "family:$PEER"]!!.size)
     }
 
     @Test
-    fun anchorsOfOtherFaceModelAreDropped() {
+    fun newAnchorSetReplacesOldOneOfSameSource() {
+        val p = world.person("Mama", "u1")
+        receive(op(AnchorsSet("u1", MODEL, (0 until 10).map { floatArrayOf(it.toFloat(), 1f) })))
+        // D7: novšia sada (napr. po oprave chybného priradenia) nahradí starú, nepridá sa k nej
+        receive(op(AnchorsSet("u1", MODEL, listOf(floatArrayOf(7f, 1f), floatArrayOf(9f, 9f)))))
+        val stored = world.anchorsBySource[p to "family:$PEER"].orEmpty()
+        assertEquals(listOf(listOf(7f, 1f), listOf(9f, 9f)), stored.map { it.toList() })
+    }
+
+    @Test
+    fun anchorsOfOtherFaceModelWaitForSameModel() {
         world.person("Mama", "u1")
         val r = receive(op(AnchorsSet("u1", "iny-model", listOf(floatArrayOf(1f, 0f)))))
-        assertEquals(1, r.skipped)
+        // D9: neodhadzuje sa, počká na rovnaký model (napr. kým sa aktualizuje druhý telefón)
+        assertEquals(1, r.deferred)
         assertTrue(world.anchorsBySource.isEmpty())
-        assertTrue(world.applied.isNotEmpty()) // zahodená = spracovaná, neodkladá sa
+        assertTrue(world.applied.isEmpty())
+        assertEquals("model:iny-model", world.waitKeys.values.single())
     }
 
     @Test
@@ -323,6 +342,8 @@ class OpApplierTest {
         val assign = op(AssignFace(ref("k1"), "u1", manual = false))
         val unassign = op(UnassignFace(ref("k1"), "u1"))
         assertEquals(2, receive(assign, unassign).deferred)
+        // D9: obe čakajú na obsahový kľúč fotky
+        assertEquals(setOf<String?>("k1"), world.waitKeys.values.toSet())
         world.faces["k1"] = 1L // fotka dorazila (F4)
         val r = receive()
         assertEquals(2, r.applied)

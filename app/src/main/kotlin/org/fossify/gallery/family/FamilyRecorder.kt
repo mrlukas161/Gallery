@@ -4,6 +4,7 @@ import android.content.Context
 import org.fossify.gallery.faces.ExtrasDatabase
 import org.fossify.gallery.faces.FacesDatabase
 import org.fossify.gallery.faces.PeopleDatabase
+import java.io.Closeable
 import java.util.UUID
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
@@ -51,8 +52,7 @@ object FamilyRecorder {
         try {
             worker.execute {
                 try {
-                    val recorder = OpRecorder(app)
-                    if (recorder.hasPeers()) block(recorder)
+                    OpRecorder(app).use { recorder -> if (recorder.hasPeers()) block(recorder) }
                 } catch (ignored: Throwable) {
                     // rodinné prepojenie je vedľajšie — pôvodná akcia už prebehla
                 }
@@ -63,17 +63,27 @@ object FamilyRecorder {
 }
 
 // Zápis vlastných operácií do op-logu. Volá sa len z pozadia (FamilyRecorder, FamilySync, návrhy).
-class OpRecorder(context: Context, private val clock: () -> Long = System::currentTimeMillis) {
+// Po použití close(): pri tvárach na otočených fotkách sa priestor rámčeka overuje odtlačkom (D3, modely tvárí).
+@Suppress("TooManyFunctions")
+class OpRecorder(context: Context, private val clock: () -> Long = System::currentTimeMillis) : Closeable {
     private val app = context.applicationContext
     private val family = FamilyDatabase.getInstance(app)
     private val people = PeopleDatabase.getInstance(app).PeopleDao()
     private val extras = ExtrasDatabase.getInstance(app).ExtrasDao()
     private val faceDao = FacesDatabase.getInstance(app).FaceDao()
     private val familyPersons = family.familyPersonDao()
-    private val faces by lazy { FamilyFaces(app, faceDao, ContentKeyStore(family.contentKeyDao())) }
+    private var verifier: FaceSpaceVerifier? = null
+    private val faces by lazy {
+        val v = FaceSpaceVerifier(app).also { verifier = it }
+        FamilyFaces(app, faceDao, ContentKeyStore(family.contentKeyDao()), family.faceSpaceDao(), verifier = v)
+    }
     val anchors by lazy { AnchorOutbox(app, this) }
 
     fun hasPeers(): Boolean = family.peerDao().getPeers().isNotEmpty()
+
+    override fun close() {
+        verifier?.close()
+    }
 
     // Zapíše vlastnú operáciu: nové opId, ďalšia lamport hodnota, vlastné deviceId; je hneď aplikovaná.
     fun append(op: Op): LoggedOp {
@@ -97,6 +107,7 @@ class OpRecorder(context: Context, private val clock: () -> Long = System::curre
         uuid
     }
 
+    // aj rozhodnutie o návrhu premenovania (D8: FamilyProposals), aby obe strany došli k rovnakému menu
     fun personRenamed(localId: Long, oldName: String?, newName: String) {
         val uuid = existingUuid(localId)
         if (uuid == null) {

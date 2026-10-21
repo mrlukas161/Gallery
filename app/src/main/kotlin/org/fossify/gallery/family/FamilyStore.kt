@@ -6,6 +6,7 @@ import android.provider.Settings
 
 // Spárované telefóny a ich kľúče: jediné miesto, kde sa spolu menia riadok v `peers` (family.db)
 // a zabalený kľúč (FamilyKeys). Volať len na pozadí (Room, Keystore).
+@Suppress("TooManyFunctions")
 class FamilyStore(context: Context) {
     private val appContext = context.applicationContext
     private val db = FamilyDatabase.getInstance(appContext)
@@ -31,6 +32,10 @@ class FamilyStore(context: Context) {
         if (peer(deviceId) == null && !prefs.isPendingUnpair(deviceId)) return null
         return keys.load(peer(deviceId)?.keyAlias ?: FamilyKeys.aliasFor(deviceId))
     }
+
+    // Spárovaný telefón bez kľúča páru (záloha Androidu kľúče vynecháva, Keystore sa neobnovuje): riadok
+    // v family.db prežil obnovu, kľúč nie. Taký telefón treba znova spárovať; synchronizácia ho preskočí.
+    fun needsRepairing(deviceId: String): Boolean = peer(deviceId) != null && pairKey(deviceId) == null
 
     // uloží výsledok párovania; false = kľúč sa nepodarilo uložiť (prepojenie nevznikne)
     fun savePairing(result: PairingProtocol.Result): Boolean {

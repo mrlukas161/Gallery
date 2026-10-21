@@ -36,6 +36,18 @@ class BundleBuilder(context: Context) {
     }
     private val ignored by lazy { ExtrasDatabase.getInstance(app).ExtrasDao().getIgnoredIds().toHashSet() }
 
+    // D9: CLIP vektory prijaté z rodiny v inom modeli → clip.db je zmiešaná, CLIP sa neposiela
+    private val clipSendable by lazy {
+        FamilyModels.canSendClip(safe { family.metaDao().get(BundleApplier.KEY_CLIP_MODEL) })
+    }
+
+    // D3: overenie priestoru rámčekov odtlačkom pri odosielaní (len otočené fotky s nejasným priestorom)
+    private val verifier by lazy { FaceSpaceVerifier(app) }
+    private var verifierUsed = false
+    private val familyFaces by lazy {
+        FamilyFaces(app, faceDao, keys, family.faceSpaceDao(), verifier = verifier.also { verifierUsed = true })
+    }
+
     // Spec 2.5: zamknuté/vylúčené priečinky, kôš a skryté súbory sa neposielajú nikdy, ani ich výsledky.
     fun isAllowed(path: String): Boolean =
         BundleRules.isSendablePath(path, safe { app.recycleBinPath }) && scope.allows(path)
@@ -75,10 +87,12 @@ class BundleBuilder(context: Context) {
         if (stored.isEmpty()) return if (path in processedFaces) emptyList() else null
         val geometry = readPhotoGeometry(path) ?: return null
         val boxes = BundleRules.uprightBoxes(
-            stored.map { StoredBox(it.bboxLeft, it.bboxTop, it.bboxRight, it.bboxBottom, it.detectedAt) },
+            stored.map { storedBox(it) },
             geometry.rawWidth,
             geometry.rawHeight,
             geometry.transform,
+            cached = { familyFaces.cachedSpace(stored[it]) },
+            verify = { familyFaces.verifyNow(stored[it], geometry) },
         ) ?: return null
         val persons = family.familyPersonDao()
         return stored.zip(boxes) { face, box -> bundleFace(face, box, persons) }
@@ -103,11 +117,17 @@ class BundleBuilder(context: Context) {
     }
 
     private fun clip(path: String): BundleClip? {
+        if (!clipSendable) return null
         val row = safe { ClipDatabase.getInstance(app).ClipDao().getByPath(path) } ?: return null
         return BundleClip(FamilyModels.CLIP_MODEL_ID, FamilyBytes.b64(row.embedding))
     }
 
     private fun takenAt(path: String): Long? = safe { exifTakenAt(path) }
+
+    // uvoľní modely tvárí (ak sa overovalo); builder sa potom už nepoužíva
+    fun close() {
+        if (verifierUsed) verifier.close()
+    }
 
     // jedna chýbajúca časť (poškodená DB, nečitateľný súbor) nesmie zhodiť celý balík
     @Suppress("TooGenericExceptionCaught")

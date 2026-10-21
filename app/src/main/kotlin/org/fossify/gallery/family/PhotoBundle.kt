@@ -48,6 +48,20 @@ object FamilyModels {
     // clip.db neeviduje model pri vektore. Appka má jediný CLIP priestor: ViT-B/32 (OpenAI) 512-dim
     // (kvantovaná aj pôvodná verzia z ClipModels dávajú ten istý priestor). Pri zmene modelu zmeň aj toto id.
     const val CLIP_MODEL_ID = "clip-vit-b32-openai-512"
+
+    // D9: model CLIP vektorov prijatých z rodiny (meta BundleApplier.KEY_CLIP_MODEL). clip.db model pri vektore
+    // neeviduje, preto ak sa tu niekedy zmiešali vektory dvoch modelov, ostane značka MIXED.
+    const val CLIP_MIXED = "mixed"
+
+    fun mergeClipModel(stored: String?, incoming: String): String = when (stored) {
+        null, incoming -> incoming
+        else -> CLIP_MIXED
+    }
+
+    // CLIP vektory tohto telefónu sa smú poslať ďalej len vtedy, keď sú všetky v aktuálnom modeli appky
+    // (prijaté vektory iného modelu by sa inak poslali označené ako CLIP_MODEL_ID)
+    fun canSendClip(storedForeignModel: String?): Boolean =
+        storedForeignModel == null || storedForeignModel == CLIP_MODEL_ID
 }
 
 // JSON formát balíka. Je súčasťou prenosu medzi telefónmi: kľúče len pridávať, nikdy nepremenovať.

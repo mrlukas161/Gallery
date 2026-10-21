@@ -20,7 +20,14 @@ object FamilyInbox {
     const val CLIP = "clip"
     const val QR = "qr"
 
-    private class Waiting(val id: String, val bundle: PhotoBundle, val receivedAt: Long)
+    private class Waiting(val id: String, val fromDeviceId: String, val bundle: PhotoBundle, val receivedAt: Long) {
+        val match = InboxMatcher.Waiting(
+            id,
+            bundle.contentKey,
+            bundle.phash?.let { FuzzyMatch.Fingerprint(it, bundle.takenAtMs) },
+            receivedAt,
+        )
+    }
 
     // null = ešte nenačítané z family.db
     @Volatile
@@ -73,7 +80,7 @@ object FamilyInbox {
                 dao.finishBundle(row.id, BundleInboxEntity.STATE_EXPIRED, null, "")
                 return@mapNotNull null
             }
-            PhotoBundleCodec.decode(row.payloadJson)?.let { Waiting(row.id, it, row.receivedAt) }
+            PhotoBundleCodec.decode(row.payloadJson)?.let { Waiting(row.id, row.fromDeviceId, it, row.receivedAt) }
         }
         waiting = list
         list
@@ -86,15 +93,31 @@ object FamilyInbox {
         if (checked[path] == stamp) return emptySet()
         val app = context.applicationContext
         val key = ContentKeyStore(FamilyDatabase.getInstance(app).contentKeyDao()).keyFor(path)
-        var found = list.firstOrNull { it.bundle.contentKey == key }
-            ?.let { it to LocalPhotoFinder.Found(path, BundleMatch.EXACT) }
-        if (found == null && path.isImageFast()) found = fuzzy(app, path, file.lastModified(), list)
-        if (found == null) {
+        val finder = LocalPhotoFinder(app)
+        // pHash sa počíta, len keď sa presná zhoda nenájde a čaká balík z podobného obdobia
+        val local by lazy { if (path.isImageFast()) finder.fingerprint(path) else null }
+        // D5: logika párovania (presná zhoda, záloha, séria bez EXIF) je v InboxMatcher
+        val choice = InboxMatcher.choose(
+            key,
+            { local },
+            file.lastModified(),
+            list.map { it.match },
+        ) { finder.recentFingerprints(exclude = path) }
+        val entry = choice?.let { c -> list.firstOrNull { it.id == c.id } }
+        if (choice == null || entry == null) {
             checked[path] = stamp
             return emptySet()
         }
-        val (entry, match) = found
-        val wrote = BundleApplier(app).apply(path, entry.bundle, match.match, match.localPhash)
+        val localPhash = if (choice.match == BundleMatch.FUZZY) local?.phash else null
+        val wrote = BundleApplier(app).apply(
+            path,
+            entry.bundle,
+            choice.match,
+            localPhash,
+            names = choice.names,
+            fromDeviceId = entry.fromDeviceId,
+            inboxId = entry.id,
+        )
         FamilyDatabase.getInstance(app).bundleInboxDao()
             .finishBundle(entry.id, BundleInboxEntity.STATE_APPLIED, path, "")
         waiting = list - entry
@@ -102,23 +125,6 @@ object FamilyInbox {
         // čakajúce priradenia z op-logu (F3); cez zámok synchronizácie, aby neboli dve aplikovania naraz
         FamilyAutoSync.retryPendingIfDue(app)
         parts
-    }
-
-    private fun fuzzy(
-        context: Context,
-        path: String,
-        mtime: Long,
-        list: List<Waiting>,
-    ): Pair<Waiting, LocalPhotoFinder.Found>? {
-        val near = list.filter { it.bundle.phash != null && BundleRules.inFuzzyWindow(mtime, it.receivedAt) }
-        if (near.isEmpty()) return null
-        val local = LocalPhotoFinder(context).fingerprint(path) ?: return null
-        val candidates = near.associateBy({ it.id }) {
-            FuzzyMatch.Fingerprint(it.bundle.phash ?: 0L, it.bundle.takenAtMs)
-        }
-        val bestId = FuzzyMatch.findBest(local, candidates) ?: return null
-        val entry = near.first { it.id == bestId }
-        return entry to LocalPhotoFinder.Found(path, BundleMatch.FUZZY, local.phash)
     }
 
     private fun partsOf(plan: TakePlan): Set<String> = buildSet {

@@ -17,6 +17,7 @@ import java.io.File
 //   val report = sync.receive(theirOps)                      // ich zmeny: potichu / návrh / počká
 //   peerDao.markPeerSeen(peer.deviceId, now, maxOf(peer.lastLamportSeen, theirOps.maxOf { it.lamport }))
 // Prenáša sa OpEntity tak, ako je (opId, deviceId, lamport, type, payloadJson); appliedAt sa neposiela.
+@Suppress("TooManyFunctions")
 class FamilySync(context: Context) {
     private val app = context.applicationContext
     private val family = FamilyDatabase.getInstance(app)
@@ -60,9 +61,11 @@ class FamilySync(context: Context) {
     }
 
     // Znova skúsi odložené operácie (napr. po prijatí fotky v F4 alebo po rozhodnutí o návrhu).
+    // D9: operácie s tvárou čakajú na obsahový kľúč svojej fotky; kľúče knižnice sa preto prepočítajú (lenivo,
+    // potom z cache) len vtedy, keď niečo na fotku čaká.
     fun retryPending(): ApplyReport {
         val local = FamilyLocal(app)
-        if (local.store.pending().any { it.op is AssignFace || it.op is UnassignFace }) prepareFaceKeys()
+        if (family.opDao().countFaceOpsWaiting() > 0) prepareFaceKeys()
         return OpApplier(local.ownDeviceId, FaceEmbedder.MODEL_ID)
             .process(emptyList(), local.store, local.state, local.sink)
     }
@@ -72,7 +75,11 @@ class FamilySync(context: Context) {
     fun snapshotIfNeeded(): Boolean {
         val meta = family.metaDao()
         if (meta.get(KEY_SNAPSHOT_DONE) != null) return false
-        val recorder = OpRecorder(app)
+        return OpRecorder(app).use { snapshot(it) }
+    }
+
+    private fun snapshot(recorder: OpRecorder): Boolean {
+        val meta = family.metaDao()
         if (!recorder.hasPeers()) return false
         val people = PeopleDatabase.getInstance(app).PeopleDao()
         val persons = people.getPersons()
@@ -87,7 +94,7 @@ class FamilySync(context: Context) {
     }
 
     // čakajú v op-logu operácie, ktoré ešte nemohli prebehnúť (napr. z obnovy zálohy, kým chýbajú fotky)?
-    fun hasPendingOps(): Boolean = family.opDao().countUnappliedOps() > 0
+    fun hasPendingOps(): Boolean = family.opDao().countPendingOps(OpApplier.modelWait(FaceEmbedder.MODEL_ID)) > 0
 
     fun openProposalCount(): Int = family.proposalDao().countProposals(ProposalEntity.STATE_OPEN)
 

@@ -65,7 +65,12 @@ object FamilyAutoSync {
             FamilyServer.acquire(app, owner)
             try {
                 val results = FamilyClient(app).syncAll(timeoutMs)
-                val done = setOf(FamilyClient.Status.OK, FamilyClient.Status.UNPAIRED)
+                // telefón bez kľúča (treba znova spárovať) nie je chyba synchronizácie, len sa preskočí
+                val done = setOf(
+                    FamilyClient.Status.OK,
+                    FamilyClient.Status.UNPAIRED,
+                    FamilyClient.Status.NEEDS_PAIRING,
+                )
                 results.all { it.status in done } && FamilyStore(app).prefs.pendingUnpairs().isEmpty()
             } finally {
                 FamilyServer.release(owner)

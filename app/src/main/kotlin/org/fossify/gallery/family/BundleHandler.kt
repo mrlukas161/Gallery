@@ -36,12 +36,21 @@ class BundleHandler(context: Context) : FamilyHandler {
 
     override fun onSyncFinished(peer: PeerEntity) {
         FamilySend.onSynced(app, peer)
+        releaseBuilder()
+    }
+
+    // modely tvárí (D3 overenie) sa po odoslaní fronty uvoľnia
+    @Synchronized
+    private fun releaseBuilder() {
+        builder?.close()
+        builder = null
     }
 
     @Synchronized
     private fun builder(): BundleBuilder {
         val now = System.currentTimeMillis()
         val current = builder?.takeIf { now - builderAt < BUILDER_TTL_MS }
+        if (current == null) builder?.close()
         return current ?: BundleBuilder(app).also {
             builder = it
             builderAt = now

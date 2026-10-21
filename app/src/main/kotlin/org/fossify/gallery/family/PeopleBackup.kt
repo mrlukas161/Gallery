@@ -54,7 +54,10 @@ class PeopleBackup(context: Context) {
         val uuids = persons.associate { it.id to recorder.uuidFor(it.id) }
 
         // ručné priradenia (tváre zo zamknutých a vylúčených priečinkov sa nezálohujú, spec 2.5)
-        val faces = FamilyFaces(app, faceDao, ContentKeyStore(family.contentKeyDao()))
+        // D2/D3: nejasná tvár (priestor rámčeka sa nedá overiť ani odtlačkom) sa vynechá sama
+        val verifier = FaceSpaceVerifier(app)
+        val keys = ContentKeyStore(family.contentKeyDao())
+        val faces = FamilyFaces(app, faceDao, keys, family.faceSpaceDao(), verifier = verifier)
         val assignments = people.getAssignments().filter { it.personId in uuids }
         val manual = assignments.filter { it.isManual }
         val refs = links(faceDao, faces, manual.map { it.faceId to it.personId }, uuids)
@@ -68,6 +71,7 @@ class PeopleBackup(context: Context) {
         val ignored = facesByIds(faceDao, ignoredIds).mapNotNull { faces.refFor(it) }
         val omitted = (assignments.size - refs.size - auto.size) + (cannotSource.size - cannot.size) +
             (ignoredIds.size - ignored.size)
+        verifier.close()
 
         val groups = extras.getGroups().map { g ->
             PeopleBackupFormat.SnapGroup(g.name, extras.getMembers(g.id).mapNotNull { uuids[it] })
@@ -150,13 +154,15 @@ class PeopleBackup(context: Context) {
             // tváre sa hľadajú podľa obsahového kľúča fotky (lenivo, potom z cache)
             sync.prepareFaceKeys()
             val local = FamilyLocal(app)
-            PeopleRestore.restore(
+            val report = PeopleRestore.restore(
                 backup,
                 OpApplier(local.ownDeviceId, FaceEmbedder.MODEL_ID),
                 local.store,
                 local.state,
                 local.sink,
             )
+            afterRestore(backup, local)
+            report
         }
         val extras = try {
             restoreExtras(backup.extras)
@@ -200,6 +206,27 @@ class PeopleBackup(context: Context) {
             }
         }
         return report
+    }
+
+    // D10: obnovené osoby (a ich odtlačky, teraz vlastné) sa znova pošlú prepojeným telefónom. Osoby, ktoré
+    // obnova vytvorila, sa ohlásia (PersonCreate), aby ich druhý telefón poznal aj vtedy, keď záloha vznikla
+    // ešte pred spárovaním; ak ich už pozná, PersonCreate preskočí.
+    @Suppress("TooGenericExceptionCaught")
+    private fun afterRestore(backup: PeopleBackupFormat.Backup, local: FamilyLocal) {
+        try {
+            OpRecorder(app).use { recorder ->
+                val state = local.state
+                val ids = PeopleRestore.restoredUuids(PeopleRestore.logged(backup))
+                    .mapNotNull { state.localPersonId(it) }
+                val created = if (recorder.hasPeers()) local.sink.createdUuids else emptyList()
+                created.forEach { uuid ->
+                    recorder.append(PersonCreate(uuid, state.localPersonId(uuid)?.let(state::personName)))
+                }
+                recorder.anchors.markDirty(ids.distinct())
+            }
+        } catch (e: RuntimeException) {
+            android.util.Log.w(TAG, "označenie obnovených osôb zlyhalo", e)
+        }
     }
 
     private fun openOutput(uri: Uri) = try {

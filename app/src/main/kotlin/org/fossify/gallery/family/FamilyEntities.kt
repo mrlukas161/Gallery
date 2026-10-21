@@ -43,7 +43,11 @@ data class FamilyPersonEntity(
 )
 
 // Záznam op-logu. opId zaručí, že sa operácia aplikuje práve raz; appliedAt == null = ešte neaplikovaná.
-@Entity(tableName = "ops", indices = [Index(value = ["device_id", "lamport"])])
+// D9: odložená operácia s tvárou čaká na obsahový kľúč fotky (waitKey = contentKey) a skúsi sa znova, až keď
+// sa kľúč objaví (content_keys alebo prijatý balík); odtlačky iného modelu čakajú na „model:<id>“.
+// deferredAt = prvé odloženie; po 90 dňoch čakania na fotku sa operácia odloží nabok (parkedAt), nezmaže sa.
+// Prenáša sa len opId/lamport/type/payload (OpJson), tieto stĺpce sú lokálne.
+@Entity(tableName = "ops", indices = [Index(value = ["device_id", "lamport"]), Index("wait_key")])
 data class OpEntity(
     @PrimaryKey @ColumnInfo(name = "op_id") val opId: String,
     @ColumnInfo(name = "device_id") val deviceId: String,
@@ -51,6 +55,33 @@ data class OpEntity(
     @ColumnInfo(name = "type") val type: String,
     @ColumnInfo(name = "payload_json") val payloadJson: String,
     @ColumnInfo(name = "applied_at") val appliedAt: Long? = null,
+    @ColumnInfo(name = "wait_key") val waitKey: String? = null,
+    @ColumnInfo(name = "deferred_at") val deferredAt: Long? = null,
+    @ColumnInfo(name = "parked_at") val parkedAt: Long? = null,
+)
+
+// D3: overený priestor uloženého rámčeka tváre (faces.db) na otočenej fotke. space = BoxSpace.code
+// (upright/raw/broken), modelId = FaceEmbedder.MODEL_ID, s ktorým sa overovalo (iný model = overiť znova),
+// stamp = odtlačok rámčeka a uloženého vektora (zmena rámčeka alebo prepočet odtlačku = overiť znova).
+@Entity(tableName = "face_space")
+data class FaceSpaceEntity(
+    @PrimaryKey @ColumnInfo(name = "face_id") val faceId: Long,
+    @ColumnInfo(name = "space") val space: String,
+    @ColumnInfo(name = "model_id") val modelId: String,
+    @ColumnInfo(name = "verified_at") val verifiedAt: Long,
+    @ColumnInfo(name = "stamp") val stamp: Long = 0,
+)
+
+// D6: pôvod priradenia tváre, ktoré zapísal prepojený telefón (op-log alebo balík k fotke). personId a
+// updatedAt sú kópia FaceAssignmentEntity v čase zápisu: keď sa lokálne priradenie odvtedy zmenilo
+// (používateľ ho potvrdil, preradil, odobral), už nie je „cudzie“ a ráta sa ako vlastné.
+@Entity(tableName = "remote_assignment")
+data class RemoteAssignmentEntity(
+    @PrimaryKey @ColumnInfo(name = "face_id") val faceId: Long,
+    @ColumnInfo(name = "device_id") val deviceId: String,
+    @ColumnInfo(name = "op_id") val opId: String,
+    @ColumnInfo(name = "person_id") val personId: Long,
+    @ColumnInfo(name = "updated_at") val updatedAt: Long,
 )
 
 // Fronta na odoslanie (prežije reštart appky). kind = napr. "photo"/"bundle", refKey = cesta alebo contentKey.

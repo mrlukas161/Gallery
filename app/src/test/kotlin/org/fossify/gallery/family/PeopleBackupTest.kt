@@ -183,7 +183,11 @@ class PeopleBackupTest {
                 is ApplyAction.CreateGroup -> groups[action.name] = action.members.toMutableSet()
                 is ApplyAction.AddGroupMembers -> groups.getValue(action.name).addAll(action.members)
                 is ApplyAction.RenameGroup -> removed++
-                is ApplyAction.AddAnchors -> anchors.getOrPut(action.localId) { ArrayList() }.addAll(action.vectors)
+                is ApplyAction.ReplaceAnchors -> {
+                    // D10: odtlačky zo zálohy sú vlastné, nie „family:backup:…“
+                    assertEquals(OpApplier.RESTORED_ANCHOR_SOURCE, action.source)
+                    anchors[action.localId] = action.vectors.toMutableList()
+                }
                 is ApplyAction.Propose -> proposals.add(action.proposal)
             }
         }

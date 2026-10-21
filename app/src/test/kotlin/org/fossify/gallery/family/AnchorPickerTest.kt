@@ -24,10 +24,11 @@ class AnchorPickerTest {
 
     @Test
     fun pickPrefersDiverseFaces() {
-        // 50 takmer rovnakých záberov (uhol ~0) a 2 odlišné (uhol 1 a 2): oba odlišné musia byť vo výbere
+        // 50 takmer rovnakých záberov (uhol ~0) a 2 odlišné (uhol 0,6 a 1,1 — stále tá istá osoba, kosínus k typickej
+        // tvári nad prahom odľahlých): oba odlišné musia byť vo výbere
         val same = (0 until 50).map { unit(it / 10_000.0) }
-        val odd1 = unit(1.0)
-        val odd2 = unit(2.0)
+        val odd1 = unit(0.6)
+        val odd2 = unit(1.1)
         val picked = AnchorPicker.pick(same + odd1 + odd2, max = 3)
         assertTrue(picked.any { it.contentEquals(odd1) })
         assertTrue(picked.any { it.contentEquals(odd2) })

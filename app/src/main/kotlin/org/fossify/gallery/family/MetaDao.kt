@@ -34,4 +34,15 @@ abstract class MetaDao {
         put(MetaEntity(MetaEntity.KEY_LAMPORT, next.toString()))
         return next
     }
+
+    // D1: pri hello sa hodiny zdvihnú aspoň na „have“ druhej strany (najvyšší môj lamport, ktorý už má).
+    // Po obnove staršej family.db by inak nové operácie dostali lamport ≤ have a druhá strana by si ich
+    // nikdy nevypýtala. Vráti aktuálnu hodnotu hodín.
+    @Transaction
+    open fun raiseLamport(atLeast: Long): Long {
+        val current = get(MetaEntity.KEY_LAMPORT)?.toLongOrNull() ?: 0
+        val raised = LamportClock.afterHello(current, atLeast)
+        if (raised != current) put(MetaEntity(MetaEntity.KEY_LAMPORT, raised.toString()))
+        return raised
+    }
 }

@@ -90,6 +90,8 @@ class FamilyServer private constructor(
         sessions.entries.removeAll { now - it.value.lastUsed > SESSION_TTL_MS }
         sessions[peerId] = Session(hello.channel)
         peerDao.markPeerSeen(peerId, now, peer.lastLamportSeen)
+        // D1: „have“ klienta = môj najvyšší lamport, ktorý už má; vlastné hodiny aspoň naň (obnova staršej DB)
+        sync.raiseClock(request.optLong("have", 0))
         return hello.response(OpExchange.bytes(response.put("have", peer.lastLamportSeen)))
     }
 

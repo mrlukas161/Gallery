@@ -49,7 +49,14 @@ class BundleReceiver(context: Context) {
             ?: save(bundle, file)
             ?: return false
         parts.discard(peer, ref)
-        BundleApplier(app).apply(target.first, bundle, BundleMatch.EXACT, mediaStoreId = target.second)
+        BundleApplier(app).apply(
+            target.first,
+            bundle,
+            BundleMatch.EXACT,
+            mediaStoreId = target.second,
+            fromDeviceId = peer.deviceId,
+            inboxId = id,
+        )
         finish(peer, id, bundle, target.first)
         return true
     }
@@ -74,7 +81,15 @@ class BundleReceiver(context: Context) {
             )
             FamilyInbox.invalidate()
         } else {
-            BundleApplier(app).apply(found.path, bundle, found.match, found.localPhash)
+            BundleApplier(app).apply(
+                found.path,
+                bundle,
+                found.match,
+                found.localPhash,
+                names = found.names,
+                fromDeviceId = peer.deviceId,
+                inboxId = id,
+            )
             finish(peer, id, bundle, found.path)
         }
         return true

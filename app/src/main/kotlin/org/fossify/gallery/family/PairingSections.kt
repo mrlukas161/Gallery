@@ -102,12 +102,14 @@ internal class PairingPeersSection(private val activity: Activity, private val b
 
     fun load() {
         ensureBackgroundThread {
-            val peers = FamilyStore(activity.applicationContext).peers()
-            activity.runOnUiThread { if (!activity.isDestroyed) render(peers) }
+            val store = FamilyStore(activity.applicationContext)
+            val peers = store.peers()
+            val repair = peers.filter { store.needsRepairing(it.deviceId) }.mapTo(HashSet()) { it.deviceId }
+            activity.runOnUiThread { if (!activity.isDestroyed) render(peers, repair) }
         }
     }
 
-    private fun render(peers: List<PeerEntity>) {
+    private fun render(peers: List<PeerEntity>, repair: Set<String>) {
         val container = binding.pairingPeers
         container.removeAllViews()
         for (peer in peers) {
@@ -119,7 +121,11 @@ internal class PairingPeersSection(private val activity: Activity, private val b
             } else {
                 activity.getString(R.string.family_peer_never)
             }
-            row.familyPeerSummary.text = activity.getString(R.string.family_peer_summary, paired, seen)
+            row.familyPeerSummary.text = if (peer.deviceId in repair) {
+                activity.getString(R.string.d_family_peer_needs_pairing)
+            } else {
+                activity.getString(R.string.family_peer_summary, paired, seen)
+            }
             row.root.setOnClickListener { confirmUnpair(peer) }
             container.addView(row.root)
             activity.updateTextColors(row.root)
