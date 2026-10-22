@@ -25,7 +25,10 @@ class FaceDetectionHelper(context: Context) {
     data class DetectedFace(
         val left: Int, val top: Int, val right: Int, val bottom: Int, val score: Float,
         val eye1X: Float, val eye1Y: Float, val eye2X: Float, val eye2Y: Float, val hasEyes: Boolean,
-    )
+    ) {
+        // rámček ako [left, top, right, bottom] pre FaceSelect
+        fun box(): FloatArray = floatArrayOf(left.toFloat(), top.toFloat(), right.toFloat(), bottom.toFloat())
+    }
 
     fun detect(bitmap: Bitmap): List<DetectedFace> {
         val mpImage = BitmapImageBuilder(bitmap).build()

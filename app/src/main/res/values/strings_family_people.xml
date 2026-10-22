@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Stringy F3 (rodinné prepojenie: návrhy k osobám z druhého telefónu v Ľuďoch) -->
+<resources>
+    <!-- lišta v Ľuďoch; %1$d = počet návrhov, %2$s = názov telefónu (zadaný pri párovaní) -->
+    <plurals name="fp_banner">
+        <item quantity="one">Máš %1$d návrh z telefónu „%2$s“</item>
+        <item quantity="few">Máš %1$d návrhy z telefónu „%2$s“</item>
+        <item quantity="many">Máš %1$d návrhu z telefónu „%2$s“</item>
+        <item quantity="other">Máš %1$d návrhov z telefónu „%2$s“</item>
+    </plurals>
+    <!-- návrhy z viacerých telefónov naraz; %1$d = počet návrhov -->
+    <plurals name="fp_banner_many_phones">
+        <item quantity="one">Máš %1$d návrh z prepojených telefónov</item>
+        <item quantity="few">Máš %1$d návrhy z prepojených telefónov</item>
+        <item quantity="many">Máš %1$d návrhu z prepojených telefónov</item>
+        <item quantity="other">Máš %1$d návrhov z prepojených telefónov</item>
+    </plurals>
+    <!-- názov telefónu, ktorý už nie je prepojený -->
+    <string name="fp_unknown_phone">bývalý prepojený telefón</string>
+    <string name="fp_unnamed_person">osoba bez mena</string>
+
+    <string name="fp_list_title">Návrhy z prepojeného telefónu</string>
+    <string name="fp_empty">Žiadne návrhy — všetko je zladené</string>
+    <string name="fp_keep_all">Ponechať všetky</string>
+
+    <!-- texty návrhov; posledný parameter je vždy názov telefónu -->
+    <string name="fp_rename">Osobu „%1$s“ v telefóne „%3$s“ premenovali na „%2$s“.</string>
+    <string name="fp_same_name">V telefóne „%2$s“ pribudla osoba „%1$s“. Osobu s týmto menom už máš. Je to tá istá osoba?</string>
+    <string name="fp_merge">V telefóne „%3$s“ zlúčili osobu „%1$s“ do osoby „%2$s“.</string>
+    <string name="fp_face_move">V telefóne „%3$s“ presunuli tvár od osoby „%1$s“ k osobe „%2$s“.</string>
+    <string name="fp_face_remove">V telefóne „%2$s“ odobrali tvár osobe „%1$s“ („Toto nie je táto osoba“).</string>
+    <string name="fp_delete">V telefóne „%2$s“ odstránili osobu „%1$s“. Tu sa nič neodstráni, kým to nepotvrdíš.</string>
+
+    <!-- voľby pri návrhu -->
+    <string name="fp_take_theirs">Prevziať „%1$s“</string>
+    <string name="fp_keep_mine">Ponechať „%1$s“</string>
+    <string name="fp_merge_action">Zlúčiť</string>
+    <string name="fp_keep_separate">Ponechať oddelene</string>
+    <string name="fp_accept">Prijať</string>
+    <string name="fp_keep">Ponechať</string>
+    <string name="fp_delete_here">Odstrániť aj tu</string>
+</resources>

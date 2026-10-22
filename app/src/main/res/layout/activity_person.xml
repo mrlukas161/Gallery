@@ -20,22 +20,43 @@
 
     </org.fossify.commons.views.MyAppBarLayout>
 
-    <com.qtalk.recyclerviewfastscroller.RecyclerViewFastScroller
-        android:id="@+id/person_fastscroller"
+    <!-- C7: lišta sekcie „Potvrď“ (neisté tváre osoby) nad mriežkou v jednom stĺpci (vzor: activity_people) -->
+    <LinearLayout
+        android:id="@+id/person_content"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
+        android:orientation="vertical"
         app:layout_behavior="@string/appbar_scrolling_view_behavior">
 
-        <org.fossify.commons.views.MyRecyclerView
-            android:id="@+id/person_grid"
+        <org.fossify.commons.views.MyTextView
+            android:id="@+id/person_confirm_banner"
             android:layout_width="match_parent"
-            android:layout_height="match_parent"
-            android:clipToPadding="false"
-            android:padding="1dp"
-            android:scrollbars="none"
-            app:layoutManager="org.fossify.commons.views.MyGridLayoutManager"
-            app:spanCount="3" />
+            android:layout_height="wrap_content"
+            android:background="?attr/selectableItemBackground"
+            android:paddingStart="@dimen/activity_margin"
+            android:paddingTop="@dimen/medium_margin"
+            android:paddingEnd="@dimen/activity_margin"
+            android:paddingBottom="@dimen/medium_margin"
+            android:textSize="@dimen/bigger_text_size"
+            android:visibility="gone" />
 
-    </com.qtalk.recyclerviewfastscroller.RecyclerViewFastScroller>
+        <com.qtalk.recyclerviewfastscroller.RecyclerViewFastScroller
+            android:id="@+id/person_fastscroller"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1">
+
+            <org.fossify.commons.views.MyRecyclerView
+                android:id="@+id/person_grid"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:clipToPadding="false"
+                android:padding="1dp"
+                android:scrollbars="none"
+                app:layoutManager="org.fossify.commons.views.MyGridLayoutManager"
+                app:spanCount="3" />
+
+        </com.qtalk.recyclerviewfastscroller.RecyclerViewFastScroller>
+    </LinearLayout>
 
 </androidx.coordinatorlayout.widget.CoordinatorLayout>

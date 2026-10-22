@@ -4,7 +4,9 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Matrix
 import androidx.exifinterface.media.ExifInterface
+import org.fossify.gallery.family.RelBox
 import java.io.File
+import java.io.IOException
 
 // Dekódovanie fotky VŽDY „na stojato" (podľa EXIF orientácie).
 //
@@ -74,16 +76,40 @@ object UprightDecoder {
         }
     }
 
+    // Rozmery [šírka, výška] bitmapy, ktorú by vrátil decode(path, maxSize), bez dekódovania pixelov
+    // (len hlavička + EXIF orientácia). V tomto priestore sú uložené rámčeky tvárí, takže slúži na
+    // prevod do relatívnych súradníc (family.RelBox). decode() sa tým nemení. null = súbor sa nedá prečítať.
+    fun uprightSize(path: String, maxSize: Int): IntArray? {
+        if (!File(path).exists()) return null
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeFile(path, bounds)
+        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
+        val orientation = try {
+            ExifInterface(path).getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL)
+        } catch (ignored: IOException) {
+            ExifInterface.ORIENTATION_NORMAL // rovnako ako decode(): bez čitateľného EXIF sa neotáča
+        }
+        val transform = RelBox.exifTransform(orientation)
+        return RelBox.decodedUprightSize(bounds.outWidth, bounds.outHeight, maxSize, transform.rotationDegrees)
+    }
+
     // prepočet starého bboxu (v neotočenom priestore W×H) do upright priestoru — používa sa LEN ako
-    // kľúč na spárovanie starých záznamov s novo detegovanými tvárami (IoU)
+    // kľúč na spárovanie starých záznamov s novo detegovanými tvárami (IoU). Presne ako decode():
+    // najprv vodorovné zrkadlenie (postScale -1,1), potom otočenie v smere hodín o rotationDegrees
+    // a posun späť do kladných súradníc (createBitmap).
     fun mapBox(
         left: Int, top: Int, right: Int, bottom: Int,
         rawW: Int, rawH: Int, rotationDegrees: Int,
-    ): IntArray = when (rotationDegrees) {
-        90 -> intArrayOf(rawH - bottom, left, rawH - top, right)
-        180 -> intArrayOf(rawW - right, rawH - bottom, rawW - left, rawH - top)
-        270 -> intArrayOf(top, rawW - right, bottom, rawW - left)
-        else -> intArrayOf(left, top, right, bottom)
+        mirrored: Boolean = false,
+    ): IntArray {
+        val l = if (mirrored) rawW - right else left
+        val r = if (mirrored) rawW - left else right
+        return when (rotationDegrees) {
+            90 -> intArrayOf(rawH - bottom, l, rawH - top, r)
+            180 -> intArrayOf(rawW - r, rawH - bottom, rawW - l, rawH - top)
+            270 -> intArrayOf(top, rawW - r, bottom, rawW - l)
+            else -> intArrayOf(l, top, r, bottom)
+        }
     }
 
     fun iou(a: IntArray, b: IntArray): Float {

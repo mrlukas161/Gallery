@@ -3,17 +3,24 @@
   <ManuallySuppressedIssues/>
   <CurrentIssues>
     <ID>ComplexCondition:Activity.kt$(hide &amp;&amp; filename.startsWith('.')) || (!hide &amp;&amp; !filename.startsWith('.'))</ID>
+    <ID>ComplexCondition:BertTokenizer.kt$BertTokenizer$ch == ' ' || ch == '\t' || ch == '\n' || ch == '\r'</ID>
+    <ID>ComplexCondition:BertTokenizer.kt$BertTokenizer$cp in 33..47 || cp in 58..64 || cp in 91..96 || cp in 123..126</ID>
+    <ID>ComplexCondition:CompareListActivity.kt$CompareListActivity$cur != null &amp;&amp; f == prevFolder &amp;&amp; t &gt; 0 &amp;&amp; prevTaken &gt; 0 &amp;&amp; t - prevTaken &lt;= GROUP_GAP_MS</ID>
     <ID>ComplexCondition:Context.kt$animate &amp;&amp; roundCorners == ROUNDED_CORNERS_NONE &amp;&amp; (path.isGif() || path.isWebP())</ID>
     <ID>ComplexCondition:DirectoryAdapter.kt$DirectoryAdapter$!config.useRecycleBin || config.tempSkipRecycleBin || (isOneItemSelected() &amp;&amp; fileDirItem.areFavorites())</ID>
+    <ID>ComplexCondition:GeoIndexer.kt$GeoIndexer$lat &lt; -90.0 || lat &gt; 90.0 || lon &lt; -180.0 || lon &gt; 180.0</ID>
     <ID>ComplexCondition:MainActivity.kt$MainActivity$!config.wasOTGHandled &amp;&amp; hasPermission(getPermissionToRequest()) &amp;&amp; hasOTGConnected() &amp;&amp; config.OTGPath.isEmpty()</ID>
     <ID>ComplexCondition:MainActivity.kt$MainActivity$(!defaultDir.exists() || !defaultDir.isDirectory) &amp;&amp; (config.defaultFolder != RECYCLE_BIN &amp;&amp; config.defaultFolder != FAVORITES)</ID>
+    <ID>ComplexCondition:MapActivity.kt$MapActivity$filterPerson != null || filterQrOnly || !showPhotos || !showVideos</ID>
     <ID>ComplexCondition:MediaActivity.kt$MediaActivity$mMedia.isEmpty() || !isRandomSorting || (isRandomSorting &amp;&amp; !mWasFullscreenViewOpen)</ID>
     <ID>ComplexCondition:MediaAdapter.kt$MediaAdapter$showFileTypes &amp;&amp; (medium.isGIF() || medium.isRaw() || medium.isSVG())</ID>
     <ID>ComplexCondition:MediaFetcher.kt$MediaFetcher$!isImage &amp;&amp; !isVideo &amp;&amp; !isGif &amp;&amp; !isRaw &amp;&amp; !isSvg</ID>
     <ID>ComplexCondition:MediaFetcher.kt$MediaFetcher$curPath != FAVORITES &amp;&amp; curPath != RECYCLE_BIN &amp;&amp; isRPlus() &amp;&amp; !isExternalStorageManager()</ID>
     <ID>ComplexCondition:MediaFetcher.kt$MediaFetcher$currentGrouping and GROUP_BY_LAST_MODIFIED_DAILY != 0 || currentGrouping and GROUP_BY_LAST_MODIFIED_MONTHLY != 0 || currentGrouping and GROUP_BY_DATE_TAKEN_DAILY != 0 || currentGrouping and GROUP_BY_DATE_TAKEN_MONTHLY != 0</ID>
     <ID>ComplexCondition:MediaFetcher.kt$MediaFetcher$isImage || isVideo || isGif || isRaw</ID>
+    <ID>ComplexCondition:MediaServer.kt$MediaServer$cur.isNotEmpty() &amp;&amp; it.bucket == prevBucket &amp;&amp; it.taken &gt; 0 &amp;&amp; prevTaken &gt; 0 &amp;&amp; it.taken - prevTaken &lt;= 3000</ID>
     <ID>ComplexCondition:MediaSideScroll.kt$MediaSideScroll$(percent == 100 &amp;&amp; event.rawY &gt; mLastTouchY) || (percent == -100 &amp;&amp; event.rawY &lt; mLastTouchY)</ID>
+    <ID>ComplexCondition:OcrEngine.kt$OcrEngine$!txt.isNullOrBlank() &amp;&amp; r != null &amp;&amp; r.width() &gt; 1 &amp;&amp; r.height() &gt; 1</ID>
     <ID>ComplexCondition:PhotoFragment.kt$PhotoFragment$isRPlus() &amp;&amp; !isExternalStorageManager() &amp;&amp; mMedium.path.startsWith("/storage/") &amp;&amp; mMedium.isHidden()</ID>
     <ID>ComplexCondition:PhotoFragment.kt$PhotoFragment$mIsFragmentVisible &amp;&amp; context?.config?.allowZoomingImages == true &amp;&amp; (mMedium.isImage() || mMedium.isPortrait()) &amp;&amp; !mIsSubsamplingVisible</ID>
     <ID>ComplexCondition:PhotoFragment.kt$PhotoFragment$mStoredShowExtendedDetails &amp;&amp; isVisible() &amp;&amp; context != null &amp;&amp; resources != null</ID>
@@ -22,11 +29,18 @@
     <ID>ComplexCondition:SettingsActivity.kt$SettingsActivity$requestCode == PICK_IMPORT_SOURCE_INTENT &amp;&amp; resultCode == Activity.RESULT_OK &amp;&amp; resultData != null &amp;&amp; resultData.data != null</ID>
     <ID>ComplexCondition:SettingsActivity.kt$SettingsActivity$requestCode == SELECT_EXPORT_FAVORITES_FILE_INTENT &amp;&amp; resultCode == Activity.RESULT_OK &amp;&amp; resultData != null &amp;&amp; resultData.data != null</ID>
     <ID>ComplexCondition:SettingsActivity.kt$SettingsActivity$requestCode == SELECT_IMPORT_FAVORITES_FILE_INTENT &amp;&amp; resultCode == Activity.RESULT_OK &amp;&amp; resultData != null &amp;&amp; resultData.data != null</ID>
+    <ID>ComplexCondition:TextSelectActivity.kt$TextSelectActivity.SelectView$x &gt;= w.left - 8 &amp;&amp; x &lt;= w.right + 8 &amp;&amp; y &gt;= w.top - 8 &amp;&amp; y &lt;= w.bottom + 8</ID>
     <ID>ComplexCondition:VideoFragment.kt$VideoFragment$mStoredShowExtendedDetails &amp;&amp; isVisible() &amp;&amp; context != null &amp;&amp; resources != null</ID>
     <ID>ComplexCondition:VideoPlayerActivity.kt$VideoPlayerActivity$config.allowDownGesture &amp;&amp; !mIgnoreCloseDown &amp;&amp; Math.abs(diffY) &gt; Math.abs(diffX) &amp;&amp; diffY &lt; -mCloseDownThreshold &amp;&amp; downGestureDuration &lt; MAX_CLOSE_DOWN_GESTURE_DURATION &amp;&amp; binding.videoSurfaceFrame.controller.state.zoom == 1f</ID>
     <ID>ComplexCondition:VideoPlayerActivity.kt$VideoPlayerActivity$mIsDragged || (Math.abs(diffX) &gt; mDragThreshold &amp;&amp; Math.abs(diffX) &gt; Math.abs( diffY )) &amp;&amp; binding.videoSurfaceFrame.controller.state.zoom == 1f</ID>
-    <ID>ComplexCondition:ViewPagerFragment.kt$ViewPagerFragment$!mIgnoreCloseDown &amp;&amp; (Math.abs(diffY) &gt; Math.abs(diffX)) &amp;&amp; (diffY &lt; -mCloseDownThreshold) &amp;&amp; downGestureDuration &lt; MAX_CLOSE_DOWN_GESTURE_DURATION &amp;&amp; context?.config?.allowDownGesture == true</ID>
+    <ID>ComplexCondition:ViewPagerFragment.kt$ViewPagerFragment$gesturesAllowed &amp;&amp; !mIgnoreCloseDown &amp;&amp; verticalDominant &amp;&amp; quick &amp;&amp; context?.config?.allowDownGesture == true</ID>
     <ID>CyclomaticComplexMethod:Activity.kt$fun AppCompatActivity.fixDateTaken( paths: ArrayList&lt;String&gt;, showToasts: Boolean, hasRescanned: Boolean = false, callback: (() -&gt; Unit)? = null )</ID>
+    <ID>CyclomaticComplexMethod:BertTokenizer.kt$BertTokenizer$private fun basicTokenize(text: String): List&lt;String&gt;</ID>
+    <ID>CyclomaticComplexMethod:ClipIndexer.kt$ClipIndexer$fun index( context: Context, notify: Boolean = true, onWaiting: () -&gt; Unit = {}, onProgress: (phase: String, done: Int, total: Int) -&gt; Unit, onDone: (indexed: Int) -&gt; Unit, onError: (message: String) -&gt; Unit, )</ID>
+    <ID>CyclomaticComplexMethod:ClipMlModels.kt$ClipMlModels$private fun downloadFile(urlStr: String, dest: File, running: () -&gt; Boolean, onProgress: (Int) -&gt; Unit): Boolean</ID>
+    <ID>CyclomaticComplexMethod:ClipModels.kt$ClipModels$private fun download(urlStr: String, dest: File, running: () -&gt; Boolean, onProgress: (Int) -&gt; Unit): Boolean</ID>
+    <ID>CyclomaticComplexMethod:ComparatorActivity.kt$ComparatorActivity$private fun loadPane(left: Boolean, keepZoom: Boolean = false)</ID>
+    <ID>CyclomaticComplexMethod:CompareListActivity.kt$CompareListActivity$private fun buildBurstGroups(): List&lt;List&lt;String&gt;&gt;</ID>
     <ID>CyclomaticComplexMethod:Context.kt$@Suppress("UNCHECKED_CAST") fun Context.getSortedDirectories(source: ArrayList&lt;Directory&gt;): ArrayList&lt;Directory&gt;</ID>
     <ID>CyclomaticComplexMethod:Context.kt$fun Context.getCachedDirectories( getVideosOnly: Boolean = false, getImagesOnly: Boolean = false, forceShowHidden: Boolean = false, forceShowExcluded: Boolean = false, callback: (ArrayList&lt;Directory&gt;) -&gt; Unit, )</ID>
     <ID>CyclomaticComplexMethod:Context.kt$fun Context.getCachedMedia( path: String, getVideosOnly: Boolean = false, getImagesOnly: Boolean = false, callback: (ArrayList&lt;ThumbnailItem&gt;) -&gt; Unit )</ID>
@@ -36,11 +50,21 @@
     <ID>CyclomaticComplexMethod:DirectoryAdapter.kt$DirectoryAdapter$private fun setupView(view: View, directory: Directory, holder: ViewHolder)</ID>
     <ID>CyclomaticComplexMethod:EditActivity.kt$EditActivity$private fun initEditActivity()</ID>
     <ID>CyclomaticComplexMethod:EditActivity.kt$EditActivity$private fun updatePrimaryActionButtons()</ID>
+    <ID>CyclomaticComplexMethod:FaceCropLoader.kt$FaceCropLoader$private fun decodeCropRegion(face: FaceEntity): Bitmap?</ID>
+    <ID>CyclomaticComplexMethod:FaceIndexer.kt$FaceIndexer$fun index( context: Context, notify: Boolean = true, onWaiting: () -&gt; Unit = {}, onProgress: (done: Int, total: Int) -&gt; Unit, onDone: (faces: Int, photos: Int) -&gt; Unit, onError: (message: String) -&gt; Unit, )</ID>
+    <ID>CyclomaticComplexMethod:FaceMediaMeta.kt$FaceMediaMeta$fun load(context: Context, paths: Collection&lt;String&gt;): Map&lt;String, Meta&gt;</ID>
+    <ID>CyclomaticComplexMethod:GeoIndexer.kt$GeoIndexer$fun index( context: Context, onProgress: (done: Int, total: Int) -&gt; Unit, onDone: (indexed: Int, geotagged: Int) -&gt; Unit, onError: (message: String) -&gt; Unit, )</ID>
+    <ID>CyclomaticComplexMethod:MainActivity.kt$MainActivity$@android.annotation.SuppressLint("ClickableViewAccessibility") private fun setupPages()</ID>
     <ID>CyclomaticComplexMethod:MainActivity.kt$MainActivity$override fun deleteFolders(folders: ArrayList&lt;File&gt;)</ID>
+    <ID>CyclomaticComplexMethod:MainActivity.kt$MainActivity$override fun onCreate(savedInstanceState: Bundle?)</ID>
+    <ID>CyclomaticComplexMethod:MainActivity.kt$MainActivity$override fun onResume()</ID>
     <ID>CyclomaticComplexMethod:MainActivity.kt$MainActivity$private fun checkInvalidDirectories(dirs: ArrayList&lt;Directory&gt;)</ID>
     <ID>CyclomaticComplexMethod:MainActivity.kt$MainActivity$private fun gotDirectories(newDirs: ArrayList&lt;Directory&gt;)</ID>
+    <ID>CyclomaticComplexMethod:MainActivity.kt$MainActivity$private fun queryRecentPaths(): ArrayList&lt;String&gt;</ID>
+    <ID>CyclomaticComplexMethod:MainActivity.kt$MainActivity$private fun refreshExploreCounts()</ID>
     <ID>CyclomaticComplexMethod:MainActivity.kt$MainActivity$private fun setupOptionsMenu()</ID>
     <ID>CyclomaticComplexMethod:ManageBottomActionsDialog.kt$ManageBottomActionsDialog$private fun dialogConfirmed()</ID>
+    <ID>CyclomaticComplexMethod:MapActivity.kt$MapActivity$private fun showFilterDialog()</ID>
     <ID>CyclomaticComplexMethod:MediaActivity.kt$MediaActivity$override fun onResume()</ID>
     <ID>CyclomaticComplexMethod:MediaActivity.kt$MediaActivity$private fun setupOptionsMenu()</ID>
     <ID>CyclomaticComplexMethod:MediaAdapter.kt$MediaAdapter$override fun actionItemPressed(id: Int)</ID>
@@ -50,36 +74,69 @@
     <ID>CyclomaticComplexMethod:MediaFetcher.kt$MediaFetcher$fun groupMedia(media: ArrayList&lt;Medium&gt;, path: String): ArrayList&lt;ThumbnailItem&gt;</ID>
     <ID>CyclomaticComplexMethod:MediaFetcher.kt$MediaFetcher$private fun getMediaInFolder( folder: String, isPickImage: Boolean, isPickVideo: Boolean, filterMedia: Int, getProperDateTaken: Boolean, getProperLastModified: Boolean, getProperFileSize: Boolean, favoritePaths: ArrayList&lt;String&gt;, getVideoDurations: Boolean, lastModifieds: HashMap&lt;String, Long&gt;, dateTakens: HashMap&lt;String, Long&gt; ): ArrayList&lt;Medium&gt;</ID>
     <ID>CyclomaticComplexMethod:MediaFetcher.kt$MediaFetcher$private fun getMediaOnOTG( folder: String, isPickImage: Boolean, isPickVideo: Boolean, filterMedia: Int, favoritePaths: ArrayList&lt;String&gt;, getVideoDurations: Boolean ): ArrayList&lt;Medium&gt;</ID>
+    <ID>CyclomaticComplexMethod:MediaServer.kt$MediaServer$override fun serve(session: IHTTPSession): Response</ID>
     <ID>CyclomaticComplexMethod:MediaSideScroll.kt$MediaSideScroll$override fun onTouchEvent(event: MotionEvent): Boolean</ID>
+    <ID>CyclomaticComplexMethod:MotionPhoto.kt$MotionPhoto$fun read(path: String): Info?</ID>
+    <ID>CyclomaticComplexMethod:NetUtil.kt$NetUtil$fun getWifiIpv4(context: Context): String?</ID>
+    <ID>CyclomaticComplexMethod:OcrEngine.kt$OcrEngine$fun recognizeWords(bitmap: Bitmap): List&lt;WordBox&gt;</ID>
+    <ID>CyclomaticComplexMethod:PeopleSearchActivity.kt$PeopleSearchActivity$private fun runSearch()</ID>
+    <ID>CyclomaticComplexMethod:PersonGrouper.kt$PersonGrouper$fun withAutoMatches( persons: List&lt;Person&gt;, allFaces: List&lt;FaceEntity&gt;, anchorsByPerson: Map&lt;Long, List&lt;FloatArray&gt;&gt;, cannotLinks: List&lt;CannotLinkEntity&gt;, threshold: Float, ): List&lt;Person&gt;</ID>
+    <ID>CyclomaticComplexMethod:PhashGrouper.kt$PhashGrouper$fun groupBySimilarity(hashes: List&lt;PhashEntity&gt;, threshold: Int = 6): List&lt;List&lt;String&gt;&gt;</ID>
+    <ID>CyclomaticComplexMethod:PhashIndexer.kt$PhashIndexer$fun index( context: Context, notify: Boolean = true, onProgress: (done: Int, total: Int) -&gt; Unit, onDone: (indexed: Int) -&gt; Unit, onError: (message: String) -&gt; Unit, )</ID>
     <ID>CyclomaticComplexMethod:PhotoFragment.kt$PhotoFragment$@SuppressLint("ClickableViewAccessibility") override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View</ID>
     <ID>CyclomaticComplexMethod:PhotoFragment.kt$PhotoFragment$override fun fullscreenToggled(isFullscreen: Boolean)</ID>
+    <ID>CyclomaticComplexMethod:PhotoPathsAdapter.kt$PhotoPathsAdapter$override fun actionItemPressed(id: Int)</ID>
+    <ID>CyclomaticComplexMethod:PhotoQuality.kt$PhotoQuality$fun analyze(path: String): Result</ID>
     <ID>CyclomaticComplexMethod:PhotoVideoActivity.kt$PhotoVideoActivity$private fun checkIntent(savedInstanceState: Bundle? = null)</ID>
+    <ID>CyclomaticComplexMethod:PicasaImportService.kt$PicasaImportService$fun import( context: Context, zipUri: Uri, onProgress: (done: Int, total: Int) -&gt; Unit, onDone: (persons: Int, anchors: Int, skipped: Int, alreadyImported: Boolean) -&gt; Unit, onError: (message: String) -&gt; Unit, )</ID>
     <ID>CyclomaticComplexMethod:PickDirectoryDialog.kt$PickDirectoryDialog$private fun gotDirectories(newDirs: ArrayList&lt;Directory&gt;)</ID>
+    <ID>CyclomaticComplexMethod:RefreshFaces.kt$RefreshFaces$fun run( context: Context, onWaiting: () -&gt; Unit = {}, onProgress: (done: Int, total: Int) -&gt; Unit, onDone: (updated: Int, added: Int) -&gt; Unit, onError: (String) -&gt; Unit, )</ID>
+    <ID>CyclomaticComplexMethod:RefreshFaces.kt$RefreshFaces$internal fun repairUnembedded( dao: FaceDao, detector: FaceDetectionHelper, embedder: FaceEmbedder, landmarker: FaceLandmarkHelper, maxPhotos: Int, running: () -&gt; Boolean, ): Int</ID>
+    <ID>CyclomaticComplexMethod:SettingsActivity.kt$SettingsActivity$private fun filterSettings(rawQuery: String)</ID>
     <ID>CyclomaticComplexMethod:SettingsActivity.kt$SettingsActivity$private fun parseFile(inputStream: InputStream?)</ID>
+    <ID>CyclomaticComplexMethod:Sharpness.kt$Sharpness$fun score(path: String, maxSide: Int = 256): Double</ID>
+    <ID>CyclomaticComplexMethod:SmartSearch.kt$SmartSearch$fun extraPaths(context: Context, query: String): Set&lt;String&gt;</ID>
     <ID>CyclomaticComplexMethod:String.kt$fun String.shouldFolderBeVisible( excludedPaths: MutableSet&lt;String&gt;, includedPaths: MutableSet&lt;String&gt;, showHidden: Boolean, folderNoMediaStatuses: HashMap&lt;String, Boolean&gt;, callback: (path: String, hasNoMedia: Boolean) -&gt; Unit ): Boolean</ID>
+    <ID>CyclomaticComplexMethod:TextSelectActivity.kt$TextSelectActivity$private fun startRecognition()</ID>
+    <ID>CyclomaticComplexMethod:UprightDecoder.kt$UprightDecoder$fun decode(path: String, maxSize: Int): Result?</ID>
     <ID>CyclomaticComplexMethod:VideoFragment.kt$VideoFragment$override fun onCreateView( inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle? ): View</ID>
     <ID>CyclomaticComplexMethod:VideoPlayerActivity.kt$VideoPlayerActivity$private fun handleEvent(event: MotionEvent)</ID>
     <ID>CyclomaticComplexMethod:ViewPagerActivity.kt$ViewPagerActivity$fun refreshMenuItems()</ID>
     <ID>CyclomaticComplexMethod:ViewPagerActivity.kt$ViewPagerActivity$private fun initContinue()</ID>
     <ID>CyclomaticComplexMethod:ViewPagerActivity.kt$ViewPagerActivity$private fun setupOptionsMenu()</ID>
     <ID>CyclomaticComplexMethod:ViewPagerFragment.kt$ViewPagerFragment$fun getMediumExtendedDetails(medium: Medium): String</ID>
+    <ID>CyclomaticComplexMethod:ViewPagerFragment.kt$ViewPagerFragment$protected fun handleEvent(event: MotionEvent, gesturesAllowed: Boolean = true)</ID>
     <ID>EmptyCatchBlock:Activity.kt${ }</ID>
+    <ID>EmptyCatchBlock:ComparatorActivity.kt$ComparatorActivity${ }</ID>
+    <ID>EmptyCatchBlock:ComparatorActivity.kt$ComparatorActivity.&lt;no name provided&gt;${ }</ID>
     <ID>EmptyCatchBlock:Context.kt${ }</ID>
     <ID>EmptyCatchBlock:MainActivity.kt$MainActivity${ }</ID>
     <ID>EmptyCatchBlock:MediaActivity.kt$MediaActivity${ }</ID>
     <ID>EmptyCatchBlock:MediaFetcher.kt$MediaFetcher${ }</ID>
     <ID>EmptyCatchBlock:MyWidgetProvider.kt$MyWidgetProvider${ }</ID>
+    <ID>EmptyCatchBlock:NetUtil.kt$NetUtil${ }</ID>
     <ID>EmptyCatchBlock:PhotoVideoActivity.kt$PhotoVideoActivity${ }</ID>
     <ID>EmptyCatchBlock:ViewPagerActivity.kt$ViewPagerActivity${ }</ID>
     <ID>EmptyFunctionBlock:App.kt$App.&lt;no name provided&gt;${}</ID>
+    <ID>EmptyFunctionBlock:CompareListActivity.kt$CompareListActivity.&lt;no name provided&gt;${}</ID>
     <ID>EmptyFunctionBlock:DefaultPageTransformer.kt$DefaultPageTransformer${}</ID>
     <ID>EmptyFunctionBlock:DirectoryAdapter.kt$DirectoryAdapter${}</ID>
+    <ID>EmptyFunctionBlock:DocsActivity.kt$DocsActivity.&lt;no name provided&gt;${}</ID>
+    <ID>EmptyFunctionBlock:DragSelectListener.kt$DragSelectListener${}</ID>
+    <ID>EmptyFunctionBlock:FaceTaggingActivity.kt$FaceTaggingActivity.&lt;no name provided&gt;${}</ID>
+    <ID>EmptyFunctionBlock:MainActivity.kt$MainActivity.&lt;no name provided&gt;${}</ID>
+    <ID>EmptyFunctionBlock:MainPagesAdapter.kt$MainPagesAdapter${}</ID>
     <ID>EmptyFunctionBlock:ManageFoldersAdapter.kt$ManageFoldersAdapter${}</ID>
     <ID>EmptyFunctionBlock:ManageHiddenFoldersAdapter.kt$ManageHiddenFoldersAdapter${}</ID>
     <ID>EmptyFunctionBlock:MediaAdapter.kt$MediaAdapter${}</ID>
+    <ID>EmptyFunctionBlock:PeopleAdapter.kt$PeopleAdapter${}</ID>
+    <ID>EmptyFunctionBlock:PeopleSearchActivity.kt$PeopleSearchActivity.&lt;no name provided&gt;${}</ID>
+    <ID>EmptyFunctionBlock:PersonFacesAdapter.kt$PersonFacesAdapter${}</ID>
+    <ID>EmptyFunctionBlock:PhotoPathsAdapter.kt$PhotoPathsAdapter${}</ID>
     <ID>EmptyFunctionBlock:PhotoVideoActivity.kt$PhotoVideoActivity${}</ID>
     <ID>EmptyFunctionBlock:RotateTransformation.kt$RotateTransformation${}</ID>
     <ID>EmptyFunctionBlock:SearchActivity.kt$SearchActivity${}</ID>
+    <ID>EmptyFunctionBlock:SettingsActivity.kt$SettingsActivity.&lt;no name provided&gt;${}</ID>
     <ID>EmptyFunctionBlock:VideoFragment.kt$VideoFragment${}</ID>
     <ID>EmptyFunctionBlock:VideoPlayerActivity.kt$VideoPlayerActivity${}</ID>
     <ID>EmptyFunctionBlock:ViewPagerActivity.kt$ViewPagerActivity${}</ID>
@@ -87,8 +144,10 @@
     <ID>ForbiddenComment:PhotoFragment.kt$PhotoFragment$// TODO: Implement panorama using a FOSS library</ID>
     <ID>ForbiddenComment:PhotoFragment.kt$PhotoFragment.&lt;no name provided&gt;$// TODO: Implement panorama using a FOSS library</ID>
     <ID>ForbiddenComment:VideoFragment.kt$VideoFragment$// checkIfPanorama() TODO: Implement panorama using a FOSS library</ID>
+    <ID>ImplicitDefaultLocale:ChangelogActivity.kt$ChangelogActivity$String.format("#%06X", 0xFFFFFF and color)</ID>
     <ID>ImplicitDefaultLocale:PlaybackSpeedFragment.kt$PlaybackSpeedFragment$String.format("%.2f", value)</ID>
     <ID>InstanceOfCheckForException:Activity.kt$e !is IOException</ID>
+    <ID>InstanceOfCheckForException:ClipIndexer.kt$ClipIndexer$e is UserError</ID>
     <ID>LargeClass:DirectoryAdapter.kt$DirectoryAdapter : MyRecyclerViewAdapterItemTouchHelperContractOnPopupTextUpdate</ID>
     <ID>LargeClass:EditActivity.kt$EditActivity : BaseCropActivity</ID>
     <ID>LargeClass:MainActivity.kt$MainActivity : SimpleActivityDirectoryOperationsListener</ID>
@@ -106,9 +165,24 @@
     <ID>LongParameterList:MediaAdapter.kt$MediaAdapter$( activity: BaseSimpleActivity, var media: ArrayList&lt;ThumbnailItem&gt;, val listener: MediaOperationsListener?, val isAGetIntent: Boolean, val allowMultiplePicks: Boolean, val path: String, recyclerView: MyRecyclerView, itemClick: (Any) -&gt; Unit )</ID>
     <ID>LongParameterList:MediaFetcher.kt$MediaFetcher$( curPath: String, isPickImage: Boolean, isPickVideo: Boolean, getProperDateTaken: Boolean, getProperLastModified: Boolean, getProperFileSize: Boolean, favoritePaths: ArrayList&lt;String&gt;, getVideoDurations: Boolean, lastModifieds: HashMap&lt;String, Long&gt;, dateTakens: HashMap&lt;String, Long&gt;, android11Files: HashMap&lt;String, ArrayList&lt;Medium&gt;&gt;? )</ID>
     <ID>LongParameterList:MediaFetcher.kt$MediaFetcher$( folder: String, isPickImage: Boolean, isPickVideo: Boolean, filterMedia: Int, getProperDateTaken: Boolean, getProperLastModified: Boolean, getProperFileSize: Boolean, favoritePaths: ArrayList&lt;String&gt;, getVideoDurations: Boolean, lastModifieds: HashMap&lt;String, Long&gt;, dateTakens: HashMap&lt;String, Long&gt; )</ID>
+    <ID>LongParameterList:PeopleAdapter.kt$PeopleAdapter$( activity: BaseSimpleActivity, private var people: List&lt;Person&gt;, recyclerView: MyRecyclerView, val onClick: (Person) -&gt; Unit, val onRename: (Person) -&gt; Unit, val onGroups: (Person) -&gt; Unit, val onMerge: (List&lt;Person&gt;) -&gt; Unit, val onDelete: (List&lt;Person&gt;) -&gt; Unit, )</ID>
     <ID>LoopWithTooManyJumpStatements:Activity.kt$for</ID>
+    <ID>LoopWithTooManyJumpStatements:ClipTokenizer.kt$ClipTokenizer$while</ID>
     <ID>LoopWithTooManyJumpStatements:Context.kt$for</ID>
+    <ID>LoopWithTooManyJumpStatements:FaceIndexer.kt$FaceIndexer$for</ID>
+    <ID>LoopWithTooManyJumpStatements:FaceMediaMeta.kt$FaceMediaMeta$while</ID>
+    <ID>LoopWithTooManyJumpStatements:IndexStatus.kt$IndexStatus$for</ID>
+    <ID>LoopWithTooManyJumpStatements:MapActivity.kt$MapActivity$for</ID>
     <ID>LoopWithTooManyJumpStatements:MediaFetcher.kt$MediaFetcher$for</ID>
+    <ID>LoopWithTooManyJumpStatements:Memories.kt$Memories$while</ID>
+    <ID>LoopWithTooManyJumpStatements:NetUtil.kt$NetUtil$for</ID>
+    <ID>LoopWithTooManyJumpStatements:PeopleSearchActivity.kt$PeopleSearchActivity$for</ID>
+    <ID>LoopWithTooManyJumpStatements:PersonGrouper.kt$PersonGrouper$for</ID>
+    <ID>LoopWithTooManyJumpStatements:PicasaImportService.kt$PicasaImportService$for</ID>
+    <ID>LoopWithTooManyJumpStatements:RefreshFaces.kt$RefreshFaces$for</ID>
+    <ID>LoopWithTooManyJumpStatements:SettingsActivity.kt$SettingsActivity$for</ID>
+    <ID>LoopWithTooManyJumpStatements:SmartSearch.kt$SmartSearch$for</ID>
+    <ID>LoopWithTooManyJumpStatements:SpecialPhoto.kt$SpecialPhoto.ScanCache$while</ID>
     <ID>LoopWithTooManyJumpStatements:String.kt$for</ID>
     <ID>LoopWithTooManyJumpStatements:String.kt$while</ID>
     <ID>MagicNumber:Activity.kt$10</ID>
@@ -118,18 +192,359 @@
     <ID>MagicNumber:Activity.kt$5</ID>
     <ID>MagicNumber:Activity.kt$50</ID>
     <ID>MagicNumber:Activity.kt$90</ID>
+    <ID>MagicNumber:AppUpdater.kt$AppUpdater$10000</ID>
+    <ID>MagicNumber:AppUpdater.kt$AppUpdater$15000</ID>
+    <ID>MagicNumber:AppUpdater.kt$AppUpdater$60000</ID>
+    <ID>MagicNumber:BertTokenizer.kt$BertTokenizer$0x20000</ID>
+    <ID>MagicNumber:BertTokenizer.kt$BertTokenizer$0x2A6DF</ID>
+    <ID>MagicNumber:BertTokenizer.kt$BertTokenizer$0x2A700</ID>
+    <ID>MagicNumber:BertTokenizer.kt$BertTokenizer$0x2B73F</ID>
+    <ID>MagicNumber:BertTokenizer.kt$BertTokenizer$0x2B740</ID>
+    <ID>MagicNumber:BertTokenizer.kt$BertTokenizer$0x2B81F</ID>
+    <ID>MagicNumber:BertTokenizer.kt$BertTokenizer$0x2B820</ID>
+    <ID>MagicNumber:BertTokenizer.kt$BertTokenizer$0x2CEAF</ID>
+    <ID>MagicNumber:BertTokenizer.kt$BertTokenizer$0x2F800</ID>
+    <ID>MagicNumber:BertTokenizer.kt$BertTokenizer$0x2FA1F</ID>
+    <ID>MagicNumber:BertTokenizer.kt$BertTokenizer$0x3400</ID>
+    <ID>MagicNumber:BertTokenizer.kt$BertTokenizer$0x4DBF</ID>
+    <ID>MagicNumber:BertTokenizer.kt$BertTokenizer$0x4E00</ID>
+    <ID>MagicNumber:BertTokenizer.kt$BertTokenizer$0x9FFF</ID>
+    <ID>MagicNumber:BertTokenizer.kt$BertTokenizer$0xF900</ID>
+    <ID>MagicNumber:BertTokenizer.kt$BertTokenizer$0xFAFF</ID>
+    <ID>MagicNumber:BertTokenizer.kt$BertTokenizer$0xFFFD</ID>
+    <ID>MagicNumber:BertTokenizer.kt$BertTokenizer$100</ID>
+    <ID>MagicNumber:BertTokenizer.kt$BertTokenizer$123</ID>
+    <ID>MagicNumber:BertTokenizer.kt$BertTokenizer$126</ID>
+    <ID>MagicNumber:BertTokenizer.kt$BertTokenizer$16</ID>
+    <ID>MagicNumber:BertTokenizer.kt$BertTokenizer$33</ID>
+    <ID>MagicNumber:BertTokenizer.kt$BertTokenizer$47</ID>
+    <ID>MagicNumber:BertTokenizer.kt$BertTokenizer$58</ID>
+    <ID>MagicNumber:BertTokenizer.kt$BertTokenizer$64</ID>
+    <ID>MagicNumber:BertTokenizer.kt$BertTokenizer$91</ID>
+    <ID>MagicNumber:BertTokenizer.kt$BertTokenizer$96</ID>
+    <ID>MagicNumber:BertTokenizer.kt$BertTokenizer.Companion$100</ID>
+    <ID>MagicNumber:BertTokenizer.kt$BertTokenizer.Companion$101</ID>
+    <ID>MagicNumber:BertTokenizer.kt$BertTokenizer.Companion$102</ID>
+    <ID>MagicNumber:BertTokenizer.kt$BertTokenizer.Companion$120_000</ID>
     <ID>MagicNumber:ChangeFileThumbnailStyleDialog.kt$ChangeFileThumbnailStyleDialog$16</ID>
     <ID>MagicNumber:ChangeFileThumbnailStyleDialog.kt$ChangeFileThumbnailStyleDialog$32</ID>
     <ID>MagicNumber:ChangeFileThumbnailStyleDialog.kt$ChangeFileThumbnailStyleDialog$4</ID>
     <ID>MagicNumber:ChangeFileThumbnailStyleDialog.kt$ChangeFileThumbnailStyleDialog$64</ID>
     <ID>MagicNumber:ChangeFileThumbnailStyleDialog.kt$ChangeFileThumbnailStyleDialog$8</ID>
     <ID>MagicNumber:ChangeFolderThumbnailStyleDialog.kt$ChangeFolderThumbnailStyleDialog$36</ID>
+    <ID>MagicNumber:ChangelogActivity.kt$ChangelogActivity$0.07f</ID>
+    <ID>MagicNumber:ChangelogActivity.kt$ChangelogActivity$0.18f</ID>
+    <ID>MagicNumber:ChangelogActivity.kt$ChangelogActivity$0.4f</ID>
+    <ID>MagicNumber:ChangelogActivity.kt$ChangelogActivity$0.5</ID>
+    <ID>MagicNumber:ChangelogActivity.kt$ChangelogActivity$0xFFFFFF</ID>
+    <ID>MagicNumber:ChangelogActivity.kt$ChangelogActivity$100</ID>
+    <ID>MagicNumber:ChangelogActivity.kt$ChangelogActivity$3.0</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$10</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$100</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$101</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$102</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$103</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$104</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$105</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$106</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$107</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$108</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$109</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$11</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$110</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$111</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$112</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$113</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$114</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$115</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$116</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$117</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$118</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$119</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$12</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$120</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$121</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$122</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$123</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$124</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$125</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$126</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$127</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$128</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$129</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$13</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$130</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$131</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$132</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$133</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$134</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$135</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$136</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$137</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$138</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$139</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$14</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$140</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$141</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$142</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$143</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$144</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$145</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$146</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$147</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$148</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$149</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$15</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$150</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$151</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$152</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$153</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$154</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$155</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$156</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$157</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$158</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$159</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$16</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$160</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$161</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$162</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$163</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$164</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$165</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$166</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$167</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$168</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$169</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$17</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$170</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$171</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$172</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$173</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$174</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$175</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$176</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$177</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$178</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$179</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$18</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$180</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$181</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$182</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$183</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$184</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$185</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$186</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$187</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$188</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$189</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$19</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$190</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$191</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$192</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$193</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$194</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$195</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$196</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$197</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$198</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$199</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$20</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$200</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$201</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$202</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$203</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$204</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$205</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$206</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$207</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$208</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$209</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$21</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$210</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$211</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$212</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$213</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$214</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$215</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$216</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$217</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$218</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$219</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$22</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$220</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$221</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$222</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$223</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$224</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$225</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$226</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$227</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$228</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$229</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$23</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$230</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$231</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$232</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$233</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$234</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$235</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$236</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$237</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$238</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$239</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$24</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$240</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$241</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$242</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$243</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$244</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$245</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$246</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$247</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$248</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$249</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$25</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$250</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$251</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$252</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$253</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$254</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$255</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$26</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$27</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$28</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$29</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$3</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$30</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$31</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$32</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$33</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$34</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$35</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$36</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$37</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$38</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$39</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$4</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$40</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$41</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$43</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$44</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$45</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$46</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$47</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$48</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$49</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$5</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$50</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$51</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$52</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$53</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$54</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$55</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$56</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$57</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$58</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$59</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$6</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$60</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$61</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$62</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$63</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$64</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$65</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$66</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$67</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$68</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$69</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$7</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$70</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$71</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$72</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$73</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$74</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$75</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$76</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$77</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$78</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$79</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$8</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$80</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$81</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$82</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$83</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$84</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$85</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$86</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$87</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$88</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$89</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$9</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$90</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$91</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$92</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$93</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$94</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$95</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$96</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$97</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$98</ID>
+    <ID>MagicNumber:ClipByteEncoder.kt$99</ID>
+    <ID>MagicNumber:ClipEncoder.kt$ClipEncoder$224</ID>
+    <ID>MagicNumber:ClipEncoder.kt$ClipEncoder$3</ID>
+    <ID>MagicNumber:ClipEncoder.kt$ClipEncoder$49406</ID>
+    <ID>MagicNumber:ClipEncoder.kt$ClipEncoder$49407</ID>
+    <ID>MagicNumber:ClipEncoder.kt$ClipEncoder$77</ID>
+    <ID>MagicNumber:ClipEncoder.kt$ClipEncoder.Companion$0xFF</ID>
+    <ID>MagicNumber:ClipEncoder.kt$ClipEncoder.Companion$16</ID>
+    <ID>MagicNumber:ClipEncoder.kt$ClipEncoder.Companion$1e-9f</ID>
+    <ID>MagicNumber:ClipEncoder.kt$ClipEncoder.Companion$255f</ID>
+    <ID>MagicNumber:ClipEncoder.kt$ClipEncoder.Companion$3</ID>
+    <ID>MagicNumber:ClipEncoder.kt$ClipEncoder.Companion$4</ID>
+    <ID>MagicNumber:ClipEncoder.kt$ClipEncoder.Companion$8</ID>
+    <ID>MagicNumber:ClipIndexer.kt$ClipIndexer$100</ID>
+    <ID>MagicNumber:ClipIndexer.kt$ClipIndexer$140</ID>
+    <ID>MagicNumber:ClipIndexer.kt$ClipIndexer$5</ID>
+    <ID>MagicNumber:ClipMlEncoder.kt$ClipMlEncoder$128</ID>
+    <ID>MagicNumber:ClipMlEncoder.kt$ClipMlEncoder.Companion$1e-9f</ID>
+    <ID>MagicNumber:ClipMlModels.kt$ClipMlModels$100</ID>
+    <ID>MagicNumber:ClipMlModels.kt$ClipMlModels$1024</ID>
+    <ID>MagicNumber:ClipMlModels.kt$ClipMlModels$120</ID>
+    <ID>MagicNumber:ClipMlModels.kt$ClipMlModels$256</ID>
+    <ID>MagicNumber:ClipMlModels.kt$ClipMlModels$300</ID>
+    <ID>MagicNumber:ClipMlModels.kt$ClipMlModels$30000</ID>
+    <ID>MagicNumber:ClipMlModels.kt$ClipMlModels$399</ID>
+    <ID>MagicNumber:ClipMlModels.kt$ClipMlModels$6</ID>
+    <ID>MagicNumber:ClipMlModels.kt$ClipMlModels$60000</ID>
+    <ID>MagicNumber:ClipModels.kt$ClipModels$100</ID>
+    <ID>MagicNumber:ClipModels.kt$ClipModels$1024</ID>
+    <ID>MagicNumber:ClipModels.kt$ClipModels$256</ID>
+    <ID>MagicNumber:ClipModels.kt$ClipModels$300</ID>
+    <ID>MagicNumber:ClipModels.kt$ClipModels$30000</ID>
+    <ID>MagicNumber:ClipModels.kt$ClipModels$399</ID>
+    <ID>MagicNumber:ClipModels.kt$ClipModels$6</ID>
+    <ID>MagicNumber:ClipModels.kt$ClipModels$60000</ID>
+    <ID>MagicNumber:ComparatorActivity.kt$ComparatorActivity$0.05</ID>
+    <ID>MagicNumber:ComparatorActivity.kt$ComparatorActivity$0.15</ID>
+    <ID>MagicNumber:ComparatorActivity.kt$ComparatorActivity$0.25</ID>
+    <ID>MagicNumber:ComparatorActivity.kt$ComparatorActivity$0.35f</ID>
+    <ID>MagicNumber:ComparatorActivity.kt$ComparatorActivity$0.55</ID>
+    <ID>MagicNumber:ComparatorActivity.kt$ComparatorActivity$100</ID>
+    <ID>MagicNumber:ComparatorActivity.kt$ComparatorActivity$12f</ID>
+    <ID>MagicNumber:ComparatorActivity.kt$ComparatorActivity$16f</ID>
+    <ID>MagicNumber:ComparatorActivity.kt$ComparatorActivity$3</ID>
+    <ID>MagicNumber:ComparatorActivity.kt$ComparatorActivity$4</ID>
+    <ID>MagicNumber:ComparatorActivity.kt$ComparatorActivity$4f</ID>
     <ID>MagicNumber:Config.kt$Config$0.05f</ID>
     <ID>MagicNumber:Config.kt$Config$0.5f</ID>
     <ID>MagicNumber:Config.kt$Config$50</ID>
     <ID>MagicNumber:Context.kt$1024</ID>
     <ID>MagicNumber:Context.kt$50</ID>
     <ID>MagicNumber:Context.kt$8</ID>
+    <ID>MagicNumber:DocClassifier.kt$DocClassifier$4</ID>
+    <ID>MagicNumber:DocClassifier.kt$DocClassifier$8</ID>
+    <ID>MagicNumber:DocsActivity.kt$DocsActivity$3</ID>
     <ID>MagicNumber:EditActivity.kt$EditActivity$0.03f</ID>
     <ID>MagicNumber:EditActivity.kt$EditActivity$100</ID>
     <ID>MagicNumber:EditActivity.kt$EditActivity$100f</ID>
@@ -141,6 +556,49 @@
     <ID>MagicNumber:EditActivity.kt$EditActivity$9f</ID>
     <ID>MagicNumber:EditorDrawCanvas.kt$EditorDrawCanvas$100f</ID>
     <ID>MagicNumber:EditorDrawCanvas.kt$EditorDrawCanvas$40f</ID>
+    <ID>MagicNumber:FaceAligner.kt$FaceAligner$0.3f</ID>
+    <ID>MagicNumber:FaceAligner.kt$FaceAligner$256</ID>
+    <ID>MagicNumber:FaceAligner.kt$FaceAligner$256f</ID>
+    <ID>MagicNumber:FaceContextLoader.kt$FaceContextLoader$0.008f</ID>
+    <ID>MagicNumber:FaceContextLoader.kt$FaceContextLoader$270</ID>
+    <ID>MagicNumber:FaceContextLoader.kt$FaceContextLoader$3f</ID>
+    <ID>MagicNumber:FaceContextLoader.kt$FaceContextLoader$90</ID>
+    <ID>MagicNumber:FaceContextLoader.kt$FaceContextLoader.&lt;no name provided&gt;$1024</ID>
+    <ID>MagicNumber:FaceContextLoader.kt$FaceContextLoader.&lt;no name provided&gt;$16</ID>
+    <ID>MagicNumber:FaceCropLoader.kt$3</ID>
+    <ID>MagicNumber:FaceCropLoader.kt$FaceCropLoader$0.25f</ID>
+    <ID>MagicNumber:FaceCropLoader.kt$FaceCropLoader$180</ID>
+    <ID>MagicNumber:FaceCropLoader.kt$FaceCropLoader$270</ID>
+    <ID>MagicNumber:FaceCropLoader.kt$FaceCropLoader$3</ID>
+    <ID>MagicNumber:FaceCropLoader.kt$FaceCropLoader$90</ID>
+    <ID>MagicNumber:FaceCropLoader.kt$FaceCropLoader.&lt;no name provided&gt;$1024</ID>
+    <ID>MagicNumber:FaceCropLoader.kt$FaceCropLoader.&lt;no name provided&gt;$16</ID>
+    <ID>MagicNumber:FaceDetectionHelper.kt$FaceDetectionHelper$0.55f</ID>
+    <ID>MagicNumber:FaceEmbedder.kt$FaceEmbedder$0xFF</ID>
+    <ID>MagicNumber:FaceEmbedder.kt$FaceEmbedder$112</ID>
+    <ID>MagicNumber:FaceEmbedder.kt$FaceEmbedder$127.5f</ID>
+    <ID>MagicNumber:FaceEmbedder.kt$FaceEmbedder$128f</ID>
+    <ID>MagicNumber:FaceEmbedder.kt$FaceEmbedder$16</ID>
+    <ID>MagicNumber:FaceEmbedder.kt$FaceEmbedder$1e-8f</ID>
+    <ID>MagicNumber:FaceEmbedder.kt$FaceEmbedder$3</ID>
+    <ID>MagicNumber:FaceEmbedder.kt$FaceEmbedder$38.3f</ID>
+    <ID>MagicNumber:FaceEmbedder.kt$FaceEmbedder$4</ID>
+    <ID>MagicNumber:FaceEmbedder.kt$FaceEmbedder$51.5f</ID>
+    <ID>MagicNumber:FaceEmbedder.kt$FaceEmbedder$51.7f</ID>
+    <ID>MagicNumber:FaceEmbedder.kt$FaceEmbedder$5f</ID>
+    <ID>MagicNumber:FaceEmbedder.kt$FaceEmbedder$73.5f</ID>
+    <ID>MagicNumber:FaceEmbedder.kt$FaceEmbedder$8</ID>
+    <ID>MagicNumber:FaceEmbedder.kt$FaceEmbedder.Companion$1e-9f</ID>
+    <ID>MagicNumber:FaceEmbedder.kt$FaceEmbedder.Companion$4</ID>
+    <ID>MagicNumber:FaceIndexer.kt$FaceIndexer$160</ID>
+    <ID>MagicNumber:FaceIndexer.kt$FaceIndexer$5</ID>
+    <ID>MagicNumber:FaceLandmarkHelper.kt$FaceLandmarkHelper$263</ID>
+    <ID>MagicNumber:FaceLandmarkHelper.kt$FaceLandmarkHelper$291</ID>
+    <ID>MagicNumber:FaceLandmarkHelper.kt$FaceLandmarkHelper$33</ID>
+    <ID>MagicNumber:FaceLandmarkHelper.kt$FaceLandmarkHelper$61</ID>
+    <ID>MagicNumber:FaceTaggingActivity.kt$FaceTaggingActivity$0.4f</ID>
+    <ID>MagicNumber:FaceTaggingActivity.kt$FaceTaggingActivity$100</ID>
+    <ID>MagicNumber:FaceTaggingActivity.kt$FaceTaggingActivity$100f</ID>
     <ID>MagicNumber:FilterThumbnailsManager.kt$FilterThumbnailsManager$10</ID>
     <ID>MagicNumber:GalleryDatabase.kt$GalleryDatabase.Companion.&lt;no name provided&gt;$10</ID>
     <ID>MagicNumber:GalleryDatabase.kt$GalleryDatabase.Companion.&lt;no name provided&gt;$4</ID>
@@ -149,29 +607,149 @@
     <ID>MagicNumber:GalleryDatabase.kt$GalleryDatabase.Companion.&lt;no name provided&gt;$7</ID>
     <ID>MagicNumber:GalleryDatabase.kt$GalleryDatabase.Companion.&lt;no name provided&gt;$8</ID>
     <ID>MagicNumber:GalleryDatabase.kt$GalleryDatabase.Companion.&lt;no name provided&gt;$9</ID>
+    <ID>MagicNumber:GeoIndexer.kt$GeoIndexer$0.0005</ID>
+    <ID>MagicNumber:GeoIndexer.kt$GeoIndexer$160</ID>
+    <ID>MagicNumber:GeoIndexer.kt$GeoIndexer$180.0</ID>
+    <ID>MagicNumber:GeoIndexer.kt$GeoIndexer$20</ID>
+    <ID>MagicNumber:GeoIndexer.kt$GeoIndexer$90.0</ID>
+    <ID>MagicNumber:HttpSyncService.kt$HttpSyncService$120</ID>
+    <ID>MagicNumber:HttpSyncService.kt$HttpSyncService.Companion$100000</ID>
+    <ID>MagicNumber:HttpSyncService.kt$HttpSyncService.Companion$900000</ID>
+    <ID>MagicNumber:IndexScope.kt$IndexScope$400</ID>
+    <ID>MagicNumber:IndexStatus.kt$IndexStatus$10</ID>
+    <ID>MagicNumber:IndexStatus.kt$IndexStatus$400</ID>
+    <ID>MagicNumber:IndexStatus.kt$IndexStatus$6</ID>
+    <ID>MagicNumber:IndexStatus.kt$IndexStatus.Item$100</ID>
+    <ID>MagicNumber:IndexingService.kt$IndexingService$160</ID>
     <ID>MagicNumber:IsoTypeReader.kt$IsoTypeReader$32</ID>
     <ID>MagicNumber:IsoTypeReader.kt$IsoTypeReader$4</ID>
+    <ID>MagicNumber:MainActivity.kt$MainActivity$0.16f</ID>
+    <ID>MagicNumber:MainActivity.kt$MainActivity$100</ID>
+    <ID>MagicNumber:MainActivity.kt$MainActivity$20</ID>
+    <ID>MagicNumber:MainActivity.kt$MainActivity$200</ID>
+    <ID>MagicNumber:MainActivity.kt$MainActivity$3</ID>
     <ID>MagicNumber:MainActivity.kt$MainActivity$30</ID>
+    <ID>MagicNumber:MainActivity.kt$MainActivity$3000</ID>
     <ID>MagicNumber:MainActivity.kt$MainActivity$3000L</ID>
     <ID>MagicNumber:MainActivity.kt$MainActivity$50</ID>
     <ID>MagicNumber:MainActivity.kt$MainActivity$500</ID>
+    <ID>MagicNumber:MapActivity.kt$MapActivity$0.05</ID>
+    <ID>MagicNumber:MapActivity.kt$MapActivity$0.05f</ID>
+    <ID>MagicNumber:MapActivity.kt$MapActivity$0.06f</ID>
+    <ID>MagicNumber:MapActivity.kt$MapActivity$0.16f</ID>
+    <ID>MagicNumber:MapActivity.kt$MapActivity$0.18f</ID>
+    <ID>MagicNumber:MapActivity.kt$MapActivity$0.2</ID>
+    <ID>MagicNumber:MapActivity.kt$MapActivity$0.24f</ID>
+    <ID>MagicNumber:MapActivity.kt$MapActivity$0.38f</ID>
+    <ID>MagicNumber:MapActivity.kt$MapActivity$0.3f</ID>
+    <ID>MagicNumber:MapActivity.kt$MapActivity$0.8</ID>
+    <ID>MagicNumber:MapActivity.kt$MapActivity$1.05f</ID>
+    <ID>MagicNumber:MapActivity.kt$MapActivity$1.1f</ID>
+    <ID>MagicNumber:MapActivity.kt$MapActivity$100</ID>
+    <ID>MagicNumber:MapActivity.kt$MapActivity$100_000_000L</ID>
+    <ID>MagicNumber:MapActivity.kt$MapActivity$15.0</ID>
+    <ID>MagicNumber:MapActivity.kt$MapActivity$150</ID>
+    <ID>MagicNumber:MapActivity.kt$MapActivity$19.7</ID>
+    <ID>MagicNumber:MapActivity.kt$MapActivity$1e-7</ID>
+    <ID>MagicNumber:MapActivity.kt$MapActivity$20.0</ID>
+    <ID>MagicNumber:MapActivity.kt$MapActivity$2000</ID>
+    <ID>MagicNumber:MapActivity.kt$MapActivity$22.0</ID>
+    <ID>MagicNumber:MapActivity.kt$MapActivity$250</ID>
+    <ID>MagicNumber:MapActivity.kt$MapActivity$256.0</ID>
+    <ID>MagicNumber:MapActivity.kt$MapActivity$300</ID>
+    <ID>MagicNumber:MapActivity.kt$MapActivity$350</ID>
+    <ID>MagicNumber:MapActivity.kt$MapActivity$360.0</ID>
+    <ID>MagicNumber:MapActivity.kt$MapActivity$4</ID>
+    <ID>MagicNumber:MapActivity.kt$MapActivity$48</ID>
+    <ID>MagicNumber:MapActivity.kt$MapActivity$48.7</ID>
+    <ID>MagicNumber:MapActivity.kt$MapActivity$58</ID>
+    <ID>MagicNumber:MapActivity.kt$MapActivity$6.0</ID>
+    <ID>MagicNumber:MapActivity.kt$MapActivity$64.0</ID>
+    <ID>MagicNumber:MapActivity.kt$MapActivity$80</ID>
+    <ID>MagicNumber:MapActivity.kt$MapActivity$800</ID>
+    <ID>MagicNumber:MapActivity.kt$MapActivity$99</ID>
+    <ID>MagicNumber:MapActivity.kt$MapActivity.&lt;no name provided&gt;$0.02</ID>
+    <ID>MagicNumber:MapActivity.kt$MapActivity.&lt;no name provided&gt;$0.05</ID>
+    <ID>MagicNumber:MapActivity.kt$MapActivity.&lt;no name provided&gt;$300</ID>
     <ID>MagicNumber:MediaActivity.kt$MediaActivity$3000L</ID>
     <ID>MagicNumber:MediaAdapter.kt$MediaAdapter$180</ID>
+    <ID>MagicNumber:MediaAdapter.kt$MediaAdapter$20</ID>
     <ID>MagicNumber:MediaAdapter.kt$MediaAdapter$270</ID>
     <ID>MagicNumber:MediaAdapter.kt$MediaAdapter$90</ID>
     <ID>MagicNumber:MediaFetcher.kt$MediaFetcher$10</ID>
+    <ID>MagicNumber:MediaServer.kt$MediaServer$100</ID>
+    <ID>MagicNumber:MediaServer.kt$MediaServer$1024</ID>
+    <ID>MagicNumber:MediaServer.kt$MediaServer$2048</ID>
+    <ID>MagicNumber:MediaServer.kt$MediaServer$256</ID>
+    <ID>MagicNumber:MediaServer.kt$MediaServer$30</ID>
+    <ID>MagicNumber:MediaServer.kt$MediaServer$300</ID>
+    <ID>MagicNumber:MediaServer.kt$MediaServer$3000</ID>
+    <ID>MagicNumber:MediaServer.kt$MediaServer$64</ID>
+    <ID>MagicNumber:MediaServer.kt$MediaServer$80</ID>
+    <ID>MagicNumber:MediaServer.kt$MediaServer$8192</ID>
     <ID>MagicNumber:MediaSideScroll.kt$MediaSideScroll$100</ID>
     <ID>MagicNumber:MediaSideScroll.kt$MediaSideScroll$100f</ID>
     <ID>MagicNumber:MediaSideScroll.kt$MediaSideScroll$2.55</ID>
     <ID>MagicNumber:MediaSideScroll.kt$MediaSideScroll$255f</ID>
     <ID>MagicNumber:MediaSideScroll.kt$MediaSideScroll$3</ID>
     <ID>MagicNumber:MediaSideScroll.kt$MediaSideScroll$70</ID>
+    <ID>MagicNumber:Memories.kt$Memories$12</ID>
+    <ID>MagicNumber:Memories.kt$Memories$20</ID>
+    <ID>MagicNumber:Memories.kt$Memories$24</ID>
+    <ID>MagicNumber:Memories.kt$Memories$3600_000L</ID>
+    <ID>MagicNumber:Memories.kt$Memories$6</ID>
+    <ID>MagicNumber:Memories.kt$Memories$6371.0</ID>
+    <ID>MagicNumber:Memories.kt$Memories$8</ID>
+    <ID>MagicNumber:MemoriesActivity.kt$MemoriesActivity$2000</ID>
+    <ID>MagicNumber:MotionPhoto.kt$MotionPhoto$100_000</ID>
+    <ID>MagicNumber:MotionPhoto.kt$MotionPhoto$4</ID>
+    <ID>MagicNumber:MotionPhoto.kt$MotionPhoto$64</ID>
+    <ID>MagicNumber:MotionPhoto.kt$MotionPhoto$8</ID>
+    <ID>MagicNumber:MotionPhoto.kt$MotionPhoto.&lt;no name provided&gt;$0.75f</ID>
+    <ID>MagicNumber:MotionPhoto.kt$MotionPhoto.&lt;no name provided&gt;$500</ID>
+    <ID>MagicNumber:MotionPhoto.kt$MotionPhoto.&lt;no name provided&gt;$64</ID>
+    <ID>MagicNumber:NetUtil.kt$NetUtil$0xff</ID>
+    <ID>MagicNumber:NetUtil.kt$NetUtil$16</ID>
+    <ID>MagicNumber:NetUtil.kt$NetUtil$24</ID>
+    <ID>MagicNumber:NetUtil.kt$NetUtil$8</ID>
+    <ID>MagicNumber:OcrCleanup.kt$OcrCleanup$400</ID>
+    <ID>MagicNumber:OcrEngine.kt$OcrEngine$3</ID>
+    <ID>MagicNumber:OcrEngine.kt$OcrEngine$4</ID>
+    <ID>MagicNumber:OcrEngine.kt$OcrEngine$55f</ID>
+    <ID>MagicNumber:OcrEngine.kt$OcrEngine$70f</ID>
+    <ID>MagicNumber:OcrIndexer.kt$OcrIndexer$160</ID>
+    <ID>MagicNumber:OcrIndexer.kt$OcrIndexer$3</ID>
+    <ID>MagicNumber:OcrIndexer.kt$OcrIndexer$5</ID>
+    <ID>MagicNumber:OcrText.kt$OcrText$0.5f</ID>
+    <ID>MagicNumber:OcrText.kt$OcrText$0.62f</ID>
+    <ID>MagicNumber:OcrText.kt$OcrText$12</ID>
+    <ID>MagicNumber:OcrText.kt$OcrText$3</ID>
     <ID>MagicNumber:OtherAspectRatioDialog.kt$OtherAspectRatioDialog$16f</ID>
     <ID>MagicNumber:OtherAspectRatioDialog.kt$OtherAspectRatioDialog$19f</ID>
     <ID>MagicNumber:OtherAspectRatioDialog.kt$OtherAspectRatioDialog$3f</ID>
     <ID>MagicNumber:OtherAspectRatioDialog.kt$OtherAspectRatioDialog$4f</ID>
     <ID>MagicNumber:OtherAspectRatioDialog.kt$OtherAspectRatioDialog$5f</ID>
     <ID>MagicNumber:OtherAspectRatioDialog.kt$OtherAspectRatioDialog$9f</ID>
+    <ID>MagicNumber:PeopleActivity.kt$PeopleActivity$16f</ID>
+    <ID>MagicNumber:PeopleActivity.kt$PeopleActivity$3</ID>
+    <ID>MagicNumber:PeopleActivity.kt$PeopleActivity$4</ID>
+    <ID>MagicNumber:PeopleSearchActivity.kt$PeopleSearchActivity$23</ID>
+    <ID>MagicNumber:PeopleSearchActivity.kt$PeopleSearchActivity$59</ID>
+    <ID>MagicNumber:PeopleSearchActivity.kt$PeopleSearchActivity$999</ID>
+    <ID>MagicNumber:PersonActivity.kt$PersonActivity$2000</ID>
+    <ID>MagicNumber:PersonGrouper.kt$PersonGrouper$1e-9f</ID>
+    <ID>MagicNumber:PhashGrouper.kt$PhashGrouper$0xFFFFL</ID>
+    <ID>MagicNumber:PhashGrouper.kt$PhashGrouper$400</ID>
+    <ID>MagicNumber:PhashGrouper.kt$PhashGrouper$8</ID>
+    <ID>MagicNumber:PhashIndexer.kt$PhashIndexer$0xFF</ID>
+    <ID>MagicNumber:PhashIndexer.kt$PhashIndexer$114</ID>
+    <ID>MagicNumber:PhashIndexer.kt$PhashIndexer$120</ID>
+    <ID>MagicNumber:PhashIndexer.kt$PhashIndexer$16</ID>
+    <ID>MagicNumber:PhashIndexer.kt$PhashIndexer$20</ID>
+    <ID>MagicNumber:PhashIndexer.kt$PhashIndexer$299</ID>
+    <ID>MagicNumber:PhashIndexer.kt$PhashIndexer$587</ID>
+    <ID>MagicNumber:PhashIndexer.kt$PhashIndexer$64</ID>
+    <ID>MagicNumber:PhashIndexer.kt$PhashIndexer$8</ID>
     <ID>MagicNumber:PhotoFragment.kt$PhotoFragment$0.01</ID>
     <ID>MagicNumber:PhotoFragment.kt$PhotoFragment$100</ID>
     <ID>MagicNumber:PhotoFragment.kt$PhotoFragment$100L</ID>
@@ -188,15 +766,88 @@
     <ID>MagicNumber:PhotoFragment.kt$PhotoFragment.&lt;no name provided&gt;$270</ID>
     <ID>MagicNumber:PhotoFragment.kt$PhotoFragment.&lt;no name provided&gt;$360</ID>
     <ID>MagicNumber:PhotoFragment.kt$PhotoFragment.&lt;no name provided&gt;$90</ID>
+    <ID>MagicNumber:PhotoGridActivity.kt$PhotoGridActivity$3</ID>
+    <ID>MagicNumber:PhotoQuality.kt$PhotoQuality$0.055</ID>
+    <ID>MagicNumber:PhotoQuality.kt$PhotoQuality$0.16</ID>
+    <ID>MagicNumber:PhotoQuality.kt$PhotoQuality$0.35f</ID>
+    <ID>MagicNumber:PhotoQuality.kt$PhotoQuality$0.5</ID>
+    <ID>MagicNumber:PhotoQuality.kt$PhotoQuality$0.5f</ID>
+    <ID>MagicNumber:PhotoQuality.kt$PhotoQuality$0xFF</ID>
+    <ID>MagicNumber:PhotoQuality.kt$PhotoQuality$100</ID>
+    <ID>MagicNumber:PhotoQuality.kt$PhotoQuality$114</ID>
+    <ID>MagicNumber:PhotoQuality.kt$PhotoQuality$13</ID>
+    <ID>MagicNumber:PhotoQuality.kt$PhotoQuality$133</ID>
+    <ID>MagicNumber:PhotoQuality.kt$PhotoQuality$14</ID>
+    <ID>MagicNumber:PhotoQuality.kt$PhotoQuality$145</ID>
+    <ID>MagicNumber:PhotoQuality.kt$PhotoQuality$159</ID>
+    <ID>MagicNumber:PhotoQuality.kt$PhotoQuality$16</ID>
+    <ID>MagicNumber:PhotoQuality.kt$PhotoQuality$1e-5</ID>
+    <ID>MagicNumber:PhotoQuality.kt$PhotoQuality$243</ID>
+    <ID>MagicNumber:PhotoQuality.kt$PhotoQuality$263</ID>
+    <ID>MagicNumber:PhotoQuality.kt$PhotoQuality$291</ID>
+    <ID>MagicNumber:PhotoQuality.kt$PhotoQuality$299</ID>
+    <ID>MagicNumber:PhotoQuality.kt$PhotoQuality$33</ID>
+    <ID>MagicNumber:PhotoQuality.kt$PhotoQuality$362</ID>
+    <ID>MagicNumber:PhotoQuality.kt$PhotoQuality$374</ID>
+    <ID>MagicNumber:PhotoQuality.kt$PhotoQuality$386</ID>
+    <ID>MagicNumber:PhotoQuality.kt$PhotoQuality$587</ID>
+    <ID>MagicNumber:PhotoQuality.kt$PhotoQuality$6</ID>
+    <ID>MagicNumber:PhotoQuality.kt$PhotoQuality$61</ID>
+    <ID>MagicNumber:PhotoQuality.kt$PhotoQuality$8</ID>
+    <ID>MagicNumber:PhotoQuality.kt$PhotoQuality$800</ID>
+    <ID>MagicNumber:PicasaImportService.kt$PicasaImportService$0xFF</ID>
+    <ID>MagicNumber:PicasaImportService.kt$PicasaImportService$160</ID>
+    <ID>MagicNumber:PicasaImportService.kt$PicasaImportService$5</ID>
     <ID>MagicNumber:PlaybackSpeedFragment.kt$PlaybackSpeedFragment$0.05f</ID>
     <ID>MagicNumber:PlaybackSpeedFragment.kt$PlaybackSpeedFragment$0.25f</ID>
     <ID>MagicNumber:PlaybackSpeedFragment.kt$PlaybackSpeedFragment$100</ID>
     <ID>MagicNumber:PlaybackSpeedFragment.kt$PlaybackSpeedFragment$3f</ID>
+    <ID>MagicNumber:QrIndexer.kt$QrIndexer$10</ID>
+    <ID>MagicNumber:QrIndexer.kt$QrIndexer$160</ID>
+    <ID>MagicNumber:QrIndexer.kt$QrIndexer$5</ID>
+    <ID>MagicNumber:RefreshFaces.kt$RefreshFaces$140</ID>
+    <ID>MagicNumber:RefreshFaces.kt$RefreshFaces$270</ID>
+    <ID>MagicNumber:RefreshFaces.kt$RefreshFaces$5</ID>
+    <ID>MagicNumber:RefreshFaces.kt$RefreshFaces$90</ID>
     <ID>MagicNumber:ResizeMultipleImagesDialog.kt$ResizeMultipleImagesDialog$0.6f</ID>
     <ID>MagicNumber:ResizeMultipleImagesDialog.kt$ResizeMultipleImagesDialog$10</ID>
     <ID>MagicNumber:ResizeMultipleImagesDialog.kt$ResizeMultipleImagesDialog$100</ID>
     <ID>MagicNumber:ResizeMultipleImagesDialog.kt$ResizeMultipleImagesDialog$90</ID>
     <ID>MagicNumber:SetWallpaperActivity.kt$SetWallpaperActivity$90</ID>
+    <ID>MagicNumber:SettingsActivity.kt$SettingsActivity$0.001f</ID>
+    <ID>MagicNumber:SettingsActivity.kt$SettingsActivity$100</ID>
+    <ID>MagicNumber:SettingsActivity.kt$SettingsActivity$1200</ID>
+    <ID>MagicNumber:SettingsActivity.kt$SettingsActivity$1500</ID>
+    <ID>MagicNumber:SettingsActivity.kt$SettingsActivity$20</ID>
+    <ID>MagicNumber:SettingsActivity.kt$SettingsActivity$3</ID>
+    <ID>MagicNumber:SettingsActivity.kt$SettingsActivity$30_000L</ID>
+    <ID>MagicNumber:SettingsActivity.kt$SettingsActivity$400</ID>
+    <ID>MagicNumber:SettingsActivity.kt$SettingsActivity$900</ID>
+    <ID>MagicNumber:SettingsActivity.kt$SettingsActivity.&lt;no name provided&gt;$1500</ID>
+    <ID>MagicNumber:Sharpness.kt$Sharpness$0xFF</ID>
+    <ID>MagicNumber:Sharpness.kt$Sharpness$114</ID>
+    <ID>MagicNumber:Sharpness.kt$Sharpness$16</ID>
+    <ID>MagicNumber:Sharpness.kt$Sharpness$299</ID>
+    <ID>MagicNumber:Sharpness.kt$Sharpness$3</ID>
+    <ID>MagicNumber:Sharpness.kt$Sharpness$4</ID>
+    <ID>MagicNumber:Sharpness.kt$Sharpness$587</ID>
+    <ID>MagicNumber:Sharpness.kt$Sharpness$8</ID>
+    <ID>MagicNumber:SkEnDict.kt$SkEnDict$3</ID>
+    <ID>MagicNumber:SpecialActivity.kt$SpecialActivity$3</ID>
+    <ID>MagicNumber:SpecialActivity.kt$SpecialActivity$60</ID>
+    <ID>MagicNumber:SpecialPhoto.kt$SpecialPhoto$2.2f</ID>
+    <ID>MagicNumber:SpecialPhoto.kt$SpecialPhoto$3000</ID>
+    <ID>MagicNumber:SpecialPhoto.kt$SpecialPhoto.ScanCache$3</ID>
+    <ID>MagicNumber:SpecialPhoto.kt$SpecialPhoto.ScanCache$4</ID>
+    <ID>MagicNumber:TextSelectActivity.kt$TextSelectActivity$1600</ID>
+    <ID>MagicNumber:TextSelectActivity.kt$TextSelectActivity$360</ID>
+    <ID>MagicNumber:TextSelectActivity.kt$TextSelectActivity.SelectView$2.5f</ID>
+    <ID>MagicNumber:TextSelectActivity.kt$TextSelectActivity.SelectView$4f</ID>
+    <ID>MagicNumber:TextSelectActivity.kt$TextSelectActivity.SelectView$8</ID>
+    <ID>MagicNumber:UprightDecoder.kt$UprightDecoder$180</ID>
+    <ID>MagicNumber:UprightDecoder.kt$UprightDecoder$270</ID>
+    <ID>MagicNumber:UprightDecoder.kt$UprightDecoder$3</ID>
+    <ID>MagicNumber:UprightDecoder.kt$UprightDecoder$90</ID>
     <ID>MagicNumber:VideoFragment.kt$VideoFragment$7</ID>
     <ID>MagicNumber:VideoFragment.kt$VideoFragment.&lt;no name provided&gt;$7</ID>
     <ID>MagicNumber:VideoPlayerActivity.kt$VideoPlayerActivity$0.5</ID>
@@ -204,10 +855,14 @@
     <ID>MagicNumber:VideoPlayerActivity.kt$VideoPlayerActivity$100</ID>
     <ID>MagicNumber:VideoPlayerActivity.kt$VideoPlayerActivity$100f</ID>
     <ID>MagicNumber:VideoPlayerActivity.kt$VideoPlayerActivity$7</ID>
+    <ID>MagicNumber:ViewPagerActivity.kt$ViewPagerActivity$16</ID>
     <ID>MagicNumber:ViewPagerActivity.kt$ViewPagerActivity$180</ID>
+    <ID>MagicNumber:ViewPagerActivity.kt$ViewPagerActivity$20</ID>
+    <ID>MagicNumber:ViewPagerActivity.kt$ViewPagerActivity$4</ID>
     <ID>MagicNumber:ViewPagerActivity.kt$ViewPagerActivity$5</ID>
     <ID>MagicNumber:ViewPagerActivity.kt$ViewPagerActivity$90</ID>
     <ID>MagicNumber:ViewPagerFragment.kt$ViewPagerFragment$100f</ID>
+    <ID>MagicNumber:ViewPagerFragment.kt$ViewPagerFragment$150f</ID>
     <ID>MagicNumber:WidgetConfigureActivity.kt$WidgetConfigureActivity$100</ID>
     <ID>MagicNumber:WidgetConfigureActivity.kt$WidgetConfigureActivity$100f</ID>
     <ID>MagicNumber:WidgetConfigureActivity.kt$WidgetConfigureActivity$255f</ID>
@@ -232,6 +887,29 @@
     <ID>MaxLineLength:ChangeFolderThumbnailStyleDialog.kt$ChangeFolderThumbnailStyleDialog$val useRoundedCornersLayout = binding.dialogRadioFolderStyle.checkedRadioButtonId == R.id.dialog_radio_folder_rounded_corners</ID>
     <ID>MaxLineLength:ChangeViewTypeDialog.kt$ChangeViewTypeDialog$class</ID>
     <ID>MaxLineLength:ChangeViewTypeDialog.kt$ChangeViewTypeDialog$val</ID>
+    <ID>MaxLineLength:ClipIndexer.kt$ClipIndexer$NotificationChannel(CHANNEL_ID, context.getString(R.string.q1_channel_clip), NotificationManager.IMPORTANCE_LOW)</ID>
+    <ID>MaxLineLength:ClipIndexer.kt$ClipIndexer$if (e is UserError) onError(e.message ?: "") else onError(e.javaClass.simpleName + (e.message?.let { ": " + it.take(140) } ?: ""))</ID>
+    <ID>MaxLineLength:ClipIndexer.kt$ClipIndexer$if (notify) notifyProgress(appCtx, appCtx.getString(R.string.q1_notif_clip_download, phase), pct, 100)</ID>
+    <ID>MaxLineLength:ClipMlEncoder.kt$ClipMlEncoder$if (f.exists() &amp;&amp; f.length() &gt; 0) ortEnv.createSession(f.absolutePath, OrtSession.SessionOptions()) else null</ID>
+    <ID>MaxLineLength:ClipMlEncoder.kt$ClipMlEncoder$val maskName = names.firstOrNull { it.contains("attention_mask") || it.contains("mask") } ?: names.getOrNull(1)</ID>
+    <ID>MaxLineLength:ClipMlModels.kt$ClipMlModels$fun tokenizerPresent(context: Context): Boolean</ID>
+    <ID>MaxLineLength:ClipMlModels.kt$ClipMlModels$if (!downloadFile(TEXT_URL, textFile(context), running) { p -&gt; onProgress(context.getString(R.string.q1_clip_ml_phase_model), p) }) return false</ID>
+    <ID>MaxLineLength:ClipMlModels.kt$ClipMlModels$if (!downloadFile(TOKENIZER_URL, tokenizerFile(context), running) { p -&gt; onProgress(context.getString(R.string.q1_clip_ml_phase_tokenizer), p) }) return false</ID>
+    <ID>MaxLineLength:ClipMlModels.kt$ClipMlModels$private</ID>
+    <ID>MaxLineLength:ClipMlModels.kt$ClipMlModels$private const val TEXT_URL = "https://huggingface.co/ajaleksa/clip-onnx-models/resolve/main/text-multilingual/model.onnx"</ID>
+    <ID>MaxLineLength:ClipMlModels.kt$ClipMlModels$private const val TOKENIZER_URL = "https://huggingface.co/ajaleksa/clip-onnx-models/resolve/main/text-multilingual/tokenizer.json"</ID>
+    <ID>MaxLineLength:ClipModels.kt$ClipModels$fun textualPresent(context: Context): Boolean</ID>
+    <ID>MaxLineLength:ClipModels.kt$ClipModels$if (!downloadAny(TEXTUAL_URLS, textualFile(context), TEXTUAL_MIN, running) { p -&gt; onProgress("2/2", p) }) return false</ID>
+    <ID>MaxLineLength:ClipModels.kt$ClipModels$if (!downloadAny(VISUAL_URLS, visualFile(context), VISUAL_MIN, running) { p -&gt; onProgress("1/2", p) }) return false</ID>
+    <ID>MaxLineLength:ComparatorActivity.kt$ComparatorActivity$LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)</ID>
+    <ID>MaxLineLength:ComparatorActivity.kt$ComparatorActivity$android.view.KeyEvent.KEYCODE_X</ID>
+    <ID>MaxLineLength:ComparatorActivity.kt$ComparatorActivity$toast(resources.getQuantityString(org.fossify.commons.R.plurals.deleting_items, toDelete.size, toDelete.size))</ID>
+    <ID>MaxLineLength:ComparatorActivity.kt$ComparatorActivity$toast(resources.getQuantityString(org.fossify.commons.R.plurals.moving_items_into_bin, toDelete.size, toDelete.size))</ID>
+    <ID>MaxLineLength:ComparatorActivity.kt$ComparatorActivity$val a = CompareStripAdapter(this, paths, onTap = { pos -&gt; onStripTap(pos) }, onLong = { pos -&gt; onStripLong(pos) })</ID>
+    <ID>MaxLineLength:ComparatorActivity.kt$ComparatorActivity$val count = resources.getQuantityString(org.fossify.commons.R.plurals.delete_items, toDelete.size, toDelete.size)</ID>
+    <ID>MaxLineLength:ComparatorActivity.kt$ComparatorActivity.&lt;no name provided&gt;$override</ID>
+    <ID>MaxLineLength:ComparatorActivity.kt$ComparatorActivity.&lt;no name provided&gt;$override fun onLoadFailed(e: GlideException?, model: Any?, target: Target&lt;Drawable&gt;, isFirstResource: Boolean)</ID>
+    <ID>MaxLineLength:CompareListActivity.kt$CompareListActivity$binding.compareListTabs.setTabTextColors(ColorUtils.setAlphaComponent(textColor, TAB_UNSELECTED_ALPHA), textColor)</ID>
     <ID>MaxLineLength:Config.kt$Config$fun getFolderViewType(path: String)</ID>
     <ID>MaxLineLength:Config.kt$Config$fun getLastVideoPosition(path: String)</ID>
     <ID>MaxLineLength:Config.kt$Config$set(allowRotatingWithGestures) = prefs.edit().putBoolean(ALLOW_ROTATING_WITH_GESTURES, allowRotatingWithGestures).apply()</ID>
@@ -275,6 +953,8 @@
     <ID>MaxLineLength:DirectoryDao.kt$DirectoryDao$@Query("UPDATE directories SET thumbnail = :thumbnail, filename = :name, path = :newPath WHERE path = :oldPath COLLATE NOCASE")</ID>
     <ID>MaxLineLength:DirectoryDao.kt$DirectoryDao$fun</ID>
     <ID>MaxLineLength:DirectoryItemBinding.kt$GridDirectoryItemRoundedCornersBinding$class</ID>
+    <ID>MaxLineLength:DocClassifier.kt$DocClassifier$private</ID>
+    <ID>MaxLineLength:DocClassifier.kt$DocClassifier$private val ID_WORDS = listOf("obciansky preukaz", "vodicsky preukaz", "rodne cislo", "identity card", "cestovny pas", "preukaz totoznosti")</ID>
     <ID>MaxLineLength:EditActivity.kt$EditActivity$binding.bottomEditorDrawActions.bottomDrawWidth.setColors(getProperTextColor(), getProperPrimaryColor(), getProperBackgroundColor())</ID>
     <ID>MaxLineLength:EditActivity.kt$EditActivity$if</ID>
     <ID>MaxLineLength:EditActivity.kt$EditActivity$val layoutManager = binding.bottomEditorFilterActions.bottomActionsFilterList.layoutManager as LinearLayoutManager</ID>
@@ -283,6 +963,18 @@
     <ID>MaxLineLength:EditActivity.kt$EditActivity.&lt;no name provided&gt;$override</ID>
     <ID>MaxLineLength:ExcludeFolderDialog.kt$ExcludeFolderDialog$radioGroup!!.addView(radioButton, RadioGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))</ID>
     <ID>MaxLineLength:ExcludeFolderDialog.kt$ExcludeFolderDialog$val path = if (alternativePaths.isEmpty()) selectedPaths[0] else alternativePaths[radioGroup!!.checkedRadioButtonId]</ID>
+    <ID>MaxLineLength:FaceContextLoader.kt$FaceContextLoader$while (bounds.outWidth / sample &gt; INDEX_DECODE_SIZE || bounds.outHeight / sample &gt; INDEX_DECODE_SIZE) sample *= 2</ID>
+    <ID>MaxLineLength:FaceDao.kt$FaceDao$@Query("UPDATE faces SET bbox_left = :left, bbox_top = :top, bbox_right = :right, bbox_bottom = :bottom, score = :score WHERE id = :id")</ID>
+    <ID>MaxLineLength:FaceEmbedder.kt$FaceEmbedder$canvas.drawBitmap(source, Rect(0, 0, source.width, source.height), Rect(0, 0, inputSize, inputSize), Paint(Paint.FILTER_BITMAP_FLAG))</ID>
+    <ID>MaxLineLength:FaceIndexer.kt$FaceIndexer$NotificationChannel(CHANNEL_ID, context.getString(R.string.q1_channel_faces), NotificationManager.IMPORTANCE_LOW)</ID>
+    <ID>MaxLineLength:FaceIndexer.kt$FaceIndexer$bboxLeft = f.left</ID>
+    <ID>MaxLineLength:FaceIndexer.kt$FaceIndexer$dao.insertIndexedPhoto(IndexedPhotoEntity(path, dao.getFaceCountForPath(path), System.currentTimeMillis()))</ID>
+    <ID>MaxLineLength:FaceIndexer.kt$FaceIndexer$embedding = FaceAligner.embedDetected(bmp, f, theLandmarker, theEmbedder, detector)</ID>
+    <ID>MaxLineLength:FaceSorter.kt$FaceSorter$sorting and SORT_BY_NAME != 0 -&gt; faces.sortedByKey { (meta[it.mediaFullPath]?.name ?: it.mediaFullPath.substringAfterLast('/')).lowercase() }</ID>
+    <ID>MaxLineLength:FaceSorter.kt$FaceSorter$sorting and SORT_BY_NAME != 0 -&gt; paths.sortedByKey { (meta[it]?.name ?: it.substringAfterLast('/')).lowercase() }</ID>
+    <ID>MaxLineLength:FaceTaggingActivity.kt$FaceTaggingActivity$.</ID>
+    <ID>MaxLineLength:FaceTaggingActivity.kt$FaceTaggingActivity$LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)</ID>
+    <ID>MaxLineLength:FaceTaggingActivity.kt$FaceTaggingActivity$message = resources.getQuantityString(R.plurals.c2_reject_suggestions_confirm, ids.size, ids.size, personName ?: "")</ID>
     <ID>MaxLineLength:FavoritesDao.kt$FavoritesDao$@Query("SELECT favorites.full_path FROM favorites INNER JOIN media ON favorites.full_path = media.full_path WHERE media.deleted_ts = 0")</ID>
     <ID>MaxLineLength:FavoritesDao.kt$FavoritesDao$@Query("UPDATE OR REPLACE favorites SET filename = :newFilename, full_path = :newFullPath, parent_path = :newParentPath WHERE full_path = :oldPath COLLATE NOCASE")</ID>
     <ID>MaxLineLength:GalleryDatabase.kt$GalleryDatabase.Companion.&lt;no name provided&gt;$database.execSQL("CREATE TABLE IF NOT EXISTS `date_takens` (`id` INTEGER PRIMARY KEY AUTOINCREMENT, `full_path` TEXT NOT NULL, `filename` TEXT NOT NULL, `parent_path` TEXT NOT NULL, `date_taken` INTEGER NOT NULL, `last_fixed` INTEGER NOT NULL)")</ID>
@@ -292,13 +984,30 @@
     <ID>MaxLineLength:GetMediaAsynctask.kt$GetMediaAsynctask$val foldersToScan = mediaFetcher.getFoldersToScan().filter { it != RECYCLE_BIN &amp;&amp; it != FAVORITES &amp;&amp; !context.config.isFolderProtected(it) }</ID>
     <ID>MaxLineLength:GrantAllFilesDialog.kt$GrantAllFilesDialog$.</ID>
     <ID>MaxLineLength:GridSpacingItemDecoration.kt$GridSpacingItemDecoration$override</ID>
+    <ID>MaxLineLength:HttpSyncService.kt$HttpSyncService$.</ID>
+    <ID>MaxLineLength:HttpSyncService.kt$HttpSyncService$NotificationChannel(CHANNEL_ID, getString(R.string.q1_channel_pc_server), NotificationManager.IMPORTANCE_LOW)</ID>
+    <ID>MaxLineLength:IndexStatus.kt$IndexStatus$clamp(safe { org.fossify.gallery.faces.FacesDatabase.getInstance(context).FaceDao().getProcessedCount() })</ID>
+    <ID>MaxLineLength:IndexStatus.kt$IndexStatus$for</ID>
+    <ID>MaxLineLength:IndexStatus.kt$IndexStatus$sql.query("SELECT DISTINCT ${t.col} FROM ${t.table} ORDER BY ${t.col} LIMIT $CLEANUP_BATCH OFFSET $offset")</ID>
+    <ID>MaxLineLength:IndexingService.kt$IndexingService$NotificationChannel(CHANNEL_ID, getString(R.string.q1_channel_indexing), NotificationManager.IMPORTANCE_LOW)</ID>
+    <ID>MaxLineLength:IndexingService.kt$IndexingService$if</ID>
     <ID>MaxLineLength:InstantItemSwitch.kt$InstantItemSwitch$if</ID>
+    <ID>MaxLineLength:MainActivity.kt$MainActivity$// Stránka Preskúmať: rozcestník na ostatné obrazovky (Spomienky, Ľudia, Miesta, Dokumenty, Špeciálne, Podobné, Hľadať).</ID>
     <ID>MaxLineLength:MainActivity.kt$MainActivity$// exclude probably unwanted folders, for example facebook stickers are split between hundreds of separate folders like</ID>
     <ID>MaxLineLength:MainActivity.kt$MainActivity$// recyclerview sometimes becomes empty at init/update, triggering an invisible refresh like this seems to work fine</ID>
     <ID>MaxLineLength:MainActivity.kt$MainActivity$// update directories and media files in the local db, delete invalid items. Intentionally creating a new thread</ID>
     <ID>MaxLineLength:MainActivity.kt$MainActivity$// we are looping through the already displayed folders looking for changes, do not do anything if nothing changed</ID>
+    <ID>MaxLineLength:MainActivity.kt$MainActivity$binding.pageRecent.recentPlaceholder.setText(if (failed) R.string.c4_recent_failed else R.string.a1_recent_empty)</ID>
+    <ID>MaxLineLength:MainActivity.kt$MainActivity$contentResolver.query(base, arrayOf(MediaStore.MediaColumns._ID), "${MediaStore.MediaColumns.DATA} = ?", arrayOf(path), null)</ID>
+    <ID>MaxLineLength:MainActivity.kt$MainActivity$for</ID>
     <ID>MaxLineLength:MainActivity.kt$MainActivity$if</ID>
+    <ID>MaxLineLength:MainActivity.kt$MainActivity$org.fossify.gallery.sync.SyncStore.removeMarked(org.fossify.gallery.sync.SyncStore.prefs(this), paths)</ID>
+    <ID>MaxLineLength:MainActivity.kt$MainActivity$showThemedMessageDialog</ID>
+    <ID>MaxLineLength:MainActivity.kt$MainActivity$val cm = getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager</ID>
     <ID>MaxLineLength:ManageFoldersAdapter.kt$ManageFoldersAdapter$activity: BaseSimpleActivity</ID>
+    <ID>MaxLineLength:MapActivity.kt$MapActivity$c.drawCircle(size / 2f, size / 2f, pr, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.parseColor("#99000000") })</ID>
+    <ID>MaxLineLength:MapActivity.kt$MapActivity$if</ID>
+    <ID>MaxLineLength:MapActivity.kt$MapActivity$runOnUiThread { if (!isDestroyed) binding.mapStatus.text = getString(R.string.map_indexing, done, total) }</ID>
     <ID>MaxLineLength:MediaAdapter.kt$MediaAdapter$findItem(R.id.cab_confirm_selection).isVisible = isAGetIntent &amp;&amp; allowMultiplePicks &amp;&amp; selectedKeys.isNotEmpty()</ID>
     <ID>MaxLineLength:MediaAdapter.kt$MediaAdapter$findItem(R.id.cab_restore_recycle_bin_files).isVisible = selectedPaths.all { it.startsWith(activity.recycleBinPath) }</ID>
     <ID>MaxLineLength:MediaAdapter.kt$MediaAdapter$if (config.useRecycleBin &amp;&amp; !config.tempSkipRecycleBin &amp;&amp; !isRecycleBin) org.fossify.commons.R.string.move_to_recycle_bin_confirmation else org.fossify.commons.R.string.deletion_confirmation</ID>
@@ -334,18 +1043,35 @@
     <ID>MaxLineLength:MediaFetcher.kt$MediaFetcher$val medium = Medium(null, filename, path, folder, dateModified, dateTaken, size, type, videoDuration, isFavorite, 0L, 0L)</ID>
     <ID>MaxLineLength:MediaFetcher.kt$MediaFetcher$val newMedia = getMediaOnOTG(curPath, isPickImage, isPickVideo, filterMedia, favoritePaths, getVideoDurations)</ID>
     <ID>MaxLineLength:MediaFetcher.kt$MediaFetcher$val videoDuration = Math.round(cursor.getIntValue(MediaStore.MediaColumns.DURATION) / 1000.toDouble()).toInt()</ID>
+    <ID>MaxLineLength:MediaServer.kt$MediaServer$NanoHTTPD.newFixedLengthResponse(Status.OK, "text/html; charset=utf-8", ByteArrayInputStream(html), html.size.toLong())</ID>
+    <ID>MaxLineLength:MediaServer.kt$MediaServer$if</ID>
+    <ID>MaxLineLength:MediaServer.kt$MediaServer$val images = index.values.filter { it.mime.startsWith("image/") }.sortedWith(compareBy({ it.bucket }, { it.taken }))</ID>
+    <ID>MaxLineLength:MediaServer.kt$MediaServer$val out = Bitmap.createScaledBitmap(bmp, (bmp.width * sc).toInt().coerceAtLeast(1), (bmp.height * sc).toInt().coerceAtLeast(1), true)</ID>
+    <ID>MaxLineLength:MediaServer.kt$MediaServer$val r = NanoHTTPD.newFixedLengthResponse(Status.OK, "image/jpeg", ByteArrayInputStream(bytes), bytes.size.toLong())</ID>
     <ID>MaxLineLength:MediaSideScroll.kt$MediaSideScroll$activity: Activity</ID>
     <ID>MaxLineLength:Medium.kt$Medium$fun isHeic()</ID>
     <ID>MaxLineLength:MediumDao.kt$MediumDao$@Query("SELECT filename, full_path, parent_path, last_modified, date_taken, size, type, video_duration, is_favorite, deleted_ts, media_store_id FROM media WHERE deleted_ts != 0")</ID>
     <ID>MaxLineLength:MediumDao.kt$MediumDao$@Query("SELECT filename, full_path, parent_path, last_modified, date_taken, size, type, video_duration, is_favorite, deleted_ts, media_store_id FROM media WHERE deleted_ts &lt; :timestmap AND deleted_ts != 0")</ID>
     <ID>MaxLineLength:MediumDao.kt$MediumDao$@Query("SELECT filename, full_path, parent_path, last_modified, date_taken, size, type, video_duration, is_favorite, deleted_ts, media_store_id FROM media WHERE deleted_ts = 0 AND is_favorite = 1")</ID>
     <ID>MaxLineLength:MediumDao.kt$MediumDao$@Query("SELECT filename, full_path, parent_path, last_modified, date_taken, size, type, video_duration, is_favorite, deleted_ts, media_store_id FROM media WHERE deleted_ts = 0 AND parent_path = :path COLLATE NOCASE")</ID>
+    <ID>MaxLineLength:MediumDao.kt$MediumDao$@Query("SELECT filename, full_path, parent_path, last_modified, date_taken, size, type, video_duration, is_favorite, deleted_ts, media_store_id FROM media WHERE deleted_ts = 0 AND type = :type")</ID>
     <ID>MaxLineLength:MediumDao.kt$MediumDao$@Query("UPDATE OR REPLACE media SET filename = :newFilename, full_path = :newFullPath, parent_path = :newParentPath WHERE full_path = :oldPath COLLATE NOCASE")</ID>
     <ID>MaxLineLength:MediumDao.kt$MediumDao$@Query("UPDATE OR REPLACE media SET full_path = :newPath, deleted_ts = :deletedTS WHERE full_path = :oldPath COLLATE NOCASE")</ID>
+    <ID>MaxLineLength:MemoriesActivity.kt$MemoriesActivity$binding.docsPlaceholder.text = getString(if (failed) R.string.c4_memories_failed else R.string.memories_empty)</ID>
+    <ID>MaxLineLength:MemoriesActivity.kt$MemoriesActivity$binding.docsPlaceholder.visibility = if (items.isEmpty()) android.view.View.VISIBLE else android.view.View.GONE</ID>
     <ID>MaxLineLength:MyPagerAdapter.kt$MyPagerAdapter$class</ID>
     <ID>MaxLineLength:MyWidgetProvider.kt$MyWidgetProvider$override</ID>
     <ID>MaxLineLength:MyWidgetProvider.kt$MyWidgetProvider$val pendingIntent = PendingIntent.getActivity(context, widget.widgetId, intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)</ID>
     <ID>MaxLineLength:NewPhotoFetcher.kt$NewPhotoFetcher$if</ID>
+    <ID>MaxLineLength:OcrIndexer.kt$OcrIndexer$NotificationChannel(CHANNEL_ID, context.getString(R.string.q1_channel_ocr), NotificationManager.IMPORTANCE_LOW)</ID>
+    <ID>MaxLineLength:PeopleActivity.kt$PeopleActivity$LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)</ID>
+    <ID>MaxLineLength:PeopleAdapter.kt$PeopleAdapter$setTitle(if (selected.firstOrNull()?.isConfirmed == false) R.string.c2_action_name_person else R.string.action_rename)</ID>
+    <ID>MaxLineLength:PeopleSearchActivity.kt$PeopleSearchActivity$if (timeFrom &gt; 0L) getString(R.string.search_time_from_x, fmt(timeFrom)) else getString(R.string.search_time_from)</ID>
+    <ID>MaxLineLength:PeopleSearchActivity.kt$PeopleSearchActivity$if (timeTo &lt; Long.MAX_VALUE) getString(R.string.search_time_to_x, fmt(timeTo)) else getString(R.string.search_time_to)</ID>
+    <ID>MaxLineLength:PersonActivity.kt$PersonActivity$LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)</ID>
+    <ID>MaxLineLength:PersonActivity.kt$PersonActivity$message = resources.getQuantityString(R.plurals.c2_reject_faces_confirm, ids.size, ids.size, personName ?: "")</ID>
+    <ID>MaxLineLength:PhashIndexer.kt$PhashIndexer$NotificationChannel(CHANNEL_ID, context.getString(R.string.q1_channel_phash), NotificationManager.IMPORTANCE_LOW)</ID>
+    <ID>MaxLineLength:PhotoFragment.kt$PhotoFragment$handleEvent(event, allowDownGesture &amp;&amp; abs(mCurrentGestureViewZoom - mInitialZoom) &lt; MAX_ZOOM_EQUALITY_TOLERANCE)</ID>
     <ID>MaxLineLength:PhotoFragment.kt$PhotoFragment$if</ID>
     <ID>MaxLineLength:PhotoFragment.kt$PhotoFragment$orient = exif2.getTag(ExifInterface.TAG_ORIENTATION)?.getValueAsInt(defaultOrientation) ?: defaultOrientation</ID>
     <ID>MaxLineLength:PhotoFragment.kt$PhotoFragment$resources.getDimension(R.dimen.portrait_photos_stripe_height).toInt()</ID>
@@ -356,6 +1082,7 @@
     <ID>MaxLineLength:PhotoFragment.kt$PhotoFragment.&lt;no name provided&gt;$setTextColor(if (context.config.blackBackground) Color.WHITE else context.getProperTextColor())</ID>
     <ID>MaxLineLength:PhotoFragment.kt$PhotoFragment.&lt;no name provided&gt;$val useHeight = if (mImageOrientation == ORIENTATION_ROTATE_90 || mImageOrientation == ORIENTATION_ROTATE_270) sWidth else sHeight</ID>
     <ID>MaxLineLength:PhotoFragment.kt$PhotoFragment.&lt;no name provided&gt;$val useWidth = if (mImageOrientation == ORIENTATION_ROTATE_90 || mImageOrientation == ORIENTATION_ROTATE_270) sHeight else sWidth</ID>
+    <ID>MaxLineLength:PhotoGridActivity.kt$PhotoGridActivity$binding.photoGridPlaceholder.visibility = if (paths.isEmpty()) android.view.View.VISIBLE else android.view.View.GONE</ID>
     <ID>MaxLineLength:PhotoVideoActivity.kt$PhotoVideoActivity$binding.bottomActions.bottomEdit.beVisibleIf(visibleBottomActions and BOTTOM_ACTION_EDIT != 0 &amp;&amp; mMedium?.isImage() == true)</ID>
     <ID>MaxLineLength:PhotoVideoActivity.kt$PhotoVideoActivity$binding.bottomActions.bottomSetAs.beVisibleIf(visibleBottomActions and BOTTOM_ACTION_SET_AS != 0 &amp;&amp; mMedium?.isImage() == true)</ID>
     <ID>MaxLineLength:PhotoVideoActivity.kt$PhotoVideoActivity$binding.fragmentViewerToolbar.title = Html.fromHtml("&lt;font color='${Color.WHITE.toHex()}'&gt;${mMedium!!.name}&lt;/font&gt;")</ID>
@@ -379,6 +1106,7 @@
     <ID>MaxLineLength:PickMediumDialog.kt$PickMediumDialog$val newGridDecoration = GridSpacingItemDecoration(spanCount, spacing, config.scrollHorizontally, config.fileRoundedCorners, media, useGridPosition)</ID>
     <ID>MaxLineLength:PlaybackSpeedFragment.kt$PlaybackSpeedFragment$val background = ResourcesCompat.getDrawable(resources, org.fossify.commons.R.drawable.bottom_sheet_bg, requireContext().theme)</ID>
     <ID>MaxLineLength:PortraitPhotosAdapter.kt$PortraitPhotosAdapter$class</ID>
+    <ID>MaxLineLength:QrIndexer.kt$QrIndexer$NotificationChannel(CHANNEL_ID, context.getString(R.string.q1_channel_qr), NotificationManager.IMPORTANCE_LOW)</ID>
     <ID>MaxLineLength:ResizeMultipleImagesDialog.kt$ResizeMultipleImagesDialog$toast(resources.getQuantityString(R.plurals.failed_to_resize_images, failureCount, failureCount))</ID>
     <ID>MaxLineLength:ResizeWithPathDialog.kt$ResizeWithPathDialog$class</ID>
     <ID>MaxLineLength:ResizeWithPathDialog.kt$ResizeWithPathDialog$val title = String.format(activity.getString(org.fossify.commons.R.string.file_already_exists_overwrite), newFilename)</ID>
@@ -392,19 +1120,43 @@
     <ID>MaxLineLength:SettingsActivity.kt$SettingsActivity$"${getString(org.fossify.commons.R.string.show_hidden_items)} (${getString(org.fossify.commons.R.string.no_permission)})"</ID>
     <ID>MaxLineLength:SettingsActivity.kt$SettingsActivity$LAST_EDITOR_CROP_OTHER_ASPECT_RATIO_X -&gt; config.lastEditorCropOtherAspectRatioX = value.toString().toFloat()</ID>
     <ID>MaxLineLength:SettingsActivity.kt$SettingsActivity$LAST_EDITOR_CROP_OTHER_ASPECT_RATIO_Y -&gt; config.lastEditorCropOtherAspectRatioY = value.toString().toFloat()</ID>
+    <ID>MaxLineLength:SettingsActivity.kt$SettingsActivity$binding.settingsAdvToggleSummary.text = getString(if (open) R.string.adv_tools_hide else R.string.adv_tools_show)</ID>
+    <ID>MaxLineLength:SettingsActivity.kt$SettingsActivity$binding.settingsCheckUpdatesSummary.text = getString(R.string.update_available_short, update.versionName)</ID>
+    <ID>MaxLineLength:SettingsActivity.kt$SettingsActivity$binding.settingsCheckUpdatesSummary.text = getString(R.string.update_check_failed)</ID>
     <ID>MaxLineLength:SettingsActivity.kt$SettingsActivity$binding.settingsExcludedItemPasswordProtectionHolder.beGoneIf(binding.settingsHiddenItemPasswordProtectionHolder.isVisible())</ID>
+    <ID>MaxLineLength:SettingsActivity.kt$SettingsActivity$binding.settingsPicasaImportSummary.text = getString(R.string.picasa_import_running, done, total)</ID>
     <ID>MaxLineLength:SettingsActivity.kt$SettingsActivity$binding.settingsUseEnglishHolder.beVisibleIf((config.wasUseEnglishToggled || Locale.getDefault().language != "en") &amp;&amp; !isTiramisuPlus())</ID>
     <ID>MaxLineLength:SettingsActivity.kt$SettingsActivity$if</ID>
     <ID>MaxLineLength:SettingsActivity.kt$SettingsActivity$org.fossify.commons.R.string.fingerprint_setup_successfully</ID>
+    <ID>MaxLineLength:SettingsActivity.kt$SettingsActivity$org.fossify.gallery.services.IndexingService.start(this, org.fossify.gallery.services.IndexingService.TASK_CLIP)</ID>
+    <ID>MaxLineLength:SettingsActivity.kt$SettingsActivity$org.fossify.gallery.services.IndexingService.start(this, org.fossify.gallery.services.IndexingService.TASK_CLIP_ML)</ID>
+    <ID>MaxLineLength:SettingsActivity.kt$SettingsActivity$org.fossify.gallery.services.IndexingService.start(this, org.fossify.gallery.services.IndexingService.TASK_FACES)</ID>
+    <ID>MaxLineLength:SettingsActivity.kt$SettingsActivity$org.fossify.gallery.services.IndexingService.start(this, org.fossify.gallery.services.IndexingService.TASK_OCR)</ID>
+    <ID>MaxLineLength:SettingsActivity.kt$SettingsActivity$org.fossify.gallery.services.IndexingService.start(this, org.fossify.gallery.services.IndexingService.TASK_PHASH)</ID>
+    <ID>MaxLineLength:SettingsActivity.kt$SettingsActivity$org.fossify.gallery.services.IndexingService.start(this, org.fossify.gallery.services.IndexingService.TASK_QR)</ID>
+    <ID>MaxLineLength:SettingsActivity.kt$SettingsActivity$org.fossify.gallery.services.IndexingService.start(this, org.fossify.gallery.services.IndexingService.TASK_REEMBED)</ID>
+    <ID>MaxLineLength:SettingsActivity.kt$SettingsActivity$registerForActivityResult</ID>
     <ID>MaxLineLength:SettingsActivity.kt$SettingsActivity$toast(if (configValues.size &gt; 0) org.fossify.commons.R.string.settings_imported_successfully else org.fossify.commons.R.string.no_entries_for_importing)</ID>
     <ID>MaxLineLength:SettingsActivity.kt$SettingsActivity$toast(if (importedItems &gt; 0) org.fossify.commons.R.string.importing_successful else org.fossify.commons.R.string.no_entries_for_importing)</ID>
+    <ID>MaxLineLength:SettingsActivity.kt$SettingsActivity$val on = getSharedPreferences("galeria_faces", android.content.Context.MODE_PRIVATE).getBoolean("auto_index", true)</ID>
+    <ID>MaxLineLength:SettingsActivity.kt$SettingsActivity$val on = getSharedPreferences("galeria_faces", android.content.Context.MODE_PRIVATE).getBoolean("auto_ocr", false)</ID>
+    <ID>MaxLineLength:SettingsActivity.kt$SettingsActivity$val on = getSharedPreferences("galeria_faces", android.content.Context.MODE_PRIVATE).getBoolean("clip_ml", false)</ID>
     <ID>MaxLineLength:SettingsActivity.kt$SettingsActivity$}</ID>
+    <ID>MaxLineLength:SimpleActivity.kt$SimpleActivity$val own = trace.indexOfFirst { it.methodName == "getPackageName" &amp;&amp; it.className == SimpleActivity::class.java.name }</ID>
+    <ID>MaxLineLength:SkEnDict.kt$SkEnDict$"skupina ludi" to "group of people"</ID>
+    <ID>MaxLineLength:SkEnDict.kt$SkEnDict$"sneh" to "snow"</ID>
+    <ID>MaxLineLength:SkEnDict.kt$SkEnDict$"ulica" to "street"</ID>
     <ID>MaxLineLength:SlideshowDialog.kt$SlideshowDialog$intervalHint.hint = activity.getString(org.fossify.commons.R.string.seconds_raw).replaceFirstChar { it.uppercaseChar() }</ID>
+    <ID>MaxLineLength:SpecialPhoto.kt$SpecialPhoto.ScanCache$parts[3].split(',').mapNotNull { name -&gt; Kind.entries.firstOrNull { it.name == name } }.toSet()</ID>
+    <ID>MaxLineLength:SplashActivity.kt$SplashActivity$if (isDark) org.fossify.commons.R.color.theme_dark_background_color else org.fossify.commons.R.color.theme_light_background_color</ID>
+    <ID>MaxLineLength:SplashActivity.kt$SplashActivity$if (isDark) org.fossify.commons.R.color.theme_dark_text_color else org.fossify.commons.R.color.theme_light_text_color</ID>
     <ID>MaxLineLength:String.kt$folderNoMediaStatuses.getOrElse("$this/$NOMEDIA") { false } || ((!isRPlus() || isExternalStorageManager()) &amp;&amp; File(this, NOMEDIA).exists())</ID>
     <ID>MaxLineLength:String.kt$fun String.isDownloadsFolder()</ID>
     <ID>MaxLineLength:String.kt$val noMediaExists = folderNoMediaStatuses.getOrElse(pathToCheck, { false }) || File(pathToCheck).exists()</ID>
     <ID>MaxLineLength:SvgModule.kt$SvgModule$registry.register(SVG::class.java, PictureDrawable::class.java, SvgDrawableTranscoder()).append(InputStream::class.java, SVG::class.java, SvgDecoder())</ID>
     <ID>MaxLineLength:SvgSoftwareLayerSetter.kt$SvgSoftwareLayerSetter$override</ID>
+    <ID>MaxLineLength:TextSelectActivity.kt$TextSelectActivity$val out = Bitmap.createBitmap(src, 0, 0, src.width, src.height, Matrix().apply { postRotate(deg.toFloat()) }, true)</ID>
+    <ID>MaxLineLength:TextSelectActivity.kt$TextSelectActivity.SelectView$selected.contains(i) -&gt; canvas.drawRoundRect(r, 4f, 4f, if (queryMatches.contains(i)) boxFillQuery else boxFillSel)</ID>
     <ID>MaxLineLength:VideoFragment.kt$VideoFragment$requireContext().config</ID>
     <ID>MaxLineLength:VideoPlayerActivity.kt$VideoPlayerActivity$binding.bottomVideoTimeHolder.videoTogglePlayPause.setImageResource(org.fossify.commons.R.drawable.ic_pause_outline_vector)</ID>
     <ID>MaxLineLength:VideoPlayerActivity.kt$VideoPlayerActivity$binding.bottomVideoTimeHolder.videoTogglePlayPause.setImageResource(org.fossify.commons.R.drawable.ic_play_outline_vector)</ID>
@@ -412,8 +1164,11 @@
     <ID>MaxLineLength:ViewPagerActivity.kt$ViewPagerActivity$!currentMedium.isFavorite &amp;&amp; visibleBottomActions and BOTTOM_ACTION_TOGGLE_FAVORITE == 0 &amp;&amp; !currentMedium.getIsInRecycleBin()</ID>
     <ID>MaxLineLength:ViewPagerActivity.kt$ViewPagerActivity$(!isRPlus() || isExternalStorageManager()) &amp;&amp; !currentMedium.isHidden() &amp;&amp; visibleBottomActions and BOTTOM_ACTION_TOGGLE_VISIBILITY == 0 &amp;&amp; !currentMedium.getIsInRecycleBin()</ID>
     <ID>MaxLineLength:ViewPagerActivity.kt$ViewPagerActivity$(!isRPlus() || isExternalStorageManager()) &amp;&amp; currentMedium.isHidden() &amp;&amp; visibleBottomActions and BOTTOM_ACTION_TOGGLE_VISIBILITY == 0 &amp;&amp; !currentMedium.getIsInRecycleBin()</ID>
+    <ID>MaxLineLength:ViewPagerActivity.kt$ViewPagerActivity$// po návrate z editora je mPos -1 — ostať na tej istej stránke; po presune ostane index (nastúpi ďalšia fotka)</ID>
     <ID>MaxLineLength:ViewPagerActivity.kt$ViewPagerActivity$// show the selected image asap, while loading the rest in the background to allow swiping between them. Might be needed at third party intents</ID>
     <ID>MaxLineLength:ViewPagerActivity.kt$ViewPagerActivity$GetMediaAsynctask</ID>
+    <ID>MaxLineLength:ViewPagerActivity.kt$ViewPagerActivity$Medium(null, path.getFilenameFromPath(), path, path.getParentPath(), 0, 0, File(path).length(), getTypeFromPath(path), 0, false, 0L, 0L)</ID>
+    <ID>MaxLineLength:ViewPagerActivity.kt$ViewPagerActivity$android.widget.Toast.makeText(this, R.string.motion_not_found, android.widget.Toast.LENGTH_SHORT).show()</ID>
     <ID>MaxLineLength:ViewPagerActivity.kt$ViewPagerActivity$binding.bottomActions.bottomChangeOrientation.beVisibleIf(visibleBottomActions and BOTTOM_ACTION_CHANGE_ORIENTATION != 0)</ID>
     <ID>MaxLineLength:ViewPagerActivity.kt$ViewPagerActivity$binding.bottomActions.bottomChangeOrientation.setOnLongClickListener { toast(R.string.change_orientation); true }</ID>
     <ID>MaxLineLength:ViewPagerActivity.kt$ViewPagerActivity$binding.bottomActions.bottomEdit.beVisibleIf(visibleBottomActions and BOTTOM_ACTION_EDIT != 0 &amp;&amp; currentMedium?.isSVG() == false)</ID>
@@ -430,6 +1185,7 @@
     <ID>MaxLineLength:ViewPagerActivity.kt$ViewPagerActivity$findItem(R.id.menu_resize).isVisible = visibleBottomActions and BOTTOM_ACTION_RESIZE == 0 &amp;&amp; currentMedium.isImage()</ID>
     <ID>MaxLineLength:ViewPagerActivity.kt$ViewPagerActivity$findItem(R.id.menu_rotate).isVisible = currentMedium.isImage() &amp;&amp; visibleBottomActions and BOTTOM_ACTION_ROTATE == 0</ID>
     <ID>MaxLineLength:ViewPagerActivity.kt$ViewPagerActivity$flipSides = orientation == ExifInterface.ORIENTATION_ROTATE_90 || orientation == ExifInterface.ORIENTATION_ROTATE_270</ID>
+    <ID>MaxLineLength:ViewPagerActivity.kt$ViewPagerActivity$if (!isDestroyed) android.widget.Toast.makeText(this, R.string.motion_not_found, android.widget.Toast.LENGTH_SHORT).show()</ID>
     <ID>MaxLineLength:ViewPagerActivity.kt$ViewPagerActivity$if (medium.isFavorite) org.fossify.commons.R.drawable.ic_star_vector else org.fossify.commons.R.drawable.ic_star_outline_vector</ID>
     <ID>MaxLineLength:ViewPagerActivity.kt$ViewPagerActivity$if (medium.isHidden()) org.fossify.commons.R.drawable.ic_unhide_vector else org.fossify.commons.R.drawable.ic_hide_vector</ID>
     <ID>MaxLineLength:ViewPagerActivity.kt$ViewPagerActivity$it.isImage() || it.isPortrait() || (config.slideshowIncludeVideos &amp;&amp; it.isVideo() || (config.slideshowIncludeGIFs &amp;&amp; it.isGIF()))</ID>
@@ -438,100 +1194,307 @@
     <ID>MaxLineLength:ViewPagerActivity.kt$ViewPagerActivity$private</ID>
     <ID>MaxLineLength:ViewPagerActivity.kt$ViewPagerActivity$private fun getCurrentFragment()</ID>
     <ID>MaxLineLength:ViewPagerActivity.kt$ViewPagerActivity$private fun getCurrentMedia()</ID>
+    <ID>MaxLineLength:ViewPagerActivity.kt$ViewPagerActivity$putExtra(TextSelectActivity.EXTRA_ROTATION, getCurrentPhotoFragment()?.mCurrentRotationDegrees ?: 0)</ID>
+    <ID>MaxLineLength:ViewPagerActivity.kt$ViewPagerActivity$sheetBackground.findDrawableByLayerId(org.fossify.commons.R.id.bottom_sheet_background).applyColorFilter(getProperBackgroundColor())</ID>
     <ID>MaxLineLength:ViewPagerActivity.kt$ViewPagerActivity$toast(if (currentMedium?.isHidden() == true) org.fossify.commons.R.string.unhide else org.fossify.commons.R.string.hide); true</ID>
+    <ID>MaxLineLength:ViewPagerActivity.kt$ViewPagerActivity$val cm = getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager</ID>
     <ID>MaxLineLength:ViewPagerActivity.kt$ViewPagerActivity$val isSDOrOtgRootFolder = isAStorageRootFolder(oldPath.getParentPath()) &amp;&amp; !oldPath.startsWith(internalStoragePath)</ID>
     <ID>MaxLineLength:ViewPagerActivity.kt$ViewPagerActivity$val medium = Medium(null, filename, mPath, parent, ts, ts, File(mPath).length(), type, duration, isFavorite, 0, 0L)</ID>
+    <ID>MaxLineLength:ViewPagerActivity.kt$ViewPagerActivity$val remaining = ArrayList(current.filter { getDoesFilePathExist(it.path) }.map { restrictedMedium(it.path) })</ID>
+    <ID>MaxLineLength:ViewPagerActivity.kt$ViewPagerActivity$val sheetBackground = ResourcesCompat.getDrawable(resources, org.fossify.commons.R.drawable.bottom_sheet_bg, theme) as LayerDrawable</ID>
     <ID>MaxLineLength:ViewPagerActivity.kt$ViewPagerActivity.&lt;no name provided&gt;$override</ID>
+    <ID>MaxLineLength:ViewPagerFragment.kt$ViewPagerFragment$(Math.abs(mTouchDownX - event.rawX) &gt; MOVE_TOLERANCE_PX || Math.abs(mTouchDownY - event.rawY) &gt; MOVE_TOLERANCE_PX)</ID>
     <ID>MaxLineLength:ViewPagerFragment.kt$ViewPagerFragment$if</ID>
     <ID>MaxLineLength:WidgetConfigureActivity.kt$WidgetConfigureActivity$if</ID>
+    <ID>NestedBlockDepth:AppUpdater.kt$AppUpdater$private fun fetchLatest(): Update?</ID>
+    <ID>NestedBlockDepth:BertTokenizer.kt$BertTokenizer$private fun basicTokenize(text: String): List&lt;String&gt;</ID>
+    <ID>NestedBlockDepth:BertTokenizer.kt$BertTokenizer.Companion$fun load(tokenizerJson: File): BertTokenizer</ID>
+    <ID>NestedBlockDepth:ClipEncoder.kt$ClipEncoder$fun encodeText(query: String): FloatArray?</ID>
+    <ID>NestedBlockDepth:ClipIndexer.kt$ClipIndexer$private fun queryImages(context: Context): List&lt;String&gt;</ID>
+    <ID>NestedBlockDepth:ClipMlEncoder.kt$ClipMlEncoder$fun encodeText(query: String): FloatArray?</ID>
+    <ID>NestedBlockDepth:ClipMlModels.kt$ClipMlModels$private fun downloadFile(urlStr: String, dest: File, running: () -&gt; Boolean, onProgress: (Int) -&gt; Unit): Boolean</ID>
+    <ID>NestedBlockDepth:ClipModels.kt$ClipModels$private fun download(urlStr: String, dest: File, running: () -&gt; Boolean, onProgress: (Int) -&gt; Unit): Boolean</ID>
+    <ID>NestedBlockDepth:CompareListActivity.kt$CompareListActivity$private fun buildBurstGroups(): List&lt;List&lt;String&gt;&gt;</ID>
     <ID>NestedBlockDepth:Context.kt$fun Context.getDirectParentSubfolders( dirs: ArrayList&lt;Directory&gt;, currentPathPrefix: String ): ArrayList&lt;Directory&gt;</ID>
     <ID>NestedBlockDepth:Context.kt$fun Context.getNoMediaFoldersSync(): ArrayList&lt;String&gt;</ID>
     <ID>NestedBlockDepth:Context.kt$fun Context.parseFileChannel( path: String, fc: FileChannel, level: Int, start: Long, end: Long, callback: () -&gt; Unit )</ID>
     <ID>NestedBlockDepth:Context.kt$fun Context.updateSubfolderCounts( children: ArrayList&lt;Directory&gt;, parentDirs: ArrayList&lt;Directory&gt; )</ID>
+    <ID>NestedBlockDepth:FaceMediaMeta.kt$FaceMediaMeta$fun load(context: Context, paths: Collection&lt;String&gt;): Map&lt;String, Meta&gt;</ID>
+    <ID>NestedBlockDepth:GeoIndexer.kt$GeoIndexer$private fun queryImages(context: Context): List&lt;String&gt;</ID>
+    <ID>NestedBlockDepth:GeoIndexer.kt$GeoIndexer$private fun queryVideos(context: Context): List&lt;String&gt;</ID>
+    <ID>NestedBlockDepth:IndexStatus.kt$IndexStatus$private fun mediaStorePaths(context: Context): HashSet&lt;String&gt;?</ID>
     <ID>NestedBlockDepth:MainActivity.kt$MainActivity$override fun onActivityResult(requestCode: Int, resultCode: Int, resultData: Intent?)</ID>
     <ID>NestedBlockDepth:MainActivity.kt$MainActivity$private fun getFoldersWithMedia(path: String): HashSet&lt;String&gt;</ID>
     <ID>NestedBlockDepth:MainActivity.kt$MainActivity$private fun gotDirectories(newDirs: ArrayList&lt;Directory&gt;)</ID>
+    <ID>NestedBlockDepth:MainActivity.kt$MainActivity$private fun pcContentUriForPath(path: String): Uri?</ID>
+    <ID>NestedBlockDepth:MapActivity.kt$MapActivity$private fun computeMarkers(pts: List&lt;GeoEntity&gt;, zoom: Double, centerLat: Double, density: Float): List&lt;Cluster&gt;</ID>
     <ID>NestedBlockDepth:MediaFetcher.kt$MediaFetcher$fun getFilesFrom( curPath: String, isPickImage: Boolean, isPickVideo: Boolean, getProperDateTaken: Boolean, getProperLastModified: Boolean, getProperFileSize: Boolean, favoritePaths: ArrayList&lt;String&gt;, getVideoDurations: Boolean, lastModifieds: HashMap&lt;String, Long&gt;, dateTakens: HashMap&lt;String, Long&gt;, android11Files: HashMap&lt;String, ArrayList&lt;Medium&gt;&gt;? ): ArrayList&lt;Medium&gt;</ID>
     <ID>NestedBlockDepth:MediaFetcher.kt$MediaFetcher$private fun getLatestFileFolders(): LinkedHashSet&lt;String&gt;</ID>
     <ID>NestedBlockDepth:MediaFetcher.kt$MediaFetcher$private fun getMediaInFolder( folder: String, isPickImage: Boolean, isPickVideo: Boolean, filterMedia: Int, getProperDateTaken: Boolean, getProperLastModified: Boolean, getProperFileSize: Boolean, favoritePaths: ArrayList&lt;String&gt;, getVideoDurations: Boolean, lastModifieds: HashMap&lt;String, Long&gt;, dateTakens: HashMap&lt;String, Long&gt; ): ArrayList&lt;Medium&gt;</ID>
     <ID>NestedBlockDepth:MediaFetcher.kt$MediaFetcher$private fun parseCursor(cursor: Cursor): LinkedHashSet&lt;String&gt;</ID>
+    <ID>NestedBlockDepth:MediaServer.kt$MediaServer$private fun copyExactly(input: InputStream, out: java.io.OutputStream, len: Long)</ID>
     <ID>NestedBlockDepth:MediaSideScroll.kt$MediaSideScroll$override fun onTouchEvent(event: MotionEvent): Boolean</ID>
+    <ID>NestedBlockDepth:Memories.kt$Memories$private fun loadShots(context: Context): List&lt;Shot&gt;</ID>
+    <ID>NestedBlockDepth:MotionPhoto.kt$MotionPhoto$fun read(path: String): Info?</ID>
+    <ID>NestedBlockDepth:NetUtil.kt$NetUtil$fun getWifiIpv4(context: Context): String?</ID>
+    <ID>NestedBlockDepth:OcrEngine.kt$OcrEngine$fun recognizeWords(bitmap: Bitmap): List&lt;WordBox&gt;</ID>
+    <ID>NestedBlockDepth:OcrIndexer.kt$OcrIndexer$private fun queryImages(context: Context): List&lt;String&gt;</ID>
+    <ID>NestedBlockDepth:PhashIndexer.kt$PhashIndexer$private fun queryImages(context: Context): List&lt;String&gt;</ID>
     <ID>NestedBlockDepth:PhotoFragment.kt$PhotoFragment$override fun fullscreenToggled(isFullscreen: Boolean)</ID>
+    <ID>NestedBlockDepth:PhotoQuality.kt$PhotoQuality$fun analyze(path: String): Result</ID>
+    <ID>NestedBlockDepth:PhotoQuality.kt$PhotoQuality$private fun exposureScore(bmp: Bitmap): Double</ID>
     <ID>NestedBlockDepth:PhotoVideoActivity.kt$PhotoVideoActivity$private fun checkIntent(savedInstanceState: Bundle? = null)</ID>
+    <ID>NestedBlockDepth:QrIndexer.kt$QrIndexer$private fun queryImages(context: Context): List&lt;String&gt;</ID>
+    <ID>NestedBlockDepth:RefreshFaces.kt$RefreshFaces$internal fun repairUnembedded( dao: FaceDao, detector: FaceDetectionHelper, embedder: FaceEmbedder, landmarker: FaceLandmarkHelper, maxPhotos: Int, running: () -&gt; Boolean, ): Int</ID>
+    <ID>NestedBlockDepth:RefreshFaces.kt$RefreshFaces$private fun matchAndStore( dao: FaceDao, path: String, old: List&lt;FaceEntity&gt;, detected: List&lt;FaceDetectionHelper.DetectedFace&gt;, bmp: Bitmap, res: UprightDecoder.Result, landmarker: FaceLandmarkHelper, embedder: FaceEmbedder, detector: FaceDetectionHelper, ): Pair&lt;Int, Int&gt;</ID>
     <ID>NestedBlockDepth:SettingsActivity.kt$SettingsActivity$private fun parseFile(inputStream: InputStream?)</ID>
+    <ID>NestedBlockDepth:Sharpness.kt$Sharpness$fun score(path: String, maxSide: Int = 256): Double</ID>
+    <ID>NestedBlockDepth:SmartSearch.kt$SmartSearch$fun extraPaths(context: Context, query: String): Set&lt;String&gt;</ID>
+    <ID>NestedBlockDepth:SpecialActivity.kt$SpecialActivity$private fun queryImages(): List&lt;String&gt;</ID>
+    <ID>NestedBlockDepth:SpecialPhoto.kt$SpecialPhoto.ScanCache$@Synchronized fun save(pruneUnseen: Boolean)</ID>
     <ID>NestedBlockDepth:String.kt$fun String.shouldFolderBeVisible( excludedPaths: MutableSet&lt;String&gt;, includedPaths: MutableSet&lt;String&gt;, showHidden: Boolean, folderNoMediaStatuses: HashMap&lt;String, Boolean&gt;, callback: (path: String, hasNoMedia: Boolean) -&gt; Unit ): Boolean</ID>
     <ID>NestedBlockDepth:VideoPlayerActivity.kt$VideoPlayerActivity$private fun handleEvent(event: MotionEvent)</ID>
     <ID>NestedBlockDepth:ViewPagerActivity.kt$ViewPagerActivity$private fun getPositionInList(items: MutableList&lt;Medium&gt;): Int</ID>
+    <ID>NewLineAtEndOfFile:ClipByteEncoder.kt$org.fossify.gallery.clip.ClipByteEncoder.kt</ID>
+    <ID>NewLineAtEndOfFile:ClipTokenizer.kt$org.fossify.gallery.clip.ClipTokenizer.kt</ID>
+    <ID>ReturnCount:ClipMlModels.kt$ClipMlModels$private fun downloadFile(urlStr: String, dest: File, running: () -&gt; Boolean, onProgress: (Int) -&gt; Unit): Boolean</ID>
+    <ID>ReturnCount:ClipModels.kt$ClipModels$private fun download(urlStr: String, dest: File, running: () -&gt; Boolean, onProgress: (Int) -&gt; Unit): Boolean</ID>
+    <ID>ReturnCount:ClipSearch.kt$ClipSearch$fun search(context: Context, query: String, topN: Int = 60, minCos: Float = 0.20f): List&lt;String&gt;</ID>
+    <ID>ReturnCount:ComparatorActivity.kt$ComparatorActivity$override fun onKeyDown(keyCode: Int, event: android.view.KeyEvent?): Boolean</ID>
     <ID>ReturnCount:Context.kt$fun Context.getDirectorySortingValue( media: ArrayList&lt;Medium&gt;, path: String, name: String, size: Long, count: Int ): String</ID>
+    <ID>ReturnCount:DocClassifier.kt$DocClassifier$fun classify(path: String, text: String, normText: String): Kind</ID>
+    <ID>ReturnCount:FaceCropLoader.kt$FaceCropLoader$private fun decodeCrop(face: FaceEntity): Bitmap?</ID>
+    <ID>ReturnCount:FaceCropLoader.kt$FaceCropLoader$private fun decodeCropRegion(face: FaceEntity): Bitmap?</ID>
+    <ID>ReturnCount:GeoIndexer.kt$GeoIndexer$private fun videoLatLon(path: String): Pair&lt;Double, Double&gt;?</ID>
+    <ID>ReturnCount:OcrIndexer.kt$OcrIndexer$fun textForPhoto(context: Context, path: String): String</ID>
+    <ID>ReturnCount:OcrText.kt$OcrText$fun isMeaningful(text: String): Boolean</ID>
+    <ID>ReturnCount:Sharpness.kt$Sharpness$fun score(path: String, maxSide: Int = 256): Double</ID>
+    <ID>ReturnCount:SmartSearch.kt$SmartSearch$fun extraPaths(context: Context, query: String): Set&lt;String&gt;</ID>
+    <ID>ReturnCount:UprightDecoder.kt$UprightDecoder$fun decode(path: String, maxSize: Int): Result?</ID>
     <ID>ReturnCount:ViewPagerActivity.kt$ViewPagerActivity$private fun isShowHiddenFlagNeeded(): Boolean</ID>
     <ID>SpreadOperator:Context.kt$(*mediaToDelete.toTypedArray())</ID>
     <ID>SpreadOperator:MainActivity.kt$MainActivity$(*mediaToDelete.toTypedArray())</ID>
     <ID>SwallowedException:Activity.kt$e: Exception</ID>
     <ID>SwallowedException:Activity.kt$e: OutOfMemoryError</ID>
+    <ID>SwallowedException:AppUpdater.kt$AppUpdater$e: Exception</ID>
+    <ID>SwallowedException:ChangelogActivity.kt$ChangelogActivity$e: Throwable</ID>
+    <ID>SwallowedException:ClipEncoder.kt$ClipEncoder$e: Throwable</ID>
+    <ID>SwallowedException:ClipIndexer.kt$ClipIndexer$e: Throwable</ID>
+    <ID>SwallowedException:ClipMlEncoder.kt$ClipMlEncoder$e: Throwable</ID>
+    <ID>SwallowedException:ClipMlModels.kt$ClipMlModels$e: Throwable</ID>
+    <ID>SwallowedException:ClipModels.kt$ClipModels$e: Throwable</ID>
+    <ID>SwallowedException:ClipSearch.kt$ClipSearch$e: Throwable</ID>
+    <ID>SwallowedException:ComparatorActivity.kt$ComparatorActivity$e: Throwable</ID>
+    <ID>SwallowedException:ComparatorActivity.kt$ComparatorActivity.&lt;no name provided&gt;$e: Throwable</ID>
+    <ID>SwallowedException:CompareListActivity.kt$CompareListActivity$e: Throwable</ID>
     <ID>SwallowedException:Context.kt$e: Exception</ID>
+    <ID>SwallowedException:DocClassifier.kt$DocClassifier$e: Throwable</ID>
+    <ID>SwallowedException:DocsActivity.kt$DocsActivity$e: Throwable</ID>
     <ID>SwallowedException:EditActivity.kt$EditActivity$e: Exception</ID>
     <ID>SwallowedException:EditActivity.kt$EditActivity$e: OutOfMemoryError</ID>
+    <ID>SwallowedException:FaceAligner.kt$FaceAligner$e: Throwable</ID>
+    <ID>SwallowedException:FaceContextLoader.kt$FaceContextLoader$e: Throwable</ID>
+    <ID>SwallowedException:FaceCropLoader.kt$FaceCropLoader$e: Throwable</ID>
+    <ID>SwallowedException:FaceIndexer.kt$FaceIndexer$e: Throwable</ID>
+    <ID>SwallowedException:FaceLandmarkHelper.kt$FaceLandmarkHelper$e: Throwable</ID>
+    <ID>SwallowedException:FaceMediaMeta.kt$FaceMediaMeta$e: Throwable</ID>
+    <ID>SwallowedException:FaceTaggingActivity.kt$FaceTaggingActivity$e: Throwable</ID>
+    <ID>SwallowedException:FacesDatabase.kt$FacesDatabase.Companion$e: Throwable</ID>
+    <ID>SwallowedException:GeoIndexer.kt$GeoIndexer$e: Throwable</ID>
+    <ID>SwallowedException:HomeStats.kt$HomeStats$e: Throwable</ID>
+    <ID>SwallowedException:HttpSyncService.kt$HttpSyncService$e: Throwable</ID>
+    <ID>SwallowedException:IndexPerf.kt$IndexPerf$e: Throwable</ID>
+    <ID>SwallowedException:IndexScope.kt$IndexScope$e: Throwable</ID>
+    <ID>SwallowedException:IndexStatus.kt$IndexStatus$e: Throwable</ID>
+    <ID>SwallowedException:IndexingService.kt$IndexingService$e: Throwable</ID>
+    <ID>SwallowedException:IndexingService.kt$IndexingService.Companion$e: Throwable</ID>
     <ID>SwallowedException:IsoTypeReader.kt$IsoTypeReader$e: UnsupportedEncodingException</ID>
     <ID>SwallowedException:MainActivity.kt$MainActivity$e: Exception</ID>
+    <ID>SwallowedException:MainActivity.kt$MainActivity$e: Throwable</ID>
+    <ID>SwallowedException:MapActivity.kt$MapActivity$e: Throwable</ID>
     <ID>SwallowedException:MediaActivity.kt$MediaActivity$e: Exception</ID>
+    <ID>SwallowedException:MediaActivity.kt$MediaActivity$e: Throwable</ID>
     <ID>SwallowedException:MediaFetcher.kt$MediaFetcher$e: Exception</ID>
+    <ID>SwallowedException:MediaServer.kt$MediaServer$e: Exception</ID>
+    <ID>SwallowedException:MediaServer.kt$MediaServer$e: Throwable</ID>
     <ID>SwallowedException:MediaSideScroll.kt$MediaSideScroll$e: Settings.SettingNotFoundException</ID>
+    <ID>SwallowedException:MediaStoreSaver.kt$e: Exception</ID>
+    <ID>SwallowedException:Memories.kt$Memories$e: Throwable</ID>
+    <ID>SwallowedException:MemoriesActivity.kt$MemoriesActivity$e: Throwable</ID>
+    <ID>SwallowedException:MotionPhoto.kt$MotionPhoto$e: Throwable</ID>
     <ID>SwallowedException:MyWidgetProvider.kt$MyWidgetProvider$e: Exception</ID>
+    <ID>SwallowedException:NetUtil.kt$NetUtil$e: Exception</ID>
+    <ID>SwallowedException:OcrEngine.kt$OcrEngine$e: Throwable</ID>
+    <ID>SwallowedException:OcrIndexer.kt$OcrIndexer$e: Throwable</ID>
+    <ID>SwallowedException:PeopleActivity.kt$PeopleActivity$e: Throwable</ID>
+    <ID>SwallowedException:PeopleActivity.kt$PeopleActivity.Companion$e: Throwable</ID>
+    <ID>SwallowedException:PeopleSearchActivity.kt$PeopleSearchActivity$e: Throwable</ID>
+    <ID>SwallowedException:PersonActivity.kt$PersonActivity$e: Throwable</ID>
+    <ID>SwallowedException:PhashIndexer.kt$PhashIndexer$e: Throwable</ID>
     <ID>SwallowedException:PhotoFragment.kt$PhotoFragment$e: Exception</ID>
     <ID>SwallowedException:PhotoFragment.kt$PhotoFragment$e: OutOfMemoryError</ID>
+    <ID>SwallowedException:PhotoPathsAdapter.kt$PhotoPathsAdapter$e: Throwable</ID>
+    <ID>SwallowedException:PhotoQuality.kt$PhotoQuality$e: Throwable</ID>
     <ID>SwallowedException:PhotoVideoActivity.kt$PhotoVideoActivity$e: Exception</ID>
+    <ID>SwallowedException:PhotoVideoActivity.kt$PhotoVideoActivity$e: Throwable</ID>
+    <ID>SwallowedException:PicasaImportService.kt$PicasaImportService$e: Throwable</ID>
+    <ID>SwallowedException:QrIndexer.kt$QrIndexer$e: Throwable</ID>
+    <ID>SwallowedException:QrScanner.kt$QrScanner$e: Throwable</ID>
     <ID>SwallowedException:ResizeMultipleImagesDialog.kt$ResizeMultipleImagesDialog$e: OutOfMemoryError</ID>
+    <ID>SwallowedException:SearchActivity.kt$SearchActivity$e: Throwable</ID>
     <ID>SwallowedException:SettingsActivity.kt$SettingsActivity$e: ActivityNotFoundException</ID>
+    <ID>SwallowedException:SettingsActivity.kt$SettingsActivity$e: Exception</ID>
+    <ID>SwallowedException:SettingsActivity.kt$SettingsActivity$e: Throwable</ID>
+    <ID>SwallowedException:SmartSearch.kt$SmartSearch$e: Throwable</ID>
+    <ID>SwallowedException:SpecialActivity.kt$SpecialActivity$e: Throwable</ID>
+    <ID>SwallowedException:SpecialPhoto.kt$SpecialPhoto$e: Throwable</ID>
     <ID>SwallowedException:String.kt$e: IOException</ID>
+    <ID>SwallowedException:SyncStore.kt$SyncStore$e: Throwable</ID>
+    <ID>SwallowedException:TextSelectActivity.kt$TextSelectActivity$e: Throwable</ID>
+    <ID>SwallowedException:UprightDecoder.kt$UprightDecoder$e: Throwable</ID>
     <ID>SwallowedException:ViewPagerActivity.kt$ViewPagerActivity$e: ActivityNotFoundException</ID>
     <ID>SwallowedException:ViewPagerActivity.kt$ViewPagerActivity$e: Exception</ID>
+    <ID>SwallowedException:ViewPagerActivity.kt$ViewPagerActivity$e: Throwable</ID>
     <ID>SwallowedException:ViewPagerActivity.kt$ViewPagerActivity.&lt;no name provided&gt;$e: Exception</ID>
     <ID>SwallowedException:ViewPagerFragment.kt$ViewPagerFragment$e: Exception</ID>
+    <ID>SwallowedException:ZxingDecoder.kt$ZxingDecoder$e: Exception</ID>
+    <ID>SwallowedException:ZxingDecoder.kt$ZxingDecoder$e: NotFoundException</ID>
+    <ID>ThrowingExceptionsWithoutMessageOrCause:SimpleActivity.kt$SimpleActivity$Throwable()</ID>
+    <ID>ThrowsCount:ClipIndexer.kt$ClipIndexer$fun index( context: Context, notify: Boolean = true, onProgress: (phase: String, done: Int, total: Int) -&gt; Unit, onDone: (indexed: Int) -&gt; Unit, onError: (message: String) -&gt; Unit, )</ID>
     <ID>TooGenericExceptionCaught:Activity.kt$e: Exception</ID>
+    <ID>TooGenericExceptionCaught:AppUpdater.kt$AppUpdater$e: Exception</ID>
+    <ID>TooGenericExceptionCaught:ChangelogActivity.kt$ChangelogActivity$e: Throwable</ID>
+    <ID>TooGenericExceptionCaught:ClipEncoder.kt$ClipEncoder$e: Throwable</ID>
+    <ID>TooGenericExceptionCaught:ClipIndexer.kt$ClipIndexer$e: Throwable</ID>
+    <ID>TooGenericExceptionCaught:ClipMlEncoder.kt$ClipMlEncoder$e: Throwable</ID>
+    <ID>TooGenericExceptionCaught:ClipMlModels.kt$ClipMlModels$e: Throwable</ID>
+    <ID>TooGenericExceptionCaught:ClipModels.kt$ClipModels$e: Throwable</ID>
+    <ID>TooGenericExceptionCaught:ClipSearch.kt$ClipSearch$e: Throwable</ID>
+    <ID>TooGenericExceptionCaught:ComparatorActivity.kt$ComparatorActivity$e: Throwable</ID>
+    <ID>TooGenericExceptionCaught:ComparatorActivity.kt$ComparatorActivity.&lt;no name provided&gt;$e: Throwable</ID>
+    <ID>TooGenericExceptionCaught:CompareListActivity.kt$CompareListActivity$e: Throwable</ID>
     <ID>TooGenericExceptionCaught:Context.kt$e: Exception</ID>
     <ID>TooGenericExceptionCaught:DirectoryAdapter.kt$DirectoryAdapter$e: Exception</ID>
+    <ID>TooGenericExceptionCaught:DocClassifier.kt$DocClassifier$e: Throwable</ID>
+    <ID>TooGenericExceptionCaught:DocsActivity.kt$DocsActivity$e: Throwable</ID>
     <ID>TooGenericExceptionCaught:EditActivity.kt$EditActivity$e: Exception</ID>
+    <ID>TooGenericExceptionCaught:FaceAligner.kt$FaceAligner$e: Throwable</ID>
+    <ID>TooGenericExceptionCaught:FaceContextLoader.kt$FaceContextLoader$e: Throwable</ID>
+    <ID>TooGenericExceptionCaught:FaceCropLoader.kt$FaceCropLoader$e: Throwable</ID>
+    <ID>TooGenericExceptionCaught:FaceIndexer.kt$FaceIndexer$e: Throwable</ID>
+    <ID>TooGenericExceptionCaught:FaceLandmarkHelper.kt$FaceLandmarkHelper$e: Throwable</ID>
+    <ID>TooGenericExceptionCaught:FaceMediaMeta.kt$FaceMediaMeta$e: Throwable</ID>
+    <ID>TooGenericExceptionCaught:FaceTaggingActivity.kt$FaceTaggingActivity$e: Throwable</ID>
+    <ID>TooGenericExceptionCaught:FacesDatabase.kt$FacesDatabase.Companion$e: Throwable</ID>
+    <ID>TooGenericExceptionCaught:GeoIndexer.kt$GeoIndexer$e: Throwable</ID>
+    <ID>TooGenericExceptionCaught:HomeStats.kt$HomeStats$e: Throwable</ID>
+    <ID>TooGenericExceptionCaught:HttpSyncService.kt$HttpSyncService$e: Throwable</ID>
+    <ID>TooGenericExceptionCaught:IndexPerf.kt$IndexPerf$e: Throwable</ID>
+    <ID>TooGenericExceptionCaught:IndexScope.kt$IndexScope$e: Throwable</ID>
+    <ID>TooGenericExceptionCaught:IndexStatus.kt$IndexStatus$e: Throwable</ID>
+    <ID>TooGenericExceptionCaught:IndexingService.kt$IndexingService$e: Throwable</ID>
+    <ID>TooGenericExceptionCaught:IndexingService.kt$IndexingService.Companion$e: Throwable</ID>
     <ID>TooGenericExceptionCaught:MainActivity.kt$MainActivity$e: Exception</ID>
+    <ID>TooGenericExceptionCaught:MainActivity.kt$MainActivity$e: Throwable</ID>
+    <ID>TooGenericExceptionCaught:MapActivity.kt$MapActivity$e: Throwable</ID>
     <ID>TooGenericExceptionCaught:MediaActivity.kt$MediaActivity$e: Exception</ID>
+    <ID>TooGenericExceptionCaught:MediaActivity.kt$MediaActivity$e: Throwable</ID>
     <ID>TooGenericExceptionCaught:MediaFetcher.kt$MediaFetcher$e: Exception</ID>
+    <ID>TooGenericExceptionCaught:MediaServer.kt$MediaServer$e: Exception</ID>
+    <ID>TooGenericExceptionCaught:MediaServer.kt$MediaServer$e: Throwable</ID>
+    <ID>TooGenericExceptionCaught:MediaStoreSaver.kt$e: Exception</ID>
+    <ID>TooGenericExceptionCaught:Memories.kt$Memories$e: Throwable</ID>
+    <ID>TooGenericExceptionCaught:MemoriesActivity.kt$MemoriesActivity$e: Throwable</ID>
+    <ID>TooGenericExceptionCaught:MotionPhoto.kt$MotionPhoto$e: Throwable</ID>
     <ID>TooGenericExceptionCaught:MyWidgetProvider.kt$MyWidgetProvider$e: Exception</ID>
+    <ID>TooGenericExceptionCaught:NetUtil.kt$NetUtil$e: Exception</ID>
+    <ID>TooGenericExceptionCaught:OcrEngine.kt$OcrEngine$e: Throwable</ID>
+    <ID>TooGenericExceptionCaught:OcrIndexer.kt$OcrIndexer$e: Throwable</ID>
+    <ID>TooGenericExceptionCaught:PeopleActivity.kt$PeopleActivity$e: Throwable</ID>
+    <ID>TooGenericExceptionCaught:PeopleActivity.kt$PeopleActivity.Companion$e: Throwable</ID>
+    <ID>TooGenericExceptionCaught:PeopleSearchActivity.kt$PeopleSearchActivity$e: Throwable</ID>
+    <ID>TooGenericExceptionCaught:PersonActivity.kt$PersonActivity$e: Throwable</ID>
+    <ID>TooGenericExceptionCaught:PhashIndexer.kt$PhashIndexer$e: Throwable</ID>
     <ID>TooGenericExceptionCaught:PhotoFragment.kt$PhotoFragment$e: Exception</ID>
+    <ID>TooGenericExceptionCaught:PhotoPathsAdapter.kt$PhotoPathsAdapter$e: Throwable</ID>
+    <ID>TooGenericExceptionCaught:PhotoQuality.kt$PhotoQuality$e: Throwable</ID>
     <ID>TooGenericExceptionCaught:PhotoVideoActivity.kt$PhotoVideoActivity$e: Exception</ID>
+    <ID>TooGenericExceptionCaught:PhotoVideoActivity.kt$PhotoVideoActivity$e: Throwable</ID>
+    <ID>TooGenericExceptionCaught:PicasaImportService.kt$PicasaImportService$e: Throwable</ID>
+    <ID>TooGenericExceptionCaught:QrIndexer.kt$QrIndexer$e: Throwable</ID>
+    <ID>TooGenericExceptionCaught:QrScanner.kt$QrScanner$e: Throwable</ID>
+    <ID>TooGenericExceptionCaught:RefreshFaces.kt$RefreshFaces$e: Throwable</ID>
     <ID>TooGenericExceptionCaught:ResizeMultipleImagesDialog.kt$ResizeMultipleImagesDialog$e: Exception</ID>
+    <ID>TooGenericExceptionCaught:SearchActivity.kt$SearchActivity$e: Throwable</ID>
     <ID>TooGenericExceptionCaught:SettingsActivity.kt$SettingsActivity$e: Exception</ID>
+    <ID>TooGenericExceptionCaught:SettingsActivity.kt$SettingsActivity$e: Throwable</ID>
+    <ID>TooGenericExceptionCaught:SmartSearch.kt$SmartSearch$e: Throwable</ID>
+    <ID>TooGenericExceptionCaught:SpecialActivity.kt$SpecialActivity$e: Throwable</ID>
+    <ID>TooGenericExceptionCaught:SpecialPhoto.kt$SpecialPhoto$e: Throwable</ID>
+    <ID>TooGenericExceptionCaught:SyncStore.kt$SyncStore$e: Throwable</ID>
+    <ID>TooGenericExceptionCaught:TextSelectActivity.kt$TextSelectActivity$e: Throwable</ID>
+    <ID>TooGenericExceptionCaught:UprightDecoder.kt$UprightDecoder$e: Throwable</ID>
     <ID>TooGenericExceptionCaught:VideoFragment.kt$VideoFragment$e: Exception</ID>
     <ID>TooGenericExceptionCaught:VideoPlayerActivity.kt$VideoPlayerActivity$e: Exception</ID>
     <ID>TooGenericExceptionCaught:ViewPagerActivity.kt$ViewPagerActivity$e: Exception</ID>
+    <ID>TooGenericExceptionCaught:ViewPagerActivity.kt$ViewPagerActivity$e: Throwable</ID>
     <ID>TooGenericExceptionCaught:ViewPagerActivity.kt$ViewPagerActivity.&lt;no name provided&gt;$e: Exception</ID>
     <ID>TooGenericExceptionCaught:ViewPagerFragment.kt$ViewPagerFragment$e: Exception</ID>
+    <ID>TooGenericExceptionCaught:ZxingDecoder.kt$ZxingDecoder$e: Exception</ID>
     <ID>TooGenericExceptionThrown:PicassoRegionDecoder.kt$PicassoRegionDecoder$throw RuntimeException("Region decoder returned null bitmap - image format may not be supported")</ID>
     <ID>TooManyFunctions:Activity.kt$org.fossify.gallery.extensions.Activity.kt</ID>
+    <ID>TooManyFunctions:ComparatorActivity.kt$ComparatorActivity : SimpleActivity</ID>
     <ID>TooManyFunctions:Config.kt$Config : BaseConfig</ID>
     <ID>TooManyFunctions:Context.kt$org.fossify.gallery.extensions.Context.kt</ID>
     <ID>TooManyFunctions:DirectoryAdapter.kt$DirectoryAdapter : MyRecyclerViewAdapterItemTouchHelperContractOnPopupTextUpdate</ID>
     <ID>TooManyFunctions:EditActivity.kt$EditActivity : BaseCropActivity</ID>
     <ID>TooManyFunctions:EditorDrawCanvas.kt$EditorDrawCanvas : View</ID>
+    <ID>TooManyFunctions:ExtrasDao.kt$ExtrasDao</ID>
+    <ID>TooManyFunctions:FaceDao.kt$FaceDao</ID>
+    <ID>TooManyFunctions:FaceIndexer.kt$FaceIndexer</ID>
+    <ID>TooManyFunctions:FaceTaggingActivity.kt$FaceTaggingActivity : SimpleActivity</ID>
+    <ID>TooManyFunctions:IndexStatus.kt$IndexStatus</ID>
+    <ID>TooManyFunctions:IndexingService.kt$IndexingService : Service</ID>
     <ID>TooManyFunctions:MainActivity.kt$MainActivity : SimpleActivityDirectoryOperationsListener</ID>
     <ID>TooManyFunctions:ManageFoldersAdapter.kt$ManageFoldersAdapter : MyRecyclerViewAdapter</ID>
     <ID>TooManyFunctions:ManageHiddenFoldersAdapter.kt$ManageHiddenFoldersAdapter : MyRecyclerViewAdapter</ID>
+    <ID>TooManyFunctions:MapActivity.kt$MapActivity : SimpleActivity</ID>
     <ID>TooManyFunctions:MediaActivity.kt$MediaActivity : SimpleActivityMediaOperationsListener</ID>
     <ID>TooManyFunctions:MediaAdapter.kt$MediaAdapter : MyRecyclerViewAdapterOnPopupTextUpdate</ID>
     <ID>TooManyFunctions:MediaFetcher.kt$MediaFetcher</ID>
+    <ID>TooManyFunctions:MediaServer.kt$MediaServer : NanoHTTPD</ID>
     <ID>TooManyFunctions:Medium.kt$Medium : SerializableThumbnailItem</ID>
     <ID>TooManyFunctions:MediumDao.kt$MediumDao</ID>
+    <ID>TooManyFunctions:OcrIndexer.kt$OcrIndexer</ID>
+    <ID>TooManyFunctions:PeopleActivity.kt$PeopleActivity : SimpleActivity</ID>
+    <ID>TooManyFunctions:PeopleAdapter.kt$PeopleAdapter : MyRecyclerViewAdapter</ID>
+    <ID>TooManyFunctions:PeopleDao.kt$PeopleDao</ID>
+    <ID>TooManyFunctions:PeopleSearchActivity.kt$PeopleSearchActivity : SimpleActivity</ID>
+    <ID>TooManyFunctions:PersonActivity.kt$PersonActivity : SimpleActivity</ID>
+    <ID>TooManyFunctions:PersonFacesAdapter.kt$PersonFacesAdapter : MyRecyclerViewAdapter</ID>
     <ID>TooManyFunctions:PhotoFragment.kt$PhotoFragment : ViewPagerFragment</ID>
+    <ID>TooManyFunctions:PhotoPathsAdapter.kt$PhotoPathsAdapter : MyRecyclerViewAdapterOnPopupTextUpdate</ID>
     <ID>TooManyFunctions:PhotoVideoActivity.kt$PhotoVideoActivity : BaseViewerActivityFragmentListener</ID>
     <ID>TooManyFunctions:SearchActivity.kt$SearchActivity : SimpleActivityMediaOperationsListener</ID>
     <ID>TooManyFunctions:SettingsActivity.kt$SettingsActivity : SimpleActivity</ID>
+    <ID>TooManyFunctions:SimpleActivity.kt$SimpleActivity : BaseSimpleActivity</ID>
+    <ID>TooManyFunctions:SpecialActivity.kt$SpecialActivity : SimpleActivity</ID>
     <ID>TooManyFunctions:VideoFragment.kt$VideoFragment : ViewPagerFragmentSurfaceTextureListenerOnSeekBarChangeListenerPlaybackSpeedListener</ID>
     <ID>TooManyFunctions:VideoPlayerActivity.kt$VideoPlayerActivity : BaseViewerActivityOnSeekBarChangeListenerSurfaceTextureListenerPlaybackSpeedListener</ID>
     <ID>TooManyFunctions:ViewPagerActivity.kt$ViewPagerActivity : BaseViewerActivityOnPageChangeListenerFragmentListener</ID>
     <ID>TooManyFunctions:WidgetConfigureActivity.kt$WidgetConfigureActivity : SimpleActivity</ID>
+    <ID>UnusedParameter:MediaServer.kt$MediaServer$session: IHTTPSession</ID>
+    <ID>UnusedParameter:MediaServer.kt$MediaServer$sizeHint: Long</ID>
+    <ID>UnusedPrivateMember:MediaServer.kt$MediaServer$private fun escape(s: String)</ID>
     <ID>UnusedPrivateMember:PhotoFragment.kt$PhotoFragment$private fun checkIfPanorama()</ID>
     <ID>UnusedPrivateMember:VideoFragment.kt$VideoFragment$private fun checkIfPanorama()</ID>
     <ID>UnusedPrivateProperty:MyPagerAdapter.kt$MyPagerAdapter$pos</ID>
     <ID>UnusedPrivateProperty:PhotoFragment.kt$PhotoFragment$i</ID>
     <ID>UnusedPrivateProperty:String.kt$i</ID>
+    <ID>UseCheckOrError:BertTokenizer.kt$BertTokenizer.Companion$throw IllegalStateException("prázdny vocab v tokenizer.json")</ID>
+    <ID>UseCheckOrError:OcrIndexer.kt$OcrIndexer$throw IllegalStateException("Tesseract sa nepodarilo inicializovať (slk)")</ID>
+    <ID>UseCheckOrError:PicasaImportService.kt$PicasaImportService$throw IllegalStateException("Nepodarilo sa otvoriť ZIP")</ID>
+    <ID>UseCheckOrError:PicasaImportService.kt$PicasaImportService$throw IllegalStateException("V ZIP-e chýba manifest.json")</ID>
     <ID>VariableNaming:Activity.kt$val BATCH_SIZE = 50</ID>
     <ID>VariableNaming:Activity.kt$val OTGPath = config.OTGPath</ID>
     <ID>VariableNaming:Context.kt$val OTGPath = config.OTGPath</ID>
@@ -541,6 +1504,7 @@
     <ID>VariableNaming:MediaAdapter.kt$MediaAdapter$private val ITEM_MEDIUM_PHOTO = 2</ID>
     <ID>VariableNaming:MediaAdapter.kt$MediaAdapter$private val ITEM_MEDIUM_VIDEO_PORTRAIT = 1</ID>
     <ID>VariableNaming:MediaAdapter.kt$MediaAdapter$private val ITEM_SECTION = 0</ID>
+    <ID>VariableNaming:MediaAdapter.kt$MediaAdapter$private val MAX_RECORDED_MUTATIONS = 20</ID>
     <ID>VariableNaming:MediaAdapter.kt$MediaAdapter$val SAFPath = selectedPaths.firstOrNull { activity.needsStupidWritePermissions(it) } ?: getFirstSelectedItemPath() ?: return</ID>
     <ID>VariableNaming:MediaFetcher.kt$MediaFetcher$val OTGPath = config.OTGPath</ID>
     <ID>VariableNaming:MediaFetcher.kt$MediaFetcher$val OTGPath = context.config.OTGPath</ID>

@@ -2,6 +2,7 @@ package org.fossify.gallery.clip
 
 import android.content.Context
 import org.fossify.commons.helpers.ensureBackgroundThread
+import org.fossify.gallery.R
 import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
@@ -43,11 +44,11 @@ object ClipMlModels {
             try {
                 val ok = ensure(appCtx, { isRunning }) { phase, pct -> onProgress(phase, pct, 100) }
                 if (!isRunning) {
-                    onError("zastavené")
+                    onError(appCtx.getString(R.string.q1_stopped))
                 } else if (ok) {
                     onDone()
                 } else {
-                    onError("model sa nestiahol (skontroluj WiFi/pripojenie)")
+                    onError(appCtx.getString(R.string.q1_clip_ml_download_failed))
                 }
             } catch (e: Throwable) {
                 onError(e.javaClass.simpleName + (e.message?.let { ": " + it.take(120) } ?: ""))
@@ -63,11 +64,11 @@ object ClipMlModels {
 
     private fun ensure(context: Context, running: () -> Boolean, onProgress: (phase: String, pct: Int) -> Unit): Boolean {
         if (!tokenizerPresent(context)) {
-            if (!downloadFile(TOKENIZER_URL, tokenizerFile(context), running) { p -> onProgress("tokenizer", p) }) return false
+            if (!downloadFile(TOKENIZER_URL, tokenizerFile(context), running) { p -> onProgress(context.getString(R.string.q1_clip_ml_phase_tokenizer), p) }) return false
         }
         if (!running()) return false
         if (!textPresent(context)) {
-            if (!downloadFile(TEXT_URL, textFile(context), running) { p -> onProgress("SK model", p) }) return false
+            if (!downloadFile(TEXT_URL, textFile(context), running) { p -> onProgress(context.getString(R.string.q1_clip_ml_phase_model), p) }) return false
         }
         return present(context)
     }
@@ -84,41 +85,44 @@ object ClipMlModels {
                     readTimeout = 60000
                     setRequestProperty("User-Agent", "GaleriaPlus")
                 }
-                val code = conn.responseCode
-                if (code in 300..399) {
-                    val loc = conn.getHeaderField("Location") ?: return false
-                    conn.disconnect()
-                    url = if (loc.startsWith("http")) loc else URL(URL(url), loc).toString()
-                    redirects++
-                    continue
-                }
-                if (code != HttpURLConnection.HTTP_OK) {
-                    conn.disconnect()
-                    return false
-                }
-                val total = conn.contentLengthLong
-                conn.inputStream.use { input ->
-                    tmp.outputStream().use { out ->
-                        val buf = ByteArray(256 * 1024)
-                        var read = 0L
-                        var lastPct = -1
-                        while (true) {
-                            if (!running()) return false
-                            val n = input.read(buf)
-                            if (n < 0) break
-                            out.write(buf, 0, n)
-                            read += n
-                            if (total > 0) {
-                                val pct = (read * 100 / total).toInt()
-                                if (pct != lastPct) {
-                                    lastPct = pct
-                                    onProgress(pct)
+                // spojenie sa zavrie pri KAŽDOM výstupe (aj pri zastavení uprostred sťahovania)
+                try {
+                    val code = conn.responseCode
+                    if (code in 300..399) {
+                        val loc = conn.getHeaderField("Location") ?: return false
+                        url = if (loc.startsWith("http")) loc else URL(URL(url), loc).toString()
+                        redirects++
+                        continue
+                    }
+                    if (code != HttpURLConnection.HTTP_OK) return false
+                    val total = conn.contentLengthLong
+                    conn.inputStream.use { input ->
+                        tmp.outputStream().use { out ->
+                            val buf = ByteArray(256 * 1024)
+                            var read = 0L
+                            var lastPct = -1
+                            while (true) {
+                                if (!running()) {
+                                    tmp.delete() // nedokončený .part (stovky MB) nenechávať na disku
+                                    return false
+                                }
+                                val n = input.read(buf)
+                                if (n < 0) break
+                                out.write(buf, 0, n)
+                                read += n
+                                if (total > 0) {
+                                    val pct = (read * 100 / total).toInt()
+                                    if (pct != lastPct) {
+                                        lastPct = pct
+                                        onProgress(pct)
+                                    }
                                 }
                             }
                         }
                     }
+                } finally {
+                    conn.disconnect()
                 }
-                conn.disconnect()
                 if (dest.exists()) dest.delete()
                 if (!tmp.renameTo(dest)) {
                     tmp.copyTo(dest, overwrite = true)

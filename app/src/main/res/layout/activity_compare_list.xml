@@ -18,15 +18,13 @@
             app:title="@string/compare_title"
             app:titleTextAppearance="@style/AppTheme.ActionBar.TitleTextStyle" />
 
-        <!-- záložky namiesto skrytého prepínača v menu — prepínanie bez vracania sa -->
+        <!-- záložky namiesto skrytého prepínača v menu — prepínanie bez vracania sa;
+             pozadie preberajú od MyAppBarLayout, farby textu a indikátora nastaví CompareListActivity z témy -->
         <com.google.android.material.tabs.TabLayout
             android:id="@+id/compare_list_tabs"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:background="@color/color_primary"
-            app:tabIndicatorColor="#FFFFFFFF"
-            app:tabSelectedTextColor="#FFFFFFFF"
-            app:tabTextColor="#B3FFFFFF" />
+            android:background="@android:color/transparent" />
 
     </org.fossify.commons.views.MyAppBarLayout>
 

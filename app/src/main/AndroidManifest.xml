@@ -30,9 +30,8 @@
         android:name="android.permission.MANAGE_MEDIA"
         tools:ignore="ProtectedPermissions" />
 
-    <uses-permission
-        android:name="android.permission.ACCESS_NETWORK_STATE"
-        tools:node="remove" />
+    <!-- potrebné pre ClipModels.isMeteredNetwork() - CLIP model sa nesťahuje na mobilných dátach -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
     <uses-permission
         android:name="android.permission.CAMERA"
@@ -51,6 +50,9 @@
         android:name="org.fossify.gallery.App"
         android:allowBackup="true"
         android:appCategory="image"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:fullBackupContent="@xml/backup_rules"
+        android:hasFragileUserData="true"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name_brand"
         android:requestLegacyExternalStorage="true"
@@ -194,27 +196,20 @@
             android:configChanges="orientation"
             android:exported="false"
             android:label="@string/memories_title"
-            android:parentActivityName=".activities.ExploreActivity" />
+            android:parentActivityName=".activities.MainActivity" />
 
         <activity
             android:name=".activities.SpecialActivity"
             android:configChanges="orientation"
             android:exported="false"
             android:label="@string/special_title"
-            android:parentActivityName=".activities.ExploreActivity" />
+            android:parentActivityName=".activities.MainActivity" />
 
         <activity
             android:name=".activities.DocsActivity"
             android:configChanges="orientation"
             android:exported="false"
             android:label="@string/docs_title"
-            android:parentActivityName=".activities.ExploreActivity" />
-
-        <activity
-            android:name=".activities.ExploreActivity"
-            android:configChanges="orientation"
-            android:exported="false"
-            android:label="@string/explore_title"
             android:parentActivityName=".activities.MainActivity" />
 
         <activity
@@ -230,6 +225,29 @@
             android:exported="false"
             android:label="@string/excluded_folders"
             android:parentActivityName=".activities.SettingsActivity" />
+
+        <!-- Rodinné prepojenie: párovanie QR kódom. exported kvôli odkazu galeriaplus://family/pair zo skenera
+             (HyperOS / systémový fotoaparát); spárovanie vždy potvrdí používateľ v dialógu. -->
+        <activity
+            android:name=".family.PairingActivity"
+            android:configChanges="orientation"
+            android:exported="true"
+            android:label="@string/family_pair_title"
+            android:launchMode="singleTop"
+            android:parentActivityName=".activities.SettingsActivity">
+
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+
+                <data
+                    android:host="family"
+                    android:pathPrefix="/pair"
+                    android:scheme="galeriaplus" />
+            </intent-filter>
+        </activity>
 
         <activity
             android:name=".activities.HiddenFoldersActivity"
@@ -347,10 +365,6 @@
         </provider>
 
         <receiver
-            android:name=".receivers.UpdateResultReceiver"
-            android:exported="false" />
-
-        <receiver
             android:name=".receivers.RefreshMediaReceiver"
             android:exported="true">
             <intent-filter>
@@ -384,6 +398,23 @@
 
         <service
             android:name=".jobs.NewPhotoFetcher"
+            android:exported="true"
+            android:permission="android.permission.BIND_JOB_SERVICE" />
+
+        <!-- automatická záloha osôb (A3): raz za týždeň pri nabíjaní, krátky beh jobu -->
+        <service
+            android:name=".jobs.PeopleBackupJob"
+            android:exported="true"
+            android:permission="android.permission.BIND_JOB_SERVICE" />
+
+        <!-- dáta z novšej verzie appky (A4): hláška namiesto pádu -->
+        <activity
+            android:name=".safety.NewerDataActivity"
+            android:exported="false" />
+
+        <!-- rodinné prepojenie (F5): okno synchronizácie pri nabíjaní, beží len ako krátke behy jobu -->
+        <service
+            android:name=".jobs.FamilySyncJob"
             android:exported="true"
             android:permission="android.permission.BIND_JOB_SERVICE" />
 

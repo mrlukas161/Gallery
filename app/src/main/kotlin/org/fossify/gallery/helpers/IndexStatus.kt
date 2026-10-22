@@ -1,6 +1,15 @@
 package org.fossify.gallery.helpers
 
+import android.Manifest
 import android.content.Context
+import android.content.SharedPreferences
+import android.content.pm.PackageManager
+import android.os.Build
+import android.os.Environment
+import android.os.storage.StorageManager
+import android.provider.MediaStore
+import androidx.core.content.ContextCompat
+import java.io.File
 
 // Jedno miesto, kde sa dá zistiť priebeh KAŽDÉHO indexera (0–100 %) — pre prehľadné Nastavenia.
 // Číta reálne počty z databáz vs. počet fotiek v knižnici; percentá sa počítajú rovnako pre všetky
@@ -22,7 +31,8 @@ object IndexStatus {
     }
 
     private const val CLEANUP_INTERVAL_MS = 24 * 60 * 60 * 1000L
-    private const val CLEANUP_BATCH = 2000
+    private const val CLEANUP_BATCH = 500 // ciest na tabuľku a deň
+    private const val PROBE_SAMPLE = 40
 
     @Volatile
     private var cleanupRunning = false
@@ -102,10 +112,20 @@ object IndexStatus {
         return counted.sumOf { it.percent } / counted.size
     }
 
-    // Lacné upratanie indexov: raz denne na pozadí zmaž z indexových DB riadky fotiek, ktoré už
-    // na disku neexistujú (nikde inde sa riadky nemažú — počty by navždy prevyšovali realitu).
-    // Kontroluje sa max CLEANUP_BATCH ciest naraz, takže beh je krátky aj na obrích knižniciach;
-    // zvyšok príde na rad pri ďalších dňoch.
+    // Lacné upratanie PRESTAVATEĽNÝCH indexov: raz denne na pozadí zmaž riadky fotiek, ktoré naozaj
+    // zmizli (nikde inde sa riadky nemažú — počty by navždy prevyšovali realitu).
+    //
+    // ⛔ Tabuľka `faces` sa tu NEUPRATUJE NIKDY: id tvárí odkazujú face_assignments a cannot_links
+    // (people.db) aj ignored_faces (extras.db) — zmazaný riadok = stratené meno osoby. Predtým sa
+    // mazala pri každom File.exists() == false, teda aj pri presune/premenovaní fotky alebo dočasne
+    // nedostupnom úložisku. `indexed_photos` sa maže LEN pre fotky bez tvárí (inak by ich ďalšie
+    // spracovanie knižnice detegovalo nanovo).
+    //
+    // „Naozaj zmizla" = File.exists() je false A MediaStore ju nepozná A jej úložisko je pripojené.
+    // Keď súborové API nevyzerá spoľahlivo (chýba povolenie na všetky médiá, MediaStore je prázdny,
+    // fotky známe MediaStore „neexistujú"), neupratuje sa nič. Každá tabuľka sa prechádza po dávkach
+    // CLEANUP_BATCH s posunom uloženým v prefs — postupne sa vystrieda celá tabuľka (predtým sa
+    // kontrolovalo stále tých istých prvých 2000 ciest prvej tabuľky a na ostatné nikdy nedošlo).
     fun maybeCleanup(context: Context) {
         val appCtx = context.applicationContext
         try {
@@ -116,7 +136,7 @@ object IndexStatus {
             org.fossify.commons.helpers.ensureBackgroundThread {
                 try {
                     prefs.edit().putLong("index_cleanup_at", System.currentTimeMillis()).apply()
-                    cleanupIndexes(appCtx)
+                    cleanupIndexes(appCtx, prefs)
                 } catch (ignored: Throwable) {
                 } finally {
                     cleanupRunning = false
@@ -126,44 +146,130 @@ object IndexStatus {
         }
     }
 
-    // prejde tabuľky indexov a zmaže riadky s neexistujúcou cestou (File.exists po dávkach)
-    private fun cleanupIndexes(context: Context) {
-        val databases: List<Pair<androidx.room.RoomDatabase, List<Pair<String, String>>>> = listOf(
-            org.fossify.gallery.faces.FacesDatabase.getInstance(context) to listOf(
-                "indexed_photos" to "path",
-                "faces" to "media_full_path",
+    // keepWhere = dodatočná podmienka DELETE, ktorá chráni riadky, čo sa zmazať nesmú
+    private class CleanupTarget(
+        val db: androidx.room.RoomDatabase,
+        val table: String,
+        val col: String,
+        val keepWhere: String? = null,
+    )
+
+    // Test „fotka naozaj zmizla" (pozri maybeCleanup), alebo null, keď súborové API práve nie je
+    // spoľahlivé a nemá sa rozhodovať nič. Používa ho aj FaceRelinker (A5). Volať mimo hlavného vlákna.
+    fun reallyMissingTester(context: Context): ((String) -> Boolean)? {
+        if (!canReadAllMedia(context)) return null
+        val known = mediaStorePaths(context) ?: return null
+        if (known.isEmpty() || !fileApiReliable(known)) return null
+        val storage = try {
+            context.getSystemService(StorageManager::class.java)
+        } catch (e: Throwable) {
+            null
+        }
+        val mountedByParent = HashMap<String, Boolean>()
+        return { path ->
+            path !in known && !File(path).exists() &&
+                mountedByParent.getOrPut(path.substringBeforeLast('/', "")) { volumeMounted(storage, path) }
+        }
+    }
+
+    private fun cleanupIndexes(context: Context, prefs: SharedPreferences) {
+        val reallyMissing = reallyMissingTester(context) ?: return
+        val targets = listOf(
+            CleanupTarget(
+                org.fossify.gallery.faces.FacesDatabase.getInstance(context), "indexed_photos", "path",
+                keepWhere = "AND NOT EXISTS (SELECT 1 FROM faces WHERE faces.media_full_path = indexed_photos.path)",
             ),
-            org.fossify.gallery.faces.OcrDatabase.getInstance(context) to listOf("ocr_text" to "path"),
-            org.fossify.gallery.faces.QrDatabase.getInstance(context) to listOf("qr_codes" to "path"),
-            org.fossify.gallery.faces.GeoDatabase.getInstance(context) to listOf("geo" to "path"),
-            org.fossify.gallery.faces.PhashDatabase.getInstance(context) to listOf("phash_index" to "path"),
-            org.fossify.gallery.clip.ClipDatabase.getInstance(context) to listOf("clip_index" to "path"),
+            CleanupTarget(org.fossify.gallery.faces.OcrDatabase.getInstance(context), "ocr_text", "path"),
+            CleanupTarget(org.fossify.gallery.faces.QrDatabase.getInstance(context), "qr_codes", "path"),
+            CleanupTarget(org.fossify.gallery.faces.GeoDatabase.getInstance(context), "geo", "path"),
+            CleanupTarget(org.fossify.gallery.faces.PhashDatabase.getInstance(context), "phash_index", "path"),
+            CleanupTarget(org.fossify.gallery.clip.ClipDatabase.getInstance(context), "clip_index", "path"),
         )
-        var checked = 0
-        for ((db, tables) in databases) {
-            for ((table, col) in tables) {
-                if (checked >= CLEANUP_BATCH) return
-                val missing = ArrayList<String>()
-                try {
-                    val sql = db.openHelper.writableDatabase
-                    sql.query("SELECT DISTINCT $col FROM $table").use { cursor ->
-                        while (cursor.moveToNext()) {
-                            if (checked >= CLEANUP_BATCH) break
-                            val path = cursor.getString(0) ?: continue
-                            checked++
-                            if (!java.io.File(path).exists()) missing.add(path)
-                        }
-                    }
-                    if (missing.isNotEmpty()) {
-                        missing.chunked(400).forEach { chunk ->
-                            val placeholders = chunk.joinToString(",") { "?" }
-                            sql.execSQL("DELETE FROM $table WHERE $col IN ($placeholders)", chunk.toTypedArray())
-                        }
-                    }
-                } catch (ignored: Throwable) {
-                }
+        for (t in targets) {
+            try {
+                cleanupTable(t, prefs, reallyMissing)
+            } catch (ignored: Throwable) {
             }
         }
+    }
+
+    private fun cleanupTable(t: CleanupTarget, prefs: SharedPreferences, reallyMissing: (String) -> Boolean) {
+        val offKey = "index_cleanup_off_${t.table}"
+        val offset = prefs.getInt(offKey, 0).coerceAtLeast(0)
+        val sql = t.db.openHelper.writableDatabase
+        val paths = ArrayList<String>(CLEANUP_BATCH)
+        sql.query("SELECT DISTINCT ${t.col} FROM ${t.table} ORDER BY ${t.col} LIMIT $CLEANUP_BATCH OFFSET $offset").use { cursor ->
+            while (cursor.moveToNext()) {
+                cursor.getString(0)?.let { paths.add(it) }
+            }
+        }
+        var deleted = 0
+        paths.filter(reallyMissing).chunked(400).forEach { chunk ->
+            val where = "${t.col} IN (${chunk.joinToString(",") { "?" }})" + (t.keepWhere?.let { " $it" } ?: "")
+            deleted += sql.delete(t.table, where, chunk.toTypedArray())
+        }
+        // ďalší deň pokračuj za touto dávkou (zmazané riadky posunuli zvyšok dopredu); na konci od začiatku
+        val next = if (paths.size < CLEANUP_BATCH) 0 else offset + paths.size - deleted
+        prefs.edit().putInt(offKey, next).apply()
+    }
+
+    // bez prístupu ku VŠETKÝM fotkám a videám (napr. „len vybrané fotky") File.exists() vracia
+    // false aj pre existujúce súbory — upratovanie by mazalo platné riadky
+    private fun canReadAllMedia(context: Context): Boolean = try {
+        fun granted(permission: String) =
+            ContextCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_GRANTED
+        when {
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && Environment.isExternalStorageManager() -> true
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU ->
+                granted(Manifest.permission.READ_MEDIA_IMAGES) && granted(Manifest.permission.READ_MEDIA_VIDEO)
+
+            else -> granted(Manifest.permission.READ_EXTERNAL_STORAGE)
+        }
+    } catch (e: Throwable) {
+        false
+    }
+
+    // všetky cesty fotiek a videí, ktoré pozná MediaStore (null = nedá sa zistiť -> neupratuj)
+    private fun mediaStorePaths(context: Context): HashSet<String>? {
+        val set = HashSet<String>()
+        try {
+            for (uri in arrayOf(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, MediaStore.Video.Media.EXTERNAL_CONTENT_URI)) {
+                val cursor = context.contentResolver.query(uri, arrayOf(MediaStore.MediaColumns.DATA), null, null, null)
+                    ?: return null
+                cursor.use {
+                    val col = it.getColumnIndexOrThrow(MediaStore.MediaColumns.DATA)
+                    while (it.moveToNext()) {
+                        it.getString(col)?.let { p -> set.add(p) }
+                    }
+                }
+            }
+        } catch (e: Throwable) {
+            return null
+        }
+        return set
+    }
+
+    // sonda: keď súborové API tvrdí, že neexistujú fotky, ktoré MediaStore pozná, je práve nespoľahlivé
+    // (povolenie, nepripojené úložisko, FUSE) — vtedy sa neupratuje nič
+    private fun fileApiReliable(known: Set<String>): Boolean {
+        val step = (known.size / PROBE_SAMPLE).coerceAtLeast(1)
+        var checked = 0
+        var missing = 0
+        for ((i, path) in known.withIndex()) {
+            if (i % step != 0) continue
+            checked++
+            if (!File(path).exists()) missing++
+            if (checked >= PROBE_SAMPLE) break
+        }
+        return checked > 0 && missing * 10 <= checked
+    }
+
+    // cesta leží na pripojenom úložisku? (odpojená SD karta = súbor nemusí byť zmazaný)
+    private fun volumeMounted(storage: StorageManager?, path: String): Boolean = try {
+        val state = storage?.getStorageVolume(File(path))?.state
+        state == Environment.MEDIA_MOUNTED || state == Environment.MEDIA_MOUNTED_READ_ONLY
+    } catch (e: Throwable) {
+        false
     }
 
     private inline fun safe(block: () -> Int): Int = try {

@@ -11,6 +11,7 @@ import android.provider.MediaStore.Video
 import android.view.View
 import android.view.ViewGroup
 import android.widget.RelativeLayout
+import android.widget.TextView
 import android.widget.Toast
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
@@ -29,6 +30,7 @@ import org.fossify.commons.extensions.beVisibleIf
 import org.fossify.commons.extensions.checkWhatsNew
 import org.fossify.commons.extensions.deleteFiles
 import org.fossify.commons.extensions.ensureBasePadding
+import org.fossify.commons.extensions.getAlertDialogBuilder
 import org.fossify.commons.extensions.getDoesFilePathExist
 import org.fossify.commons.extensions.getFileCount
 import org.fossify.commons.extensions.getFilePublicUri
@@ -65,6 +67,7 @@ import org.fossify.commons.extensions.isVideoFast
 import org.fossify.commons.extensions.launchMoreAppsFromUsIntent
 import org.fossify.commons.extensions.recycleBinPath
 import org.fossify.commons.extensions.sdCardPath
+import org.fossify.commons.extensions.setupDialogStuff
 import org.fossify.commons.extensions.showErrorToast
 import org.fossify.commons.extensions.toFileDirItem
 import org.fossify.commons.dialogs.ConfirmationDialog
@@ -277,6 +280,8 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // A4: dáta z novšej verzie appky → hláška namiesto pádu (nič sa neotvorí ani nezmení)
+        if (org.fossify.gallery.safety.DataSafetyUi.blockIfNewerData(this)) return
         setContentView(binding.root)
         appLaunched(BuildConfig.APPLICATION_ID)
 
@@ -288,6 +293,10 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
             removeTempFolder()
             checkRecycleBinItems()
             startNewPhotoFetcher()
+            // rodinné prepojenie (F5): okno synchronizácie a dobehnutia spracovania pri nabíjaní
+            org.fossify.gallery.family.FamilyAutoSync.onAppStarted(this)
+            // A3: týždenná automatická záloha osôb pri nabíjaní
+            org.fossify.gallery.safety.DataSafetyUi.onAppStarted(this)
         }
 
         mIsPickImageIntent = isPickImageIntent(intent)
@@ -377,18 +386,16 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
         // ak nová navigácia zlyhala, povedz to nahlas — nech vieme, čo presne opraviť
         mStartupError?.let { err ->
             mStartupError = null
-            androidx.appcompat.app.AlertDialog.Builder(this)
-                .setTitle(R.string.startup_error_title)
-                .setMessage(getString(R.string.startup_error_message, err))
-                .setPositiveButton(org.fossify.commons.R.string.copy) { _, _ ->
+            showThemedMessageDialog(R.string.startup_error_title, getString(R.string.startup_error_message, err)) {
+                setPositiveButton(org.fossify.commons.R.string.copy) { _, _ ->
                     try {
                         val cm = getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
                         cm.setPrimaryClip(android.content.ClipData.newPlainText("chyba", err))
                     } catch (ignored: Throwable) {
                     }
                 }
-                .setNegativeButton(org.fossify.commons.R.string.ok, null)
-                .show()
+                setNegativeButton(org.fossify.commons.R.string.ok, null)
+            }
         }
 
         binding.directoriesSwitchSearching.setOnClickListener {
@@ -451,6 +458,12 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
                     binding.mainBottomNav.selectedItemId = id
                 }
 
+                // ponuka v hornej lište závisí od stránky (zoradenie, filter... patria len Priečinkom);
+                // menu sa napĺňa až po setupPages, takže pri prvom nastavení stránky ešte nemusí existovať
+                if (binding.mainMenu.requireToolbar().menu.size() > 0) {
+                    refreshMenuItems()
+                }
+
                 // Posledné sa načítajú až pri prvom zobrazení stránky
                 if (position == MainPagesAdapter.PAGE_RECENT) {
                     loadRecentPage()
@@ -503,19 +516,41 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
         val prefs = getSharedPreferences("galeria_faces", android.content.Context.MODE_PRIVATE)
         if (prefs.getBoolean("intro_shown", false)) return
         prefs.edit().putBoolean("intro_shown", true).apply()
-        androidx.appcompat.app.AlertDialog.Builder(this)
-            .setTitle(R.string.intro_title)
-            .setMessage(R.string.intro_message)
-            .setPositiveButton(R.string.intro_start) { _, _ ->
+        showThemedMessageDialog(R.string.intro_title, getString(R.string.intro_message)) {
+            setPositiveButton(R.string.intro_start) { _, _ ->
                 org.fossify.gallery.services.IndexingService.start(
-                    this, org.fossify.gallery.services.IndexingService.TASK_ALL,
+                    this@MainActivity, org.fossify.gallery.services.IndexingService.TASK_ALL,
                 )
             }
-            .setNegativeButton(R.string.intro_later, null)
-            .show()
+            setNegativeButton(R.string.intro_later, null)
+        }
     }
 
-    // Stránka Preskúmať: rozcestník na ostatné obrazovky (rovnaké karty ako v ExploreActivity).
+    // Dialóg s textom v Fossify vzore (getAlertDialogBuilder + setupDialogStuff) — na rozdiel od surového
+    // AlertDialog.Builder sa prefarbí podľa témy a akcentu appky (tá sa nepremieta cez XML tému).
+    private fun showThemedMessageDialog(
+        titleId: Int,
+        message: String,
+        configure: androidx.appcompat.app.AlertDialog.Builder.() -> Unit,
+    ) {
+        if (isDestroyed || isFinishing) {
+            return
+        }
+
+        val padding = (resources.displayMetrics.density * 20).toInt()
+        val messageView = TextView(this).apply {
+            text = message
+            setTextColor(getProperTextColor())
+            setPadding(padding, padding, padding, 0)
+        }
+        // dlhší text (uvítanie, chybové hlásenie) sa na malom displeji musí dať rolovať
+        val scrollView = android.widget.ScrollView(this).apply { addView(messageView) }
+        val builder = getAlertDialogBuilder()
+        builder.configure()
+        setupDialogStuff(scrollView, builder, titleId)
+    }
+
+    // Stránka Preskúmať: rozcestník na ostatné obrazovky (Spomienky, Ľudia, Miesta, Dokumenty, Špeciálne, Podobné, Hľadať).
     private fun setupExplorePage() {
         val page = binding.pageExplore
         page.exploreMemories.setOnClickListener {
@@ -752,16 +787,31 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
 
         mHomeCleanupRunning = true
         ensureBackgroundThread {
-            val stats = HomeStats.compute(this)
+            // nezachytená výnimka na vlákne na pozadí zhodí celú appku — výpočet číta pHash index
+            // a disk, preto pri zlyhaní (pamäť, poškodená databáza...) len ohlásime chybu
+            val stats = try {
+                HomeStats.compute(this)
+            } catch (e: Throwable) {
+                android.util.Log.e("GaleriaPlus", "zlyhal výpočet karty Na upratanie", e)
+                null
+            }
             runOnUiThread {
                 mHomeCleanupRunning = false
                 mHomeCleanupComputedAt = System.currentTimeMillis()
-                // výsledok si odložíme aj pre kartu Podobné na stránke Preskúmať
-                mLastHomeStats = stats
                 if (isDestroyed || isFinishing) {
+                    if (stats != null) {
+                        mLastHomeStats = stats
+                    }
                     return@runOnUiThread
                 }
 
+                if (stats == null) {
+                    binding.pageHome.homeCleanupSummary.text = getString(R.string.c4_home_cleanup_failed)
+                    return@runOnUiThread
+                }
+
+                // výsledok si odložíme aj pre kartu Podobné na stránke Preskúmať
+                mLastHomeStats = stats
                 binding.pageHome.homeCleanupSummary.text = when {
                     !stats.hasPhashIndex -> getString(R.string.home_cleanup_no_index)
                     stats.duplicates == 0 -> getString(R.string.home_cleanup_none)
@@ -834,9 +884,15 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
     // rovnaký údaj ako prehľad spracovania v Nastaveniach, len v jednom riadku
     private fun refreshHomeStatus() {
         ensureBackgroundThread {
-            val total = IndexStatus.photoCount(this)
-            val items = IndexStatus.all(this, total)
-            val percent = IndexStatus.overallPercent(items)
+            // dopyty do indexov sa opakujú každé ~2 s počas behu spracovania, pád na vlákne na pozadí
+            // by zhodil celú appku — pri zlyhaní (-1) sa zobrazí chyba namiesto percent
+            val percent = try {
+                val total = IndexStatus.photoCount(this)
+                val items = IndexStatus.all(this, total)
+                IndexStatus.overallPercent(items)
+            } catch (e: Throwable) {
+                -1
+            }
             val live = org.fossify.gallery.services.IndexingService.liveProgress
             val error = org.fossify.gallery.services.IndexingService.lastError
             runOnUiThread {
@@ -847,6 +903,7 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
                 binding.pageHome.homeStatus.text = when {
                     live.isNotEmpty() -> live
                     error != null -> getString(R.string.index_overview_error, error)
+                    percent < 0 -> getString(R.string.c4_home_status_failed)
                     percent >= 100 -> getString(R.string.index_overview_done)
                     else -> getString(R.string.index_overview_summary, percent)
                 }
@@ -921,8 +978,12 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
                         return
                     }
 
-                    v.removeOnLayoutChangeListener(this)
                     applyBottomNavPadding(nav)
+                    // odsadenie sa môže pri prvom rozmiestnení ticho nepodariť (výška lišty ešte nepokrýva jej
+                    // vlastné systémové odsadenie) — poslucháč preto zostáva, kým sa naozaj nenastaví
+                    if (mBottomNavPaddingApplied) {
+                        v.removeOnLayoutChangeListener(this)
+                    }
                 }
             })
         }
@@ -970,7 +1031,15 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
         mRecentLoading = true
         setupRecentGrid()
         ensureBackgroundThread {
-            val list = queryRecentPaths()
+            // zlyhanie dopytu na vlákne na pozadí by zhodilo appku — namiesto toho sa ukáže hlásenie
+            var failed = false
+            val list = try {
+                queryRecentPaths()
+            } catch (e: Throwable) {
+                android.util.Log.e("GaleriaPlus", "zlyhalo načítanie Posledných", e)
+                failed = true
+                ArrayList<String>()
+            }
 
             runOnUiThread {
                 mRecentLoading = false
@@ -981,6 +1050,7 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
                 binding.pageRecent.recentRefreshLayout.isRefreshing = false
                 mRecentPaths = list
                 mRecentLoadedAt = System.currentTimeMillis()
+                binding.pageRecent.recentPlaceholder.setText(if (failed) R.string.c4_recent_failed else R.string.a1_recent_empty)
                 binding.pageRecent.recentPlaceholder.beVisibleIf(list.isEmpty())
                 binding.pageRecent.recentGrid.adapter = PhotoPathsAdapter(
                     activity = this@MainActivity,
@@ -993,6 +1063,9 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
                         binding.pageRecent.recentGrid.post { invalidateRecent() }
                         refreshHome(force = true)
                     },
+                    // premenovanie / odkrytie / otočenie / oprava dátumu — Posledné sa načítajú nanovo
+                    // (zmenená cesta aj dátum môžu zmeniť poradie)
+                    onChanged = { binding.pageRecent.recentGrid.post { invalidateRecent() } },
                 )
             }
         }
@@ -1160,6 +1233,7 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
         }
 
         binding.directoriesFastscroller.updateColors(primaryColor)
+        binding.pageRecent.recentFastscroller.updateColors(primaryColor)
         binding.directoriesRefreshLayout.isEnabled = config.enablePullToRefresh
         binding.pageRecent.recentRefreshLayout.isEnabled = config.enablePullToRefresh
         getRecyclerAdapter()?.apply {
@@ -1207,6 +1281,14 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
             org.fossify.gallery.services.IndexingService.autoScanIfStale(this)
         } catch (e: Throwable) {
         }
+
+        // rodinné prepojenie (F5): krátky pokus o synchronizáciu so spárovaným telefónom (na pozadí)
+        if (!mIsThirdPartyIntent) {
+            org.fossify.gallery.family.FamilyAutoSync.onAppResumed(this)
+        }
+
+        // A1: poškodená DB bola premenovaná → ponuka obnovy zo zálohy
+        org.fossify.gallery.safety.DataSafetyUi.onResume(this)
     }
 
     // Kým IndexingService beží a je vidno Domov, riadok stavu sa obnovuje sám každé ~2 s.
@@ -1282,7 +1364,12 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
             val start = getSharedPreferences("galeria_faces", android.content.Context.MODE_PRIVATE)
                 .getInt("start_page", MainPagesAdapter.PAGE_FOLDERS)
                 .coerceIn(0, MainPagesAdapter.PAGE_EXPLORE)
-            if (binding.mainPager.currentItem != start) {
+            // rozkliknuté podpriečinky („Skupina priamych podpriečinkov") majú prednosť: Späť najprv
+            // vyjde o úroveň vyššie, až potom sa vráti na štartovú stránku
+            val inSubfolders = binding.mainPager.currentItem == MainPagesAdapter.PAGE_FOLDERS
+                && config.groupDirectSubfolders
+                && mCurrentPathPrefix.isNotEmpty()
+            if (!inSubfolders && binding.mainPager.currentItem != start) {
                 binding.mainPager.setCurrentItem(start, true)
                 return true
             }
@@ -1309,27 +1396,35 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
 
     // ---------- PC sync: fotky označené z webovej galérie na zmazanie ----------
     private fun checkPcMarkedDeletions() {
+        // pri výbere fotky pre inú appku sa nesmie nič vynoriť nad výberom
+        if (mIsThirdPartyIntent) {
+            return
+        }
+
         ensureBackgroundThread {
-            val prefs = org.fossify.gallery.sync.SyncStore.prefs(this)
-            val all = org.fossify.gallery.sync.SyncStore.markedPaths(prefs)
-            // cesty, ktoré už neexistujú, tíško uprac
-            val gone = all.filter { !java.io.File(it).exists() }
-            if (gone.isNotEmpty()) org.fossify.gallery.sync.SyncStore.removeMarked(prefs, gone)
-            val marked = all - gone.toSet()
-            if (marked.isEmpty() || marked.size == lastPcMarkedPrompt) return@ensureBackgroundThread
-            runOnUiThread {
-                if (isDestroyed || isFinishing) return@runOnUiThread
-                lastPcMarkedPrompt = marked.size
-                androidx.appcompat.app.AlertDialog.Builder(this)
-                    .setTitle(R.string.pc_marked_title)
-                    .setMessage(getString(R.string.pc_marked_message, marked.size))
-                    .setPositiveButton(R.string.pc_marked_delete) { _, _ -> deletePcMarked(marked.toList()) }
-                    .setNegativeButton(R.string.pc_marked_later, null)
-                    .setNeutralButton(R.string.pc_marked_clear) { _, _ ->
-                        org.fossify.gallery.sync.SyncStore.clearMarked(prefs)
-                        lastPcMarkedPrompt = -1
+            try {
+                val prefs = org.fossify.gallery.sync.SyncStore.prefs(this)
+                val all = org.fossify.gallery.sync.SyncStore.markedPaths(prefs)
+                // cesty, ktoré už neexistujú, tíško uprac
+                val gone = all.filter { !java.io.File(it).exists() }
+                if (gone.isNotEmpty()) org.fossify.gallery.sync.SyncStore.removeMarked(prefs, gone)
+                val marked = all - gone.toSet()
+                if (marked.isEmpty() || marked.size == lastPcMarkedPrompt) return@ensureBackgroundThread
+                runOnUiThread {
+                    if (isDestroyed || isFinishing) return@runOnUiThread
+                    lastPcMarkedPrompt = marked.size
+                    showThemedMessageDialog(R.string.pc_marked_title, getString(R.string.pc_marked_message, marked.size)) {
+                        setPositiveButton(R.string.pc_marked_delete) { _, _ -> deletePcMarked(marked.toList()) }
+                        setNegativeButton(R.string.pc_marked_later, null)
+                        setNeutralButton(R.string.pc_marked_clear) { _, _ ->
+                            org.fossify.gallery.sync.SyncStore.clearMarked(prefs)
+                            lastPcMarkedPrompt = -1
+                        }
                     }
-                    .show()
+                }
+            } catch (e: Throwable) {
+                // kontrola označení z PC je len pomôcka — jej zlyhanie nesmie zhodiť appku
+                android.util.Log.e("GaleriaPlus", "zlyhala kontrola fotiek označených z PC", e)
             }
         }
     }
@@ -1431,8 +1526,16 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
 
     private fun refreshMenuItems() {
         if (!mIsThirdPartyIntent) {
+            // Zoradiť, Filtrovať, Zobrazenie, Stĺpce a Nový priečinok menia výlučne mriežku Priečinkov —
+            // na ostatných stránkach by sa dialóg dal použiť, ale účinok by sa prejavil len na skrytej stránke
+            val onFoldersPage = binding.mainPager.currentItem == MainPagesAdapter.PAGE_FOLDERS
             binding.mainMenu.requireToolbar().menu.apply {
-                findItem(R.id.column_count).isVisible = config.viewTypeFolders == VIEW_TYPE_GRID
+                findItem(R.id.sort).isVisible = onFoldersPage
+                findItem(R.id.filter).isVisible = onFoldersPage
+                findItem(R.id.change_view_type).isVisible = onFoldersPage
+                findItem(R.id.create_new_folder).isVisible = onFoldersPage
+                findItem(R.id.column_count).isVisible =
+                    onFoldersPage && config.viewTypeFolders == VIEW_TYPE_GRID
                 findItem(R.id.set_as_default_folder).isVisible = !config.defaultFolder.isEmpty()
                 findItem(R.id.open_recycle_bin).isVisible =
                     config.useRecycleBin && !config.showRecycleBinAtFolders

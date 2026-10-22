@@ -101,6 +101,7 @@ android {
 
     sourceSets {
         getByName("main").java.directories.add("src/main/kotlin")
+        getByName("test").java.directories.add("src/test/kotlin")
     }
 
     compileOptions {
@@ -154,6 +155,13 @@ android {
     }
 }
 
+// A4: Room zapisuje JSON schémy všetkých DB do app/schemas (commitujú sa). CI (room-schemas.yml)
+// zlyhá, keď sa vygenerované schémy líšia od commitnutých — zmena entít bez novej verzie a migrácie
+// sa tak nedostane do vydania nepovšimnutá. Schémy sú zároveň podkladom pre budúce migračné testy.
+ksp {
+    arg("room.schemaLocation", "$projectDir/schemas")
+}
+
 detekt {
     baseline = file("detekt-baseline.xml")
     config.setFrom("$rootDir/detekt.yml")
@@ -200,5 +208,8 @@ dependencies {
     implementation("org.nanohttpd:nanohttpd:2.3.1")
     implementation("com.microsoft.onnxruntime:onnxruntime-android:1.20.0")
     ksp(libs.androidx.room.compiler)
+    testImplementation("junit:junit:4.13.2")
+    // skutočné org.json pre JVM unit testy (v android.jar sú len prázdne náhrady)
+    testImplementation("org.json:json:20240303")
     detektPlugins(libs.compose.detekt)
 }

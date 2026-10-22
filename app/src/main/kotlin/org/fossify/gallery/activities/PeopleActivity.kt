@@ -1,10 +1,13 @@
 package org.fossify.gallery.activities
 
+import android.content.Context
 import android.content.Intent
+import android.database.SQLException
 import android.os.Bundle
 import android.util.TypedValue
 import android.widget.LinearLayout
 import android.widget.ScrollView
+import androidx.annotation.WorkerThread
 import androidx.appcompat.app.AlertDialog
 import androidx.recyclerview.widget.GridLayoutManager
 import org.fossify.commons.dialogs.ConfirmationDialog
@@ -12,6 +15,8 @@ import org.fossify.commons.dialogs.RadioGroupDialog
 import org.fossify.commons.extensions.beGone
 import org.fossify.commons.extensions.beVisible
 import org.fossify.commons.extensions.getAlertDialogBuilder
+import org.fossify.commons.extensions.getProperPrimaryColor
+import org.fossify.commons.extensions.getProperTextColor
 import org.fossify.commons.extensions.setupDialogStuff
 import org.fossify.commons.extensions.toast
 import org.fossify.commons.extensions.value
@@ -25,25 +30,38 @@ import org.fossify.commons.views.MyTextView
 import org.fossify.gallery.R
 import org.fossify.gallery.adapters.PeopleAdapter
 import org.fossify.gallery.databinding.ActivityPeopleBinding
+import org.fossify.gallery.dialogs.DecideFacesDialog
+import org.fossify.gallery.dialogs.FamilyProposalsDialog
 import org.fossify.gallery.faces.ExtrasDatabase
-import org.fossify.gallery.faces.FaceAssignmentEntity
-import org.fossify.gallery.faces.FaceEmbedder
-import org.fossify.gallery.faces.FaceFilter
+import org.fossify.gallery.faces.FaceVisibility
 import org.fossify.gallery.faces.GroupMemberEntity
-import org.fossify.gallery.faces.FacesDatabase
 import org.fossify.gallery.faces.PeopleDatabase
+import org.fossify.gallery.faces.PeopleIndex
 import org.fossify.gallery.faces.Person
 import org.fossify.gallery.faces.PersonEntity
 import org.fossify.gallery.faces.PersonGroupEntity
 import org.fossify.gallery.faces.PersonGrouper
+import org.fossify.gallery.family.FamilyProposals
+import org.fossify.gallery.family.FamilyRecorder
+import org.fossify.gallery.helpers.FaceAccuracy
 import org.fossify.gallery.helpers.GridZoom
 
 class PeopleActivity : SimpleActivity() {
     private val binding by viewBinding(ActivityPeopleBinding::inflate)
 
     private val prefs by lazy { getSharedPreferences("galeria_faces", android.content.Context.MODE_PRIVATE) }
+
+    // výzva na nový import vzorov z Picasy po prepnutí odtlačkov na v2
+    private val picasaReimport = PicasaReimportBanner(this, { binding.peopleReimportBanner }) { loadPeople() }
     private var filterGroupId: Long = -1L
     private var filterGroupName: String? = null
+
+    // tváre presunutých/zmazaných fotiek a fotiek mimo rozsahu (zamknuté/vylúčené priečinky) sa
+    // v zozname nerátajú ani neukazujú — len v UI, DB ostáva bez zmeny; cache na dobu otvorenia obrazovky
+    private val faceVisibility by lazy { FaceVisibility(this) }
+
+    private val peopleAdapter: PeopleAdapter?
+        get() = binding.peopleGrid.adapter as? PeopleAdapter
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -51,11 +69,16 @@ class PeopleActivity : SimpleActivity() {
         val lm = GridLayoutManager(this, prefs.getInt("people_columns", COLUMNS))
         binding.peopleGrid.layoutManager = lm
         GridZoom.setup(binding.peopleGrid, lm, prefs, "people_columns")
+        setupEdgeToEdge(
+            padTopSystem = listOf(binding.peopleAppbar),
+            padBottomSystem = listOf(binding.peopleGrid),
+        )
+        setupMaterialScrollListener(binding.peopleGrid, binding.peopleAppbar)
     }
 
     override fun onResume() {
         super.onResume()
-        setupTopAppBar(binding.peopleAppbar, NavigationIcon.Arrow)
+        binding.peoplePlaceholder.setTextColor(getProperTextColor())
         binding.peopleToolbar.title = filterGroupName ?: getString(R.string.people)
         binding.peopleToolbar.menu.clear()
         binding.peopleToolbar.inflateMenu(R.menu.menu_people)
@@ -76,6 +99,16 @@ class PeopleActivity : SimpleActivity() {
                     true
                 }
 
+                R.id.manage_groups -> {
+                    showGroupManager()
+                    true
+                }
+
+                R.id.decide_faces -> {
+                    DecideFacesDialog(this) { loadPeople() }
+                    true
+                }
+
                 R.id.show_map -> {
                     startActivity(Intent(this, MapActivity::class.java))
                     true
@@ -84,7 +117,92 @@ class PeopleActivity : SimpleActivity() {
                 else -> false
             }
         }
+        // až po naplnení menu — setupTopAppBar farbí ikony, ktoré v lište práve sú
+        setupTopAppBar(binding.peopleAppbar, NavigationIcon.Arrow)
         loadPeople()
+        refreshFamilyBanner()
+        picasaReimport.refresh()
+        refreshConfusedBanner()
+        // C10: pri nabíjaní sa starý odhad presnosti prepočíta (jedno krátke vlákno)
+        FaceAccuracy.refreshWhileCharging(this) { runOnUiThread { refreshConfusedBanner() } }
+    }
+
+    // C10: „Ján ↔ Peter sa pletú – pomôž mi ich rozlíšiť“ → „Pomôž mi rozhodnúť“ (C11) pre túto dvojicu
+    private fun refreshConfusedBanner() {
+        ensureBackgroundThread {
+            val candidate = FaceAccuracy.load(this)?.worstPair()
+            // upozornenie len vtedy, keď je pre dvojicu naozaj o čom rozhodovať (fronta C11 nie je prázdna)
+            val snapshot = try {
+                if (candidate == null) null else PeopleIndex.get(this)
+            } catch (ignored: SQLException) {
+                null
+            } catch (ignored: IllegalStateException) {
+                null
+            }
+            val worst = candidate?.takeIf {
+                snapshot != null && PersonGrouper.decisionQueue(
+                    snapshot.contested, it.personId to it.otherId, limit = 1,
+                ).isNotEmpty()
+            }
+            val names = snapshot?.persons?.associate { it.id to it.name }.orEmpty()
+            runOnUiThread {
+                if (isDestroyed || isFinishing) return@runOnUiThread
+                val banner = binding.peopleConfusedBanner
+                val a = worst?.let { names[it.personId] }
+                val b = worst?.let { names[it.otherId] }
+                if (worst == null || a.isNullOrBlank() || b.isNullOrBlank()) {
+                    banner.beGone()
+                    return@runOnUiThread
+                }
+                banner.text = getString(R.string.tc2_confused_banner, a, b)
+                banner.setTextColor(getProperPrimaryColor())
+                banner.setOnClickListener {
+                    DecideFacesDialog(this, worst.personId to worst.otherId) { loadPeople() }
+                }
+                banner.beVisible()
+            }
+        }
+    }
+
+    // Lišta „Máš N návrhov z telefónu …“ (rodinné prepojenie). reopen = po rozhodnutí rovno ukáž ďalšie návrhy.
+    private fun refreshFamilyBanner(reopen: Boolean = false) {
+        ensureBackgroundThread {
+            val proposals = try {
+                FamilyProposals(this).let { it.openItems() to it.personNames() }
+            } catch (ignored: RuntimeException) {
+                emptyList<FamilyProposals.Item>() to emptyMap<Long, String?>()
+            }
+            runOnUiThread {
+                if (isDestroyed || isFinishing) return@runOnUiThread
+                showFamilyBanner(proposals.first)
+                if (reopen && proposals.first.isNotEmpty()) {
+                    FamilyProposalsDialog(this, proposals.first, proposals.second) { afterFamilyDecision() }
+                }
+            }
+        }
+    }
+
+    private fun showFamilyBanner(items: List<FamilyProposals.Item>) {
+        val banner = binding.peopleFamilyBanner
+        if (items.isEmpty()) {
+            banner.beGone()
+            return
+        }
+        val phones = items.map { it.fromDeviceId }.distinct()
+        banner.text = if (phones.size == 1) {
+            val phone = items.first().phoneName ?: getString(R.string.fp_unknown_phone)
+            resources.getQuantityString(R.plurals.fp_banner, items.size, items.size, phone)
+        } else {
+            resources.getQuantityString(R.plurals.fp_banner_many_phones, items.size, items.size)
+        }
+        banner.setTextColor(getProperPrimaryColor())
+        banner.setOnClickListener { refreshFamilyBanner(reopen = true) }
+        banner.beVisible()
+    }
+
+    private fun afterFamilyDecision() {
+        loadPeople()
+        refreshFamilyBanner(reopen = true)
     }
 
     private fun loadPeople() {
@@ -102,15 +220,18 @@ class PeopleActivity : SimpleActivity() {
                 } else {
                     binding.peoplePlaceholder.beGone()
                 }
-                val existing = binding.peopleGrid.adapter as? PeopleAdapter
+                val existing = peopleAdapter
                 if (existing != null) {
-                    // nevymieňaj adaptér pri každom onResume — aktualizácia dát zachová pozíciu scrollu
+                    // nevymieňaj adaptér pri každom onResume — aktualizácia dát zachová pozíciu scrollu aj výber
                     existing.updateItems(items)
                 } else {
                     binding.peopleGrid.adapter = PeopleAdapter(
-                        this, items,
+                        this, items, binding.peopleGrid,
                         onClick = { person -> openPerson(person) },
-                        onLongClick = { person -> showPersonMenu(person) },
+                        onRename = { person -> renameOrConfirm(person) },
+                        onGroups = { person -> manageGroups(person) },
+                        onMerge = { persons -> mergePersons(persons) },
+                        onDelete = { persons -> deletePersons(persons) },
                     )
                 }
             }
@@ -118,26 +239,7 @@ class PeopleActivity : SimpleActivity() {
     }
 
     private fun buildItems(): List<Person> {
-        val facesDao = FacesDatabase.getInstance(this).FaceDao()
-        val peopleDao = PeopleDatabase.getInstance(this).PeopleDao()
-        val faces = facesDao.getAllFaces().filter { FaceFilter.isGood(it) }
-        // základ = ručne potvrdené tváre
-        var all = PersonGrouper.confirmedPersons(faces, peopleDao.getPersons(), peopleDao.getAssignments())
-        // + automatické zaradenie tvárí nad zvolenou istotou (0 = vypnuté)
-        val threshold = org.fossify.gallery.helpers.FaceAuto.threshold(this)
-        if (threshold > 0f) {
-            val anchors = try {
-                peopleDao.getAllAnchors().groupBy({ it.personId }, { FaceEmbedder.toFloats(it.embedding) })
-            } catch (e: Throwable) {
-                emptyMap()
-            }
-            val links = try {
-                peopleDao.getCannotLinks()
-            } catch (e: Throwable) {
-                emptyList()
-            }
-            all = PersonGrouper.withAutoMatches(all, faces, anchors, links, threshold)
-        }
+        val all = faceVisibility.filterPersons(loadPersons(this))
         if (filterGroupId < 0) return all
         val members = ExtrasDatabase.getInstance(this).ExtrasDao().getMembers(filterGroupId).toHashSet()
         return all.filter { p -> p.id != null && members.contains(p.id) }
@@ -152,27 +254,15 @@ class PeopleActivity : SimpleActivity() {
         startActivity(intent)
     }
 
-    private fun showPersonMenu(person: Person) {
-        if (person.isConfirmed) {
-            val options = listOf(
-                getString(R.string.action_rename),
-                getString(R.string.action_groups),
-                getString(R.string.action_merge),
-                getString(R.string.action_delete_person),
-            )
-            showOptionsDialog(person.name ?: getString(R.string.people), options) { which ->
-                when (which) {
-                    0 -> renamePerson(person)
-                    1 -> manageGroups(person)
-                    2 -> mergePerson(person)
-                    3 -> deletePerson(person)
-                }
-            }
-        } else {
-            // návrh → pomenovaním ho potvrdíš ako osobu
-            promptName(null) { name -> confirmGroup(person, name) }
-        }
+    // po dokončenej akcii nad výberom: ukonči výberový režim a obnov zoznam (v existujúcom adaptéri)
+    private fun afterAction() {
+        peopleAdapter?.finishActMode()
+        loadPeople()
     }
+
+    private fun personLabel(person: Person) = person.name ?: "#${person.id}"
+
+    private fun personLabel(person: PersonEntity) = person.name ?: "#${person.id}"
 
     // Zoznam akcií s DYNAMICKÝM titulkom (meno osoby) — RadioGroupDialog vie len titleId,
     // preto vlastný zoznam MyTextView riadkov témovaný cez setupDialogStuff (Fossify vzor).
@@ -205,12 +295,22 @@ class PeopleActivity : SimpleActivity() {
         }
     }
 
+    // potvrdená osoba sa premenuje; nepotvrdený návrh sa pomenovaním potvrdí ako osoba
+    private fun renameOrConfirm(person: Person) {
+        if (person.isConfirmed) {
+            renamePerson(person)
+        } else {
+            promptName(null) { name -> confirmGroup(person, name) }
+        }
+    }
+
     private fun renamePerson(person: Person) {
         val id = person.id ?: return
         promptName(person.name) { name ->
             ensureBackgroundThread {
                 PeopleDatabase.getInstance(this).PeopleDao().renamePerson(id, name)
-                runOnUiThread { loadPeople() }
+                FamilyRecorder.personRenamed(this, id, person.name, name)
+                runOnUiThread { afterAction() }
             }
         }
     }
@@ -218,61 +318,125 @@ class PeopleActivity : SimpleActivity() {
     private fun confirmGroup(person: Person, name: String) {
         ensureBackgroundThread {
             val dao = PeopleDatabase.getInstance(this).PeopleDao()
-            val now = System.currentTimeMillis()
-            val newId = dao.insertPerson(PersonEntity(name = name, createdAt = now))
-            person.faces.forEach { f ->
-                val fid = f.id ?: return@forEach
-                dao.upsertAssignment(FaceAssignmentEntity(fid, newId, true, now))
-            }
+            // nová osoba + priradenie všetkých tvárí v jednej transakcii
+            val faceIds = person.faces.mapNotNull { it.id }
+            val personId = dao.createPersonWithFaces(name, faceIds, System.currentTimeMillis())
+            FamilyRecorder.personCreated(this, personId, faceIds)
             runOnUiThread {
                 toast(R.string.person_saved)
-                loadPeople()
+                afterAction()
             }
         }
     }
 
-    private fun mergePerson(person: Person) {
-        val id = person.id ?: return
+    // Zlúčenie: vybrané osoby sa zlúčia do jednej. Pri jednej vybranej osobe sa cieľ volí spomedzi ostatných,
+    // pri viacerých vybraných je cieľom jedna z vybraných. Vždy s potvrdením (nevratná akcia).
+    private fun mergePersons(selected: List<Person>) {
+        val sources = selected.filter { it.id != null }
+        if (sources.isEmpty()) return
+        val selectedIds = sources.mapNotNull { it.id }.toHashSet()
         ensureBackgroundThread {
             val dao = PeopleDatabase.getInstance(this).PeopleDao()
-            val others = dao.getPersons().filter { it.id != id }
+            val all = dao.getPersons()
+            val candidates = if (sources.size == 1) {
+                all.filter { !selectedIds.contains(it.id) }
+            } else {
+                all.filter { selectedIds.contains(it.id) }
+            }
             runOnUiThread {
                 if (isDestroyed || isFinishing) return@runOnUiThread
-                if (others.isEmpty()) {
+                if (candidates.isEmpty()) {
                     toast(R.string.no_other_person)
                     return@runOnUiThread
                 }
                 val items = ArrayList<RadioItem>()
-                others.forEachIndexed { index, p -> items.add(RadioItem(index, p.name ?: "#${p.id}")) }
-                RadioGroupDialog(this, items, titleId = R.string.action_merge) {
-                    val target = others[it as Int]
-                    ensureBackgroundThread {
-                        dao.reassignPerson(id, target.id)
-                        dao.reassignCannotLinks(id, target.id)
-                        dao.deletePerson(id)
-                        runOnUiThread { loadPeople() }
-                    }
+                candidates.forEachIndexed { index, p -> items.add(RadioItem(index, personLabel(p))) }
+                val titleId = if (sources.size == 1) R.string.action_merge else R.string.c2_merge_target_title
+                RadioGroupDialog(this, items, titleId = titleId) {
+                    val target = candidates[it as Int]
+                    confirmMerge(sources.filter { s -> s.id != target.id }, target)
                 }
             }
         }
     }
 
-    private fun deletePerson(person: Person) {
-        val id = person.id ?: return
+    private fun confirmMerge(from: List<Person>, target: PersonEntity) {
+        if (from.isEmpty()) return
+        val message = if (from.size == 1) {
+            getString(R.string.c2_merge_confirm, personLabel(from.first()), personLabel(target))
+        } else {
+            getString(R.string.c2_merge_confirm_multi, from.size, personLabel(target))
+        }
         ConfirmationDialog(
             this,
-            messageId = R.string.delete_person_confirm,
+            message = message,
             positive = org.fossify.commons.R.string.ok,
             negative = org.fossify.commons.R.string.cancel,
-            dialogTitle = person.name ?: getString(R.string.people),
+            dialogTitle = getString(R.string.c2_merge_title),
+        ) {
+            val fromIds = from.mapNotNull { it.id }
+            ensureBackgroundThread {
+                val ok = try {
+                    // tváre, negatívne pravidlá aj vzory všetkých zlúčených osôb naraz v jednej transakcii
+                    PeopleDatabase.getInstance(this).PeopleDao().mergeManyInto(fromIds, target.id)
+                    true
+                } catch (e: Throwable) {
+                    false
+                }
+                if (ok) {
+                    FamilyRecorder.personsMerged(this, fromIds, target.id)
+                    try {
+                        val extras = ExtrasDatabase.getInstance(this).ExtrasDao()
+                        fromIds.forEach { extras.moveMemberships(it, target.id) }
+                    } catch (e: Throwable) {
+                        // skupiny sú vedľajšie — zlúčenie osôb už prebehlo
+                    }
+                }
+                runOnUiThread {
+                    if (ok) afterAction() else toast(R.string.c2_operation_failed)
+                }
+            }
+        }
+    }
+
+    private fun deletePersons(persons: List<Person>) {
+        val ids = persons.mapNotNull { it.id }
+        if (ids.isEmpty()) return
+        val dialogTitle: String
+        val message: String
+        if (persons.size == 1) {
+            dialogTitle = persons.first().name ?: getString(R.string.people)
+            message = getString(R.string.delete_person_confirm)
+        } else {
+            dialogTitle = getString(R.string.action_delete_person)
+            message = resources.getQuantityString(R.plurals.c2_delete_persons_confirm, ids.size, ids.size)
+        }
+        ConfirmationDialog(
+            this,
+            message = message,
+            positive = org.fossify.commons.R.string.ok,
+            negative = org.fossify.commons.R.string.cancel,
+            dialogTitle = dialogTitle,
         ) {
             ensureBackgroundThread {
-                val dao = PeopleDatabase.getInstance(this).PeopleDao()
-                dao.deleteAssignmentsForPerson(id)
-                dao.deleteCannotLinksForPerson(id)
-                dao.deleteAnchorsForPerson(id)
-                dao.deletePerson(id)
-                runOnUiThread { loadPeople() }
+                val ok = try {
+                    PeopleDatabase.getInstance(this).PeopleDao().deletePersonsCompletely(ids)
+                    true
+                } catch (e: Throwable) {
+                    false
+                }
+                if (ok) {
+                    FamilyRecorder.personsDeleted(this, persons.mapNotNull { p -> p.id?.let { it to p.name } }.toMap())
+                    try {
+                        val extras = ExtrasDatabase.getInstance(this).ExtrasDao()
+                        ids.forEach { extras.removePersonFromGroups(it) }
+                    } catch (e: Throwable) {
+                        // skupiny sú vedľajšie — osoby už zanikli
+                    }
+                }
+                runOnUiThread {
+                    if (ok) afterAction() else toast(R.string.c2_operation_failed)
+                }
             }
         }
     }
@@ -313,9 +477,11 @@ class PeopleActivity : SimpleActivity() {
                             groups.forEachIndexed { i, g ->
                                 val want = checked[i]
                                 val was = memberOf.contains(g.id)
-                                if (want && !was) dao.addMember(GroupMemberEntity(g.id, pid))
+                                if (want && !was) addToGroup(g.id, pid)
                                 else if (!want && was) dao.removeMember(g.id, pid)
                             }
+                            // pri zapnutom filtri skupiny sa zoznam mohol zmeniť
+                            runOnUiThread { afterAction() }
                         }
                     }
                     .setNeutralButton(R.string.new_group) { _, _ ->
@@ -329,12 +495,22 @@ class PeopleActivity : SimpleActivity() {
         }
     }
 
+    // pridanie do skupiny sa zapíše aj pre prepojený telefón (odobratie sa tam neprenáša, členovia sa len pridávajú)
+    private fun addToGroup(groupId: Long, personId: Long) {
+        ExtrasDatabase.getInstance(this).ExtrasDao().addMember(GroupMemberEntity(groupId, personId))
+        FamilyRecorder.groupChanged(this, groupId)
+    }
+
     private fun createGroupWith(name: String, personId: Long) {
         ensureBackgroundThread {
             val dao = ExtrasDatabase.getInstance(this).ExtrasDao()
             val gid = dao.insertGroup(PersonGroupEntity(name = name, createdAt = System.currentTimeMillis()))
             dao.addMember(GroupMemberEntity(gid, personId))
-            runOnUiThread { toast(R.string.person_saved) }
+            FamilyRecorder.groupChanged(this, gid)
+            runOnUiThread {
+                toast(R.string.person_saved)
+                afterAction()
+            }
         }
     }
 
@@ -358,6 +534,71 @@ class PeopleActivity : SimpleActivity() {
                         filterGroupName = groups[which - 1].name
                     }
                     binding.peopleToolbar.title = filterGroupName ?: getString(R.string.people)
+                    loadPeople()
+                }
+            }
+        }
+    }
+
+    // Správa skupín (premenovanie / zmazanie) — doteraz sa skupina dala len založiť a nikdy opraviť ani zrušiť.
+    private fun showGroupManager() {
+        ensureBackgroundThread {
+            val groups = ExtrasDatabase.getInstance(this).ExtrasDao().getGroups()
+            runOnUiThread {
+                if (isDestroyed || isFinishing) return@runOnUiThread
+                if (groups.isEmpty()) {
+                    toast(R.string.c2_no_groups)
+                    return@runOnUiThread
+                }
+                val items = ArrayList<RadioItem>()
+                groups.forEachIndexed { index, g -> items.add(RadioItem(index, g.name)) }
+                RadioGroupDialog(this, items, titleId = R.string.c2_manage_groups) {
+                    val group = groups[it as Int]
+                    val options = listOf(getString(R.string.c2_group_rename), getString(R.string.c2_group_delete))
+                    showOptionsDialog(group.name, options) { which ->
+                        when (which) {
+                            0 -> renameGroup(group)
+                            1 -> deleteGroup(group)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private fun renameGroup(group: PersonGroupEntity) {
+        promptName(group.name) { name ->
+            ensureBackgroundThread {
+                ExtrasDatabase.getInstance(this).ExtrasDao().renameGroup(group.id, name)
+                FamilyRecorder.groupRenamed(this, group.name, name)
+                runOnUiThread {
+                    // premenovaná skupina je práve aktívny filter → titulok lišty musí ukázať nový názov
+                    if (filterGroupId == group.id) {
+                        filterGroupName = name
+                        binding.peopleToolbar.title = name
+                    }
+                }
+            }
+        }
+    }
+
+    private fun deleteGroup(group: PersonGroupEntity) {
+        ConfirmationDialog(
+            this,
+            message = getString(R.string.c2_group_delete_confirm, group.name),
+            positive = org.fossify.commons.R.string.ok,
+            negative = org.fossify.commons.R.string.cancel,
+            dialogTitle = group.name,
+        ) {
+            ensureBackgroundThread {
+                ExtrasDatabase.getInstance(this).ExtrasDao().deleteGroupWithMembers(group.id)
+                runOnUiThread {
+                    // zmazaná skupina nesmie ostať aktívnym filtrom
+                    if (filterGroupId == group.id) {
+                        filterGroupId = -1L
+                        filterGroupName = null
+                        binding.peopleToolbar.title = getString(R.string.people)
+                    }
                     loadPeople()
                 }
             }
@@ -390,5 +631,11 @@ class PeopleActivity : SimpleActivity() {
 
     companion object {
         private const val COLUMNS = 3
+
+        // Zloženie osôb: ručne potvrdené tváre + (pri zapnutom automatickom zaraďovaní) tváre zaradené podľa
+        // podobnosti. Volá sa z pozadia. Jeden zdroj pravdy (PeopleIndex, C9) zdieľajú Ľudia, karta osoby,
+        // Návrhy, hľadanie, mapa aj prehliadač — všade sú tie isté tváre osoby.
+        @WorkerThread
+        fun loadPersons(context: Context): List<Person> = PeopleIndex.get(context).persons
     }
 }

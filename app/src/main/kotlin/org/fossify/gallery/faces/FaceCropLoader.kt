@@ -29,13 +29,27 @@ internal val facePendingLoads: MutableMap<ImageView, Future<*>> =
 // Načíta výrez tváre (avatar) — bbox je uložený v UPRIGHT priestore zmenšenom na max 1024
 // (rovnako ako pri indexovaní), takže výrez sedí. Cacheuje, aby grid neblikal.
 object FaceCropLoader {
+    // 8 MB (predtým 16): stačí na obrazovku výrezov, appka v pozadí drží menej pamäte
+    private const val CACHE_BYTES = 8 * 1024 * 1024
+
     private const val MAX_DECODE_SIZE = 1024
 
     // výrez tváre do mriežky netreba väčší — menšie dekódovanie aj viac položiek v cache
     private const val MAX_CROP_OUT = 512
 
-    private val cache = object : LruCache<String, Bitmap>(16 * 1024 * 1024) {
+    private val cache = object : LruCache<String, Bitmap>(CACHE_BYTES) {
         override fun sizeOf(key: String, value: Bitmap): Int = value.byteCount
+    }
+
+    // onTrimMemory (appka v pozadí / málo pamäte): výrezy sa pri ďalšom zobrazení načítajú znova
+    fun clear() {
+        cache.evictAll()
+    }
+
+    // A6: fotka sa otočila alebo prepísala — výrezy jej tvárí v cache už nesedia
+    fun invalidate(path: String) {
+        val prefix = "$path#"
+        cache.snapshot().keys.filter { it.startsWith(prefix) }.forEach { cache.remove(it) }
     }
 
     fun load(face: FaceEntity, imageView: ImageView) {

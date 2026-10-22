@@ -6,6 +6,7 @@ import android.provider.MediaStore
 import androidx.recyclerview.widget.GridLayoutManager
 import org.fossify.commons.dialogs.RadioGroupDialog
 import org.fossify.commons.extensions.getProperPrimaryColor
+import org.fossify.commons.extensions.toast
 import org.fossify.commons.extensions.updateTextColors
 import org.fossify.commons.extensions.viewBinding
 import org.fossify.commons.helpers.NavigationIcon
@@ -31,9 +32,19 @@ class SpecialActivity : SimpleActivity() {
     @Volatile
     private var scanning = true
 
+    // sken dobehol až do konca (kým beží, prázdny zoznam neznamená „nič sa nenašlo")
+    @Volatile
+    private var scanDone = false
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(binding.root)
+        setupOptionsMenu()
+        setupEdgeToEdge(
+            padTopSystem = listOf(binding.docsAppbar),
+            padBottomImeAndSystem = listOf(binding.docsGrid)
+        )
+        setupMaterialScrollListener(binding.docsGrid, binding.docsAppbar)
         // pinch-zoom mení počet stĺpcov a pamätá si ho — rovnaké ovládanie ako v ostatných mriežkach
         val lm = GridLayoutManager(this, prefs.getInt("special_columns", 3))
         binding.docsGrid.layoutManager = lm
@@ -45,10 +56,21 @@ class SpecialActivity : SimpleActivity() {
 
     override fun onResume() {
         super.onResume()
+        // menu je naplnené už z onCreate, takže setupTopAppBar prefarbí aj jeho ikony
         setupTopAppBar(binding.docsAppbar, NavigationIcon.Arrow)
         // prefarbenie podľa témy Fossify — inak by boli texty „skenujem/nič sa nenašlo"
         // vo svetlej téme svetlosivé na bielom (téma z XML je vždy tmavá M3)
         updateTextColors(binding.docsCoordinator)
+        binding.docsFastscroller.updateColors(getProperPrimaryColor())
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        scanning = false
+    }
+
+    // menu sa napĺňa raz v onCreate — PRED setupTopAppBar (ten prefarbí ikony len v už naplnenom menu)
+    private fun setupOptionsMenu() {
         binding.docsToolbar.menu.clear()
         binding.docsToolbar.inflateMenu(R.menu.menu_docs)
         binding.docsToolbar.setOnMenuItemClickListener { item ->
@@ -61,46 +83,63 @@ class SpecialActivity : SimpleActivity() {
         }
     }
 
-    override fun onDestroy() {
-        super.onDestroy()
-        scanning = false
-    }
-
     private fun scan() {
         binding.docsPlaceholder.text = getString(R.string.special_scanning)
         binding.docsPlaceholder.visibility = android.view.View.VISIBLE
         ensureBackgroundThread {
-            val paths = queryImages()
-            var checked = 0
-            for (p in paths) {
-                if (!scanning || isDestroyed) return@ensureBackgroundThread
-                val kinds = try {
-                    SpecialPhoto.detect(p)
-                } catch (e: Throwable) {
-                    emptySet()
-                }
-                if (kinds.isNotEmpty()) {
-                    synchronized(found) {
-                        kinds.forEach { k -> found.getOrPut(k) { ArrayList() }.add(p) }
+            // výsledky skenu sa držia v cache aplikácie — nezmenená fotka (čas úpravy + veľkosť) sa nečíta znova
+            val cache = SpecialPhoto.ScanCache.open(this)
+            var completed = false
+            try {
+                val paths = queryImages()
+                var checked = 0
+                for (p in paths) {
+                    if (!scanning || isDestroyed) return@ensureBackgroundThread
+                    val kinds = try {
+                        SpecialPhoto.detectCached(cache, p)
+                    } catch (e: Throwable) {
+                        emptySet()
+                    }
+                    if (kinds.isNotEmpty()) {
+                        synchronized(found) {
+                            kinds.forEach { k -> found.getOrPut(k) { ArrayList() }.add(p) }
+                        }
+                    }
+                    checked++
+                    if (checked % 1000 == 0) {
+                        cache.save(pruneUnseen = false) // nech sa dlhý sken pri zabití appky nestratí celý
+                    }
+                    if (checked % 60 == 0 || checked == paths.size) {
+                        saveSpecialCount()
+                        val c = checked
+                        runOnUiThread {
+                            if (isDestroyed) return@runOnUiThread
+                            binding.docsToolbar.title = getString(R.string.special_progress, c, paths.size)
+                            // počas výberu fotiek sa mriežka nemení (inak by sa výber zrušil) — dobehne po skene
+                            applyFilter(deferWhileSelecting = true)
+                        }
                     }
                 }
-                checked++
-                if (checked % 60 == 0 || checked == paths.size) {
-                    saveSpecialCount()
-                    val c = checked
-                    runOnUiThread {
-                        if (isDestroyed) return@runOnUiThread
-                        binding.docsToolbar.title = getString(R.string.special_progress, c, paths.size)
-                        applyFilter()
-                    }
+                // finálny zápis počtu — pokryje aj prázdnu galériu (slučka sa vôbec nespustí)
+                saveSpecialCount()
+                completed = true
+                scanDone = true
+                runOnUiThread {
+                    if (isDestroyed) return@runOnUiThread
+                    binding.docsToolbar.title = getString(R.string.special_title)
+                    applyFilter()
                 }
-            }
-            // finálny zápis počtu — pokryje aj prázdnu galériu (slučka sa vôbec nespustí)
-            saveSpecialCount()
-            runOnUiThread {
-                if (isDestroyed) return@runOnUiThread
-                binding.docsToolbar.title = getString(R.string.special_title)
-                applyFilter()
+            } catch (e: Throwable) {
+                // sken zlyhal (databáza, pamäť...) — povedz to namiesto pádu appky
+                runOnUiThread {
+                    if (isDestroyed) return@runOnUiThread
+                    binding.docsToolbar.title = getString(R.string.special_title)
+                    scanDone = true
+                    applyFilter()
+                    toast(R.string.c4_special_scan_failed)
+                }
+            } finally {
+                cache.save(pruneUnseen = completed)
             }
         }
     }
@@ -129,7 +168,25 @@ class SpecialActivity : SimpleActivity() {
         return list
     }
 
-    private fun applyFilter() {
+    // premenované / odkryté fotky (stará cesta -> nová) — nech ich ďalší applyFilter nevráti na starú cestu
+    private fun onSpecialRenamed(renamed: Map<String, String>) {
+        if (renamed.isEmpty()) return
+        synchronized(found) {
+            found.values.forEach { list ->
+                for (i in list.indices) {
+                    renamed[list[i]]?.let { list[i] = it }
+                }
+            }
+        }
+        applyFilter()
+    }
+
+    private fun applyFilter(deferWhileSelecting: Boolean = false) {
+        val existing = binding.docsGrid.adapter as? PhotoPathsAdapter
+        if (deferWhileSelecting && existing?.hasSelection() == true) {
+            return
+        }
+
         val f = filter
         val paths = synchronized(found) {
             if (f == null) found.values.flatten().distinct() else (found[f]?.toList() ?: emptyList())
@@ -137,7 +194,6 @@ class SpecialActivity : SimpleActivity() {
         shown = ArrayList(paths)
         // adaptér vzniká len RAZ — počas skenu sa applyFilter volá každých 60 fotiek a výmena
         // adaptéra by zakaždým zhodila scroll na začiatok; updateItems pozíciu drží
-        val existing = binding.docsGrid.adapter as? PhotoPathsAdapter
         if (existing == null) {
             binding.docsGrid.adapter = PhotoPathsAdapter(
                 this, shown, binding.docsGrid,
@@ -146,13 +202,14 @@ class SpecialActivity : SimpleActivity() {
                     synchronized(found) { found.values.forEach { it.removeAll(deleted.toSet()) } }
                     applyFilter()
                 },
+                onChanged = { renamed -> onSpecialRenamed(renamed) },
             )
         } else {
             existing.updateItems(shown)
         }
         binding.docsPlaceholder.visibility = if (shown.isEmpty()) android.view.View.VISIBLE else android.view.View.GONE
         if (shown.isEmpty()) {
-            binding.docsPlaceholder.text = getString(R.string.special_none)
+            binding.docsPlaceholder.text = getString(if (scanDone) R.string.special_none else R.string.special_scanning)
         }
     }
 

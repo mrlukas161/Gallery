@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Balík D (spoľahlivosť rodinného prepojenia): telefón bez kľúča po obnove zálohy -->
+    <string name="d_family_peer_needs_pairing">Treba znova spárovať: po obnove zálohy chýba kľúč prepojenia. Naskenuj QR kód z druhého telefónu.</string>
+    <string name="d_family_send_needs_pairing">Telefón „%s“ treba znova spárovať (po obnove zálohy chýba kľúč). Fotky počkajú vo fronte.</string>
+</resources>

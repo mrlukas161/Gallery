@@ -33,27 +33,46 @@ open class SimpleActivity : BaseSimpleActivity() {
     // Sme legitímny fork s vlastným balíkom aj podpisom -> počas týchto volaní vraciame fossify názov.
     // Spoof je ZÁMERNE úzky (len počas super.onCreate / daného volania), aby sa nerozbili Intenty,
     // ComponentName ani FileProvider, ktoré potrebujú reálny názov balíka.
+    //
+    // Tretia kópia pasce: handleSAFDialog, handleSAFDialogSdk30, handleSAFCreateDocumentDialogSdk30 a
+    // handleAndroidSAFDialog (a cez ne aj checkManageMediaOrHandleSAFDialogSdk30) v BaseSimpleActivity
+    // začínajú rovnakou kontrolou `if (!packageName.startsWith("org.fossify")) { callback(true); return false }`.
+    // Pri cudzom balíku sa teda dialóg na prístup k SD karte / OTG / obmedzeným priečinkom NIKDY nezobrazí
+    // a operácia sa tvári, že oprávnenie má. Tie metódy sú `final` a volajú sa z desiatok miest, preto
+    // v getPackageName() poznáme volajúceho: fossify názov dostane iba BaseSimpleActivity z uvedených metód.
+    @Volatile
     private var spoofFossifyPackage = false
 
     override fun getPackageName(): String =
-        if (spoofFossifyPackage) FOSSIFY_PACKAGE else super.getPackageName()
+        if (spoofFossifyPackage || isCalledFromForkCheck()) FOSSIFY_PACKAGE else super.getPackageName()
+
+    private fun isCalledFromForkCheck(): Boolean {
+        // volajúci je rámec hneď za naším getPackageName (rámce vlastnej pomocnej metódy preskočíme)
+        val trace = Throwable().stackTrace
+        val own = trace.indexOfFirst { it.methodName == "getPackageName" && it.className == SimpleActivity::class.java.name }
+        if (own < 0) return false
+        val caller = trace.getOrNull(own + 1) ?: return false
+        return caller.className == BASE_ACTIVITY_CLASS && caller.methodName in SAF_CHECK_METHODS
+    }
 
     override fun onCreate(savedInstanceState: android.os.Bundle?) {
+        val previous = spoofFossifyPackage
         spoofFossifyPackage = true
         try {
             super.onCreate(savedInstanceState)
         } finally {
-            spoofFossifyPackage = false
+            spoofFossifyPackage = previous
         }
     }
 
     // obal na volania commons kódu, ktorý má v sebe anti-fork kontrolu
     protected fun <T> withoutForkWarning(block: () -> T): T {
+        val previous = spoofFossifyPackage
         spoofFossifyPackage = true
         return try {
             block()
         } finally {
-            spoofFossifyPackage = false
+            spoofFossifyPackage = previous
         }
     }
 
@@ -178,5 +197,12 @@ open class SimpleActivity : BaseSimpleActivity() {
 
     companion object {
         private const val FOSSIFY_PACKAGE = "org.fossify.gallery"
+        private const val BASE_ACTIVITY_CLASS = "org.fossify.commons.activities.BaseSimpleActivity"
+        private val SAF_CHECK_METHODS = setOf(
+            "handleSAFDialog",
+            "handleSAFDialogSdk30",
+            "handleSAFCreateDocumentDialogSdk30",
+            "handleAndroidSAFDialog",
+        )
     }
 }

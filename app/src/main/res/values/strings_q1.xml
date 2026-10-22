@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Stringy revízie 0.65-q1 (texty predtým natvrdo v kóde) -->
+<resources>
+    <!-- Nastavenia — ručná kontrola aktualizácií zlyhala (sieť / GitHub) -->
+    <string name="q1_update_check_error">Nepodarilo sa overiť aktualizácie</string>
+
+    <!-- názvy kanálov notifikácií (Nastavenia systému → Notifikácie) -->
+    <string name="q1_channel_indexing">Spracovanie knižnice</string>
+    <string name="q1_channel_faces">Rozpoznávanie tvárí</string>
+    <string name="q1_channel_ocr">Rozpoznávanie textu (OCR)</string>
+    <string name="q1_channel_qr">QR kódy</string>
+    <string name="q1_channel_phash">Podobné a duplikáty</string>
+    <string name="q1_channel_clip">Hľadanie predmetov</string>
+    <string name="q1_channel_pc_server">Server pre PC</string>
+
+    <!-- názvy notifikácií jednotlivých častí spracovania -->
+    <string name="q1_notif_faces">Hľadám tváre</string>
+    <string name="q1_notif_ocr">Čítam text z fotiek</string>
+    <string name="q1_notif_qr">Hľadám QR kódy</string>
+    <string name="q1_notif_phash">Hľadám podobné fotky</string>
+    <string name="q1_notif_clip_download">Sťahujem model na hľadanie predmetov (%1$s)</string>
+    <string name="q1_notif_clip_index">Spracúvam fotky na hľadanie predmetov</string>
+
+    <!-- riadky priebehu v notifikácii „Spracovanie knižnice" a v Nastaveniach -->
+    <string name="q1_prog_faces">Tváre %1$d/%2$d</string>
+    <string name="q1_prog_geo">Poloha %1$d/%2$d</string>
+    <string name="q1_prog_qr">QR kódy %1$d/%2$d</string>
+    <string name="q1_prog_ocr">Text (OCR) %1$d/%2$d</string>
+    <string name="q1_prog_phash">Podobné a duplikáty %1$d/%2$d</string>
+    <string name="q1_prog_clip_ml">Model pre slovenčinu – %1$s %2$d/%3$d</string>
+    <string name="q1_prog_reembed">Prepracovanie tvárí %1$d/%2$d</string>
+
+    <!-- fázy hľadania predmetov (CLIP); %1$s = 1/2 alebo 2/2 -->
+    <string name="q1_clip_phase_download">Sťahujem model %1$s</string>
+    <string name="q1_clip_phase_index">Hľadanie predmetov</string>
+
+    <!-- fázy sťahovania viacjazyčného modelu -->
+    <string name="q1_clip_ml_phase_tokenizer">slovník</string>
+    <string name="q1_clip_ml_phase_model">model</string>
+
+    <!-- chyby sťahovania / načítania modelov -->
+    <string name="q1_stopped">zastavené</string>
+    <string name="q1_clip_download_failed">Model na hľadanie predmetov sa nestiahol — skontroluj Wi-Fi alebo pripojenie</string>
+    <string name="q1_clip_load_failed">Model na hľadanie predmetov sa nenačítal</string>
+    <string name="q1_clip_ml_download_failed">Model pre slovenčinu sa nestiahol — skontroluj Wi-Fi alebo pripojenie</string>
+</resources>

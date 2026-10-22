@@ -27,19 +27,28 @@
         android:layout_height="match_parent"
         app:layout_behavior="@string/appbar_scrolling_view_behavior" />
 
-    <org.fossify.commons.views.MyTextView
-        android:id="@+id/map_status"
-        android:layout_width="wrap_content"
+    <!-- priehľadný nosič stavového textu: spodné odsadenie podľa systémovej lišty dostane on (edge-to-edge),
+         nie text s tmavým pozadím — ten by sa inak natiahol pod lištu -->
+    <FrameLayout
+        android:id="@+id/map_status_holder"
+        android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_gravity="bottom|center_horizontal"
-        android:layout_margin="16dp"
-        android:background="#CC000000"
-        android:paddingStart="12dp"
-        android:paddingTop="6dp"
-        android:paddingEnd="12dp"
-        android:paddingBottom="6dp"
-        android:textColor="#FFFFFFFF"
-        android:visibility="gone"
-        tools:text="Indexujem polohu 1200 / 12000" />
+        android:layout_gravity="bottom">
+
+        <org.fossify.commons.views.MyTextView
+            android:id="@+id/map_status"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="bottom|center_horizontal"
+            android:layout_margin="16dp"
+            android:background="#CC000000"
+            android:paddingStart="12dp"
+            android:paddingTop="6dp"
+            android:paddingEnd="12dp"
+            android:paddingBottom="6dp"
+            android:textColor="#FFFFFFFF"
+            android:visibility="gone"
+            tools:text="Indexujem polohu 1200 / 12000" />
+    </FrameLayout>
 
 </androidx.coordinatorlayout.widget.CoordinatorLayout>

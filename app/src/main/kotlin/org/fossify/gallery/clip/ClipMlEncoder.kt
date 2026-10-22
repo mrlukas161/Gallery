@@ -14,14 +14,16 @@ class ClipMlEncoder(context: Context) {
     private val appCtx = context.applicationContext
     private val ortEnv: OrtEnvironment = OrtEnvironment.getEnvironment()
 
-    private val session: OrtSession? by lazy {
+    // pomenované Lazy: close() nesmie nepoužitý model (~500 MB) načítať len preto, aby ho zavrel
+    private val sessionLazy = lazy {
         try {
             val f = ClipMlModels.textFile(appCtx)
-            if (f.exists() && f.length() > 0) ortEnv.createSession(f.absolutePath, OrtSession.SessionOptions()) else null
+            if (f.exists() && f.length() > 0) OrtOptions.createText(ortEnv, f) else null
         } catch (e: Throwable) {
             null
         }
     }
+    private val session: OrtSession? by sessionLazy
 
     private val tokenizer: BertTokenizer? by lazy {
         try {
@@ -66,7 +68,7 @@ class ClipMlEncoder(context: Context) {
 
     fun close() {
         try {
-            session?.close()
+            if (sessionLazy.isInitialized()) session?.close()
         } catch (ignored: Throwable) {
         }
     }

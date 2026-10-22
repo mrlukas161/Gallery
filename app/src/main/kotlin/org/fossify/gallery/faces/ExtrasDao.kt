@@ -4,6 +4,7 @@ import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
+import androidx.room.Transaction
 
 @Dao
 interface ExtrasDao {
@@ -27,6 +28,13 @@ interface ExtrasDao {
     @Query("DELETE FROM person_groups WHERE id = :id")
     fun deleteGroup(id: Long)
 
+    // Zmazanie skupiny aj s členstvami v jednej transakcii (Room tu cudzí kľúč s kaskádou nevynucuje).
+    @Transaction
+    fun deleteGroupWithMembers(groupId: Long) {
+        deleteMembersForGroup(groupId)
+        deleteGroup(groupId)
+    }
+
     @Query("SELECT * FROM person_groups ORDER BY name COLLATE NOCASE")
     fun getGroups(): List<PersonGroupEntity>
 
@@ -38,6 +46,23 @@ interface ExtrasDao {
 
     @Query("DELETE FROM group_members WHERE group_id = :groupId")
     fun deleteMembersForGroup(groupId: Long)
+
+    // osoba zanikla (zmazaná) — nesmie ostať v skupinách ako sirota
+    @Query("DELETE FROM group_members WHERE person_id = :personId")
+    fun removePersonFromGroups(personId: Long)
+
+    @Query(
+        "INSERT OR IGNORE INTO group_members (group_id, person_id) " +
+            "SELECT group_id, :to FROM group_members WHERE person_id = :from"
+    )
+    fun copyMemberships(from: Long, to: Long)
+
+    // zlúčenie osôb: výsledná osoba zdedí skupiny zlúčenej (člen v oboch skupinách ostane jednou položkou)
+    @Transaction
+    fun moveMemberships(from: Long, to: Long) {
+        copyMemberships(from, to)
+        removePersonFromGroups(from)
+    }
 
     @Query("SELECT person_id FROM group_members WHERE group_id = :groupId")
     fun getMembers(groupId: Long): List<Long>

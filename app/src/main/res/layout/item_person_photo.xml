@@ -1,7 +1,41 @@
 <?xml version="1.0" encoding="utf-8"?>
-<org.fossify.commons.views.MySquareImageView xmlns:android="http://schemas.android.com/apk/res/android"
-    android:id="@+id/photo_image"
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
-    android:layout_height="wrap_content"
-    android:padding="1dp"
-    android:scaleType="centerCrop" />
+    android:layout_height="wrap_content">
+
+    <org.fossify.commons.views.MySquareImageView
+        android:id="@+id/photo_image"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:padding="1dp"
+        android:scaleType="centerCrop" />
+
+    <!-- fajka vybranej tváre vo výberovom režime — rovnaký vzhľad ako v mriežke fotiek -->
+    <ImageView
+        android:id="@+id/photo_check"
+        android:layout_width="@dimen/selection_check_size"
+        android:layout_height="@dimen/selection_check_size"
+        android:layout_alignParentTop="true"
+        android:layout_alignParentEnd="true"
+        android:layout_margin="@dimen/medium_margin"
+        android:background="@drawable/circle_background"
+        android:contentDescription="@null"
+        android:padding="@dimen/tiny_margin"
+        android:src="@drawable/ic_check_vector"
+        android:visibility="gone" />
+
+    <!-- C7: značka tváre, ktorá nie je ručne potvrdená („A“ = automaticky, „?“ = neisté) -->
+    <TextView
+        android:id="@+id/photo_badge"
+        android:layout_width="@dimen/selection_check_size"
+        android:layout_height="@dimen/selection_check_size"
+        android:layout_alignParentStart="true"
+        android:layout_alignParentBottom="true"
+        android:layout_margin="@dimen/medium_margin"
+        android:background="@drawable/circle_background"
+        android:gravity="center"
+        android:textSize="@dimen/smaller_text_size"
+        android:textStyle="bold"
+        android:visibility="gone" />
+
+</RelativeLayout>

@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Stringy balíka C6–C11 (kNN, tri stavy, učenie z odmietnutí, odhad presnosti, „Pomôž mi rozhodnúť“) -->
+<resources>
+    <!-- Osoba — sekcia „Potvrď“ s neistými tvárami -->
+    <plurals name="tc2_confirm_banner">
+        <item quantity="one">Potvrď: %1$d tvár čaká na potvrdenie – ťukni sem</item>
+        <item quantity="few">Potvrď: %1$d tváre čakajú na potvrdenie – ťukni sem</item>
+        <item quantity="many">Potvrď: %1$d tváre čaká na potvrdenie – ťukni sem</item>
+        <item quantity="other">Potvrď: %1$d tvárí čaká na potvrdenie – ťukni sem</item>
+    </plurals>
+    <string name="tc2_confirm_hint">Je to osoba „%1$s“? Ťuk = áno, podrž = výber. Späť na fotky osoby – ťukni sem</string>
+    <string name="tc2_confirm_empty">Nič nečaká na potvrdenie</string>
+    <string name="tc2_confirm_action">Áno, je to táto osoba</string>
+    <string name="tc2_badge_auto">A</string>
+    <string name="tc2_badge_uncertain">\?</string>
+    <string name="tc2_badge_auto_desc">Zaradené automaticky</string>
+    <string name="tc2_badge_uncertain_desc">Neisté, potvrď</string>
+
+    <!-- Ľudia — „Pomôž mi rozhodnúť“ (C11) a upozornenie z odhadu presnosti (C10) -->
+    <string name="tc2_decide_title">Pomôž mi rozhodnúť</string>
+    <string name="tc2_decide_question">Je to %1$s, alebo %2$s?</string>
+    <string name="tc2_decide_someone_else">Niekto iný</string>
+    <string name="tc2_decide_skip">Preskočiť</string>
+    <string name="tc2_decide_done">Hotovo</string>
+    <string name="tc2_decide_nothing">Teraz nie je o čom rozhodovať</string>
+    <string name="tc2_decide_thanks">Ďakujem, rozpoznávanie tvárí sa z tvojich odpovedí učí</string>
+    <string name="tc2_confused_banner">%1$s ↔ %2$s sa pletú – pomôž mi ich rozlíšiť</string>
+
+    <!-- Nastavenia — odhad presnosti rozpoznávania tvárí (C10) -->
+    <string name="tc2_accuracy_title">Odhad presnosti</string>
+    <plurals name="tc2_accuracy_value">
+        <item quantity="one">Odhad presnosti: %1$d %% (z %2$s potvrdenej tváre)</item>
+        <item quantity="few">Odhad presnosti: %1$d %% (z %2$s potvrdených tvárí)</item>
+        <item quantity="many">Odhad presnosti: %1$d %% (z %2$s potvrdených tvárí)</item>
+        <item quantity="other">Odhad presnosti: %1$d %% (z %2$s potvrdených tvárí)</item>
+    </plurals>
+    <string name="tc2_accuracy_no_auto">Odhad presnosti: pri tomto prahu by sa automaticky nezaradilo nič</string>
+    <string name="tc2_accuracy_details">Neisté %1$d %% · odporúčaný prah istoty %2$s (teraz %3$s)</string>
+    <string name="tc2_accuracy_details_no_rec">Neisté %1$d %% · na odporúčanie prahu je zatiaľ málo potvrdených tvárí</string>
+    <string name="tc2_accuracy_none">Ťukni pre výpočet (treba ručne potvrdené tváre)</string>
+    <string name="tc2_accuracy_running">Počítam…</string>
+
+    <!-- Prehliadač — info o fotke: osoba zaradená automaticky -->
+    <string name="tc2_info_auto_name">%1$s (automaticky)</string>
+</resources>

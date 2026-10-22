@@ -23,13 +23,22 @@ class ClipEncoder(context: Context) {
     private val appCtx = context.applicationContext
     private val ortEnv: OrtEnvironment = OrtEnvironment.getEnvironment()
 
-    private val visual: OrtSession? by lazy { createSession(ClipModels.visualFile(appCtx)) }
-    private val textual: OrtSession? by lazy { createSession(ClipModels.textualFile(appCtx)) }
+    // pomenované Lazy, aby close() vedel, či sa session vôbec vytvorila — samotné `visual?.close()`
+    // by nepoužitý model (desiatky až stovky MB) načítalo z disku len preto, aby ho hneď zavrelo
+    private val visualLazy = lazy { createSession(ClipModels.visualFile(appCtx), visual = true) }
+    private val visual: OrtSession? by visualLazy
+    private val textualLazy = lazy { createSession(ClipModels.textualFile(appCtx), visual = false) }
+    private val textual: OrtSession? by textualLazy
 
     private val tokenizer: ClipTokenizer by lazy { ClipTokenizer(loadVocab(), loadMerges()) }
 
-    private fun createSession(f: File): OrtSession? = try {
-        if (f.exists() && f.length() > 0) ortEnv.createSession(f.absolutePath, OrtSession.SessionOptions()) else null
+    // vizuál a text majú rozdielne nastavenia vlákien a pamäte (OrtOptions)
+    private fun createSession(f: File, visual: Boolean): OrtSession? = try {
+        when {
+            !f.exists() || f.length() <= 0 -> null
+            visual -> OrtOptions.createVisual(ortEnv, f)
+            else -> OrtOptions.createText(ortEnv, f)
+        }
     } catch (e: Throwable) {
         null
     }
@@ -87,11 +96,11 @@ class ClipEncoder(context: Context) {
 
     fun close() {
         try {
-            visual?.close()
+            if (visualLazy.isInitialized()) visual?.close()
         } catch (ignored: Throwable) {
         }
         try {
-            textual?.close()
+            if (textualLazy.isInitialized()) textual?.close()
         } catch (ignored: Throwable) {
         }
     }

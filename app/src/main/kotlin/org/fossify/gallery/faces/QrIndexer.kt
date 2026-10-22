@@ -10,6 +10,9 @@ import android.provider.MediaStore
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import org.fossify.commons.helpers.ensureBackgroundThread
+import org.fossify.gallery.R
+import org.fossify.gallery.family.FamilyInbox
+import org.fossify.gallery.helpers.BackgroundPriority
 import java.io.File
 
 // QR/čiarové kódy: prejde fotky a uloží dekódovaný obsah (qr.db). RÝCHLE (ZXing jeden prechod ~0,1 s/fotka),
@@ -34,13 +37,18 @@ object QrIndexer {
         isRunning = true
         val appCtx = context.applicationContext
         ensureBackgroundThread {
+            val priority = BackgroundPriority.lower()
             try {
                 val dao = QrDatabase.getInstance(appCtx).QrDao()
                 val decoder = ZxingDecoder()
                 if (notify) ensureChannel(appCtx)
 
-                val processed = dao.getIndexedPaths().toHashSet()
-                val todo = queryImages(appCtx).filter { it !in processed }
+                // vylúčené a zamknuté priečinky sa nespracúvajú; ich staré riadky sa z indexu zmažú
+                val scope = IndexScope(appCtx)
+                val processed = scope.keepAllowed(dao.getIndexedPaths()) { dao.deletePaths(it) }
+                val candidates = queryImages(appCtx).filter { it !in processed && scope.allows(it) }
+                // výsledky z prepojeného telefónu (F4) sa zapíšu hneď, fotka sa druhýkrát nespracúva
+                val todo = FamilyInbox.withoutSupplied(appCtx, candidates, FamilyInbox.QR)
                 val total = todo.size
                 var done = 0
                 for (path in todo) {
@@ -67,6 +75,7 @@ object QrIndexer {
                 cancelNotification(appCtx)
                 onError(describe(e))
             } finally {
+                BackgroundPriority.restore(priority)
                 isRunning = false
             }
         }
@@ -94,11 +103,10 @@ object QrIndexer {
     private fun ensureChannel(context: Context) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val nm = context.getSystemService(NotificationManager::class.java) ?: return
-            if (nm.getNotificationChannel(CHANNEL_ID) == null) {
-                nm.createNotificationChannel(
-                    NotificationChannel(CHANNEL_ID, "QR kódy", NotificationManager.IMPORTANCE_LOW)
-                )
-            }
+            // vždy (aj keď kanál existuje) — systém tak premenuje kanál vytvorený staršou verziou
+            nm.createNotificationChannel(
+                NotificationChannel(CHANNEL_ID, context.getString(R.string.q1_channel_qr), NotificationManager.IMPORTANCE_LOW)
+            )
         }
     }
 
@@ -106,13 +114,15 @@ object QrIndexer {
         try {
             val notification = NotificationCompat.Builder(context, CHANNEL_ID)
                 .setSmallIcon(android.R.drawable.stat_notify_sync)
-                .setContentTitle("Hľadám QR kódy")
+                .setContentTitle(context.getString(R.string.q1_notif_qr))
                 .setContentText("$done / $total")
                 .setProgress(total, done, false)
                 .setOngoing(true)
                 .setOnlyAlertOnce(true)
                 .build()
             NotificationManagerCompat.from(context).notify(NOTIF_ID, notification)
+        } catch (ignored: SecurityException) {
+            // bez povolenia na notifikácie (Android 13+) — priebeh len nezobrazíme
         } catch (ignored: Throwable) {
         }
     }

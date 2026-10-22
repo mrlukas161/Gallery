@@ -20,12 +20,36 @@
 
     </org.fossify.commons.views.MyAppBarLayout>
 
-    <org.fossify.commons.views.MyRecyclerView
-        android:id="@+id/photo_grid"
+    <!-- posuvník s dátumovou bublinou — rovnaký ako v ostatných mriežkach fotiek -->
+    <com.qtalk.recyclerviewfastscroller.RecyclerViewFastScroller
+        android:id="@+id/photo_grid_fastscroller"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:clipToPadding="false"
-        android:padding="1dp"
+        app:layout_behavior="@string/appbar_scrolling_view_behavior">
+
+        <!-- layoutManager MUSÍ byť v XML (fast-scroller si ho vypýta skôr, než ho nastaví kód) -->
+        <org.fossify.commons.views.MyRecyclerView
+            android:id="@+id/photo_grid"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:clipToPadding="false"
+            android:padding="1dp"
+            android:scrollbars="none"
+            app:layoutManager="org.fossify.commons.views.MyGridLayoutManager"
+            app:spanCount="3" />
+
+    </com.qtalk.recyclerviewfastscroller.RecyclerViewFastScroller>
+
+    <!-- prázdny stav: všetky fotky z mriežky sa zmazali (alebo sa zoznam nepodarilo odovzdať) -->
+    <org.fossify.commons.views.MyTextView
+        android:id="@+id/photo_grid_placeholder"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center"
+        android:gravity="center"
+        android:padding="@dimen/activity_margin"
+        android:text="@string/c4_photo_grid_empty"
+        android:visibility="gone"
         app:layout_behavior="@string/appbar_scrolling_view_behavior" />
 
 </androidx.coordinatorlayout.widget.CoordinatorLayout>

@@ -1,31 +1,45 @@
 package org.fossify.gallery.activities
 
-import android.content.ContentUris
-import android.content.Intent
-import android.net.Uri
-import android.os.Build
+import android.content.res.ColorStateList
+import android.graphics.drawable.Drawable
 import android.os.Bundle
-import android.provider.MediaStore
+import android.util.TypedValue
 import android.view.View
-import androidx.core.view.ViewCompat
-import androidx.core.view.WindowInsetsCompat
-import androidx.core.view.updatePadding
+import android.widget.LinearLayout
+import android.widget.ScrollView
+import androidx.appcompat.app.AlertDialog
+import androidx.core.widget.ImageViewCompat
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.alexvasilkov.gestures.GestureController
 import com.alexvasilkov.gestures.GestureImageView
-import android.graphics.drawable.Drawable
 import com.alexvasilkov.gestures.State
 import com.bumptech.glide.Glide
 import com.bumptech.glide.load.DataSource
 import com.bumptech.glide.load.engine.GlideException
 import com.bumptech.glide.request.RequestListener
 import com.bumptech.glide.request.target.Target
+import org.fossify.commons.dialogs.ConfirmationDialog
+import org.fossify.commons.extensions.deleteFiles
+import org.fossify.commons.extensions.formatSize
+import org.fossify.commons.extensions.getAlertDialogBuilder
+import org.fossify.commons.extensions.getContrastColor
+import org.fossify.commons.extensions.getDoesFilePathExist
+import org.fossify.commons.extensions.getFilenameFromPath
+import org.fossify.commons.extensions.getProperPrimaryColor
+import org.fossify.commons.extensions.isAccessibleWithSAFSdk30
+import org.fossify.commons.extensions.needsStupidWritePermissions
+import org.fossify.commons.extensions.setupDialogStuff
 import org.fossify.commons.extensions.toast
 import org.fossify.commons.extensions.viewBinding
+import org.fossify.commons.helpers.ensureBackgroundThread
+import org.fossify.commons.models.FileDirItem
+import org.fossify.commons.views.MyTextView
 import org.fossify.gallery.R
 import org.fossify.gallery.adapters.CompareStripAdapter
 import org.fossify.gallery.databinding.ActivityComparatorBinding
-import org.fossify.commons.helpers.ensureBackgroundThread
+import org.fossify.gallery.extensions.config
+import org.fossify.gallery.extensions.deleteDBPath
+import org.fossify.gallery.extensions.movePathsInRecycleBin
 import org.fossify.gallery.helpers.PathTransfer
 import org.fossify.gallery.helpers.Sharpness
 import java.io.File
@@ -37,7 +51,9 @@ class ComparatorActivity : SimpleActivity() {
     private var sharp = HashMap<String, Double>()
     private var quality = HashMap<String, org.fossify.gallery.faces.PhotoQuality.Result>()
     private var totalScore = HashMap<String, Double>()
-    private var pq: org.fossify.gallery.faces.PhotoQuality? = null
+    // onDestroy: výpočet na pozadí skončí po aktuálnej fotke (model si zatvára sám, nie onDestroy)
+    @Volatile
+    private var destroyed = false
     private var bestIndex = -1
     private var leftIndex = 0
     private var rightIndex = 0
@@ -46,12 +62,16 @@ class ComparatorActivity : SimpleActivity() {
     private var duelMode = false
     private var duelNext = 1
     private var adapter: CompareStripAdapter? = null
-    private var pendingDelete: List<String> = emptyList()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(binding.root)
-        applyInsets()
+        // jednotne s ostatnými obrazovkami: odsadenie pod stavový a navigačný pruh rieši setupEdgeToEdge
+        setupEdgeToEdge(
+            padTopSystem = listOf(binding.compareTopbar),
+            padBottomSystem = listOf(binding.compareBottombar),
+        )
+        applyBarColors()
         paths = ArrayList(PathTransfer.forCompare ?: emptyList())
         PathTransfer.forCompare = null
         if (paths.size < 2) {
@@ -84,12 +104,16 @@ class ComparatorActivity : SimpleActivity() {
         computeSharpness()
     }
 
-    private fun applyInsets() {
-        ViewCompat.setOnApplyWindowInsetsListener(binding.comparatorRoot) { _, insets ->
-            val sb = insets.getInsets(WindowInsetsCompat.Type.systemBars())
-            binding.compareTopbar.updatePadding(top = sb.top)
-            binding.compareBottombar.updatePadding(bottom = sb.bottom)
-            insets
+    // horná a dolná lišta v akcente témy (nie pevná zelená z commons); text a ikony v kontrastnej farbe
+    private fun applyBarColors() {
+        val barColor = getProperPrimaryColor()
+        val fg = barColor.getContrastColor()
+        binding.compareTopbar.setBackgroundColor(barColor)
+        binding.compareBottombar.setBackgroundColor(barColor)
+        binding.compareTitle.setTextColor(fg)
+        binding.compareInfo.setTextColor(fg)
+        listOf(binding.compareBack, binding.compareSync, binding.compareDuel).forEach {
+            ImageViewCompat.setImageTintList(it, ColorStateList.valueOf(fg))
         }
     }
 
@@ -182,22 +206,32 @@ class ComparatorActivity : SimpleActivity() {
         ensureBackgroundThread {
             val map = HashMap<String, Double>()
             val qmap = HashMap<String, org.fossify.gallery.faces.PhotoQuality.Result>()
-            val analyzer = pq ?: try {
+            // Model patrí LEN tomuto vláknu a zatvára sa tu vo finally — predtým ho zatváral onDestroy
+            // na hlavnom vlákne, kým ho vlákno na pozadí ešte používalo (natívny pád).
+            val analyzer = try {
                 org.fossify.gallery.faces.PhotoQuality(this)
             } catch (e: Throwable) {
                 null
-            }?.also { pq = it }
-            for (p in paths) {
-                map[p] = try {
-                    Sharpness.score(p)
-                } catch (e: Throwable) {
-                    0.0
-                }
-                analyzer?.let {
-                    try {
-                        qmap[p] = it.analyze(p)
-                    } catch (ignored: Throwable) {
+            }
+            try {
+                for (p in paths.toList()) {
+                    if (destroyed) break
+                    map[p] = try {
+                        Sharpness.score(p)
+                    } catch (e: Throwable) {
+                        0.0
                     }
+                    analyzer?.let {
+                        try {
+                            qmap[p] = it.analyze(p)
+                        } catch (ignored: Throwable) {
+                        }
+                    }
+                }
+            } finally {
+                try {
+                    analyzer?.close()
+                } catch (ignored: Throwable) {
                 }
             }
             runOnUiThread {
@@ -234,12 +268,8 @@ class ComparatorActivity : SimpleActivity() {
     }
 
     override fun onDestroy() {
+        destroyed = true
         super.onDestroy()
-        try {
-            pq?.close()
-        } catch (ignored: Throwable) {
-        }
-        pq = null
     }
 
     // ťuk na fotku vo filmstripe -> zobrazí sa VĽAVO (Ľ), doterajšia ľavá sa presunie VPRAVO (P)
@@ -253,35 +283,63 @@ class ComparatorActivity : SimpleActivity() {
         updateActive()
     }
 
-    // podržanie fotky vo filmstripe -> jasná ponuka namiesto tichého prepínania
+    // podržanie fotky vo filmstripe -> jasná ponuka namiesto tichého prepínania. Podržanie je tu výber
+    // (označenie na zmazanie, vratné); ponuka nesie aj hromadné „Ponechať len túto", ktoré nemá iné miesto.
     private fun onStripLong(pos: Int) {
         val a = adapter ?: return
         val name = paths.getOrNull(pos)?.substringAfterLast('/') ?: return
         val markLabel = getString(if (a.marked.contains(pos)) R.string.compare_unmark else R.string.compare_mark_delete)
-        val options = arrayOf(getString(R.string.compare_keep_only_this), markLabel)
-        androidx.appcompat.app.AlertDialog.Builder(this)
-            .setTitle(name)
-            .setItems(options) { _, which ->
-                when (which) {
-                    0 -> {
-                        a.markAllExcept(pos)
-                        // ponechaná fotka rovno do ľavého panela, nech vidí čo ostáva
-                        rightIndex = leftIndex.takeIf { it != pos } ?: rightIndex
-                        leftIndex = pos
-                        loadPane(true, keepZoom = true)
-                        loadPane(false, keepZoom = true)
-                        updateActive()
-                        updateInfo()
-                        toast(getString(R.string.compare_kept_only, a.marked.size))
-                    }
-                    1 -> {
-                        a.toggleMark(pos)
-                        updateInfo()
-                    }
+        val options = listOf(getString(R.string.compare_keep_only_this), markLabel)
+        showOptionsDialog(name, options) { which ->
+            when (which) {
+                0 -> {
+                    a.markAllExcept(pos)
+                    // ponechaná fotka rovno do ľavého panela, nech vidí čo ostáva
+                    rightIndex = leftIndex.takeIf { it != pos } ?: rightIndex
+                    leftIndex = pos
+                    loadPane(true, keepZoom = true)
+                    loadPane(false, keepZoom = true)
+                    updateActive()
+                    updateInfo()
+                    toast(getString(R.string.compare_kept_only, a.marked.size))
+                }
+                1 -> {
+                    a.toggleMark(pos)
+                    updateInfo()
                 }
             }
-            .setNegativeButton(org.fossify.commons.R.string.cancel, null)
-            .show()
+        }
+    }
+
+    // Zoznam akcií s dynamickým titulkom (názov súboru) — témovaný dialóg cez getAlertDialogBuilder +
+    // setupDialogStuff, rovnaký vzor ako PeopleActivity.showOptionsDialog (nie surový AlertDialog.Builder).
+    private fun showOptionsDialog(title: String, options: List<String>, onPick: (Int) -> Unit) {
+        val margin = resources.getDimensionPixelSize(org.fossify.commons.R.dimen.activity_margin)
+        val holder = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(0, margin / 2, 0, margin / 2)
+        }
+        val ripple = TypedValue().also { theme.resolveAttribute(android.R.attr.selectableItemBackground, it, true) }
+        var dialog: AlertDialog? = null
+        options.forEachIndexed { index, option ->
+            holder.addView(
+                MyTextView(this).apply {
+                    text = option
+                    setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
+                    setPadding(margin, margin * 3 / 4, margin, margin * 3 / 4)
+                    setBackgroundResource(ripple.resourceId)
+                    setOnClickListener {
+                        dialog?.dismiss()
+                        onPick(index)
+                    }
+                },
+                LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT),
+            )
+        }
+        val view = ScrollView(this).apply { addView(holder) }
+        getAlertDialogBuilder().apply {
+            setupDialogStuff(view, this, titleText = title) { alertDialog -> dialog = alertDialog }
+        }
     }
 
     private fun loadPane(left: Boolean, keepZoom: Boolean = false) {
@@ -367,43 +425,69 @@ class ComparatorActivity : SimpleActivity() {
             toast(R.string.compare_marked_none)
             return
         }
-        ensureBackgroundThread {
-            val uris = markedPaths.mapNotNull { contentUriForPath(it) }
-            runOnUiThread {
-                if (isDestroyed || isFinishing) return@runOnUiThread
-                if (uris.isEmpty()) {
-                    toast(R.string.action_failed)
-                    return@runOnUiThread
-                }
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                    try {
-                        val pi = MediaStore.createDeleteRequest(contentResolver, uris)
-                        pendingDelete = markedPaths
-                        startIntentSenderForResult(pi.intentSender, REQ_DELETE, null, 0, 0, 0)
-                    } catch (e: Throwable) {
-                        toast(R.string.action_failed)
-                    }
-                } else {
-                    var ok = false
-                    uris.forEach {
-                        try {
-                            if (contentResolver.delete(it, null, null) > 0) ok = true
-                        } catch (e: Throwable) {
+        confirmDelete(ArrayList(markedPaths))
+    }
+
+    // rovnaký vzor ako PhotoPathsAdapter/MediaAdapter: potvrdenie s počtom a veľkosťou; pri zapnutom
+    // Koši sa text aj samotné mazanie riadi nastavením (fotky idú do Koša, nie natrvalo preč)
+    private fun confirmDelete(toDelete: ArrayList<String>) {
+        val itemsText = if (toDelete.size == 1) {
+            "\"${toDelete.first().getFilenameFromPath()}\""
+        } else {
+            val size = toDelete.sumOf { File(it).length() }.formatSize()
+            val count = resources.getQuantityString(org.fossify.commons.R.plurals.delete_items, toDelete.size, toDelete.size)
+            "$count ($size)"
+        }
+        val baseString = if (config.useRecycleBin) {
+            org.fossify.commons.R.string.move_to_recycle_bin_confirmation
+        } else {
+            org.fossify.commons.R.string.deletion_confirmation
+        }
+        ConfirmationDialog(this, String.format(resources.getString(baseString), itemsText)) {
+            deleteConfirmed(toDelete)
+        }
+    }
+
+    private fun deleteConfirmed(toDelete: ArrayList<String>) {
+        val safPath = toDelete.firstOrNull { needsStupidWritePermissions(it) } ?: toDelete.first()
+        handleSAFDialog(safPath) { safOk ->
+            if (!safOk) return@handleSAFDialog
+            val sdk30Path = toDelete.firstOrNull { isAccessibleWithSAFSdk30(it) } ?: toDelete.first()
+            checkManageMediaOrHandleSAFDialogSdk30(sdk30Path) { manageOk ->
+                if (!manageOk) return@checkManageMediaOrHandleSAFDialogSdk30
+                if (config.useRecycleBin) {
+                    toast(resources.getQuantityString(org.fossify.commons.R.plurals.moving_items_into_bin, toDelete.size, toDelete.size))
+                    movePathsInRecycleBin(toDelete) { moved ->
+                        if (moved) {
+                            deleteOriginals(toDelete, wasMovedToBin = true)
+                        } else {
+                            toast(org.fossify.commons.R.string.unknown_error_occurred)
                         }
                     }
-                    if (ok) removeDeleted(markedPaths)
+                } else {
+                    toast(resources.getQuantityString(org.fossify.commons.R.plurals.deleting_items, toDelete.size, toDelete.size))
+                    deleteOriginals(toDelete, wasMovedToBin = false)
                 }
             }
         }
     }
 
-    @Deprecated("Deprecated in Java")
-    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
-        super.onActivityResult(requestCode, resultCode, data)
-        if (requestCode == REQ_DELETE && resultCode == RESULT_OK) {
-            removeDeleted(pendingDelete)
+    // zmaže originály zo zdieľanej cesty appky (rieši SAF aj scoped storage); zo zoznamu odoberie len
+    // fotky, ktoré na disku naozaj zmizli, takže čiastočné zlyhanie nenechá v porovnávači duchov
+    private fun deleteOriginals(toDelete: List<String>, wasMovedToBin: Boolean) {
+        val items = toDelete.map { FileDirItem(it, it.getFilenameFromPath()) }
+        deleteFiles(items) { success ->
+            ensureBackgroundThread {
+                val gone = toDelete.filter { !getDoesFilePathExist(it) }
+                // pri Koši riadok v DB už prešiel na cestu v Koši (movePathsInRecycleBin), pri trvalom mazaní ho zmaž
+                if (!wasMovedToBin) gone.forEach { deleteDBPath(it) }
+                runOnUiThread {
+                    if (isDestroyed || isFinishing) return@runOnUiThread
+                    if (!success) toast(org.fossify.commons.R.string.unknown_error_occurred)
+                    removeDeleted(gone)
+                }
+            }
         }
-        pendingDelete = emptyList()
     }
 
     private fun removeDeleted(removed: List<String>) {
@@ -456,7 +540,8 @@ class ComparatorActivity : SimpleActivity() {
                 return true
             }
             android.view.KeyEvent.KEYCODE_ENTER, android.view.KeyEvent.KEYCODE_NUMPAD_ENTER -> {
-                deleteMarked()
+                // vždy cez potvrdenie a Kôš (deleteMarked); podržaný kláves dialóg nenaskladá opakovane
+                if (event?.repeatCount == 0) deleteMarked()
                 return true
             }
         }
@@ -465,31 +550,4 @@ class ComparatorActivity : SimpleActivity() {
 
     // klávesové šípky (aj scrcpy): mení fotku ľavého panela zaradom, pravý panel ostáva ako referencia
     private fun advanceLeft(dir: Int) = stepPane(true, dir)
-
-    private fun contentUriForPath(path: String): Uri? {
-        return try {
-            contentResolver.query(
-                MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
-                arrayOf(MediaStore.Images.Media._ID),
-                "${MediaStore.Images.Media.DATA} = ?",
-                arrayOf(path),
-                null,
-            )?.use { c ->
-                if (c.moveToFirst()) {
-                    ContentUris.withAppendedId(
-                        MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
-                        c.getLong(c.getColumnIndexOrThrow(MediaStore.Images.Media._ID)),
-                    )
-                } else {
-                    null
-                }
-            }
-        } catch (e: Throwable) {
-            null
-        }
-    }
-
-    companion object {
-        private const val REQ_DELETE = 7013
-    }
 }

@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Stringy agenta C5 (Nastavenia) -->
+<resources>
+    <!-- Nastavenia — automatická kontrola aktualizácií (raz denne, len GitHub) -->
+    <string name="c5_auto_update_check">Kontrolovať aktualizácie automaticky (raz denne)</string>
+</resources>

@@ -10,111 +10,166 @@ import android.provider.MediaStore
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import org.fossify.commons.helpers.ensureBackgroundThread
+import org.fossify.gallery.R
+import org.fossify.gallery.family.FamilyInbox
+import org.fossify.gallery.helpers.BackgroundPriority
+import org.fossify.gallery.helpers.HeavyGate
+import org.fossify.gallery.helpers.HeavySlot
 import java.io.File
+import java.util.concurrent.atomic.AtomicLong
 
-// B2: indexovanie = detekcia + ODTLAČOK pre každú tvár (faces.db). Po dokončení sa odtlačky
-// zoskupia a vráti sa počet osôb. Beží na bežnom vlákne (robustnosť FGS/WorkManager = B4).
+// B2: indexovanie = detekcia + ODTLAČOK pre každú tvár (faces.db); po dokončení vráti počet tvárí
+// a fotiek s tvárami. Beží na bežnom vlákne (robustnosť FGS/WorkManager = B4).
 object FaceIndexer {
-    @Volatile
-    var isRunning = false
-        private set
+    // A7: beh sa „privlastní“ cez compareAndSet(0, id) — dve súbežné volania nespustia dva behy naraz.
+    // owner = id bežiaceho behu (0 = nebeží). stop() ho vynuluje; koniec behu ho vynuluje len vtedy,
+    // keď je ešte jeho (compareAndSet), takže nový beh spustený hneď po stop() neprepíše.
+    private val owner = AtomicLong(0)
+    private val runIds = AtomicLong(0)
+
+    val isRunning: Boolean
+        get() = owner.get() != 0L
 
     private const val MAX_DECODE_SIZE = 1024
     private const val CHANNEL_ID = "face_indexing"
     private const val NOTIF_ID = 49231
+    private const val KEY_REPAIR_AT = "faces_embed_repair_at"
+    private const val REPAIR_INTERVAL_MS = 24 * 60 * 60 * 1000L
+    private const val REPAIR_MAX_PHOTOS = 100
 
+    // Modely sa načítajú až pri prvej fotke, ktorú treba naozaj spracovať (FaceModels), a s miestom
+    // v HeavyGate; onWaiting = beh čaká, kým dobehne iná ťažká úloha. Callbacky onDone/onError sa volajú
+    // až PO zatvorení modelov a uvoľnení miesta — ďalšia úloha spustená z nich (aj na tom istom
+    // vlákne) už pamäť po tvárach nemá obsadenú.
     fun index(
         context: Context,
         notify: Boolean = true,
+        onWaiting: () -> Unit = {},
         onProgress: (done: Int, total: Int) -> Unit,
-        onDone: (faces: Int, photos: Int, info: String) -> Unit,
+        onDone: (faces: Int, photos: Int) -> Unit,
         onError: (message: String) -> Unit,
     ) {
-        if (isRunning) return
-        isRunning = true
+        val myRun = runIds.incrementAndGet()
+        if (!owner.compareAndSet(0, myRun)) return
+        val active = { owner.get() == myRun }
         val appCtx = context.applicationContext
         ensureBackgroundThread {
-            var detector: FaceDetectionHelper? = null
-            var embedder: FaceEmbedder? = null
-            var landmarker: FaceLandmarkHelper? = null
-            try {
-                val dao = FacesDatabase.getInstance(appCtx).FaceDao()
-                detector = FaceDetectionHelper(appCtx)
-                embedder = FaceEmbedder(appCtx)
-                landmarker = FaceLandmarkHelper(appCtx)
-                if (notify) ensureChannel(appCtx)
+            var error: String? = null
+            var total = 0
+            var done = 0
+            BackgroundPriority.run {
+                val models = FaceModels(appCtx, HeavySlot(active, onWaiting, onResume = { onProgress(done, total) }))
+                try {
+                    val dao = FacesDatabase.getInstance(appCtx).FaceDao()
+                    // nové tváre len s id nad všetkými odkazmi z people.db/extras.db (poistka proti posunu id)
+                    if (!FacesDatabase.ensureIdsAboveReferences(appCtx)) {
+                        throw IllegalStateException(appCtx.getString(R.string.c1_faces_refs_unreadable))
+                    }
+                    if (notify) ensureChannel(appCtx)
 
-                val processed = dao.getProcessedPaths().toHashSet()
-                val todo = queryImages(appCtx).filter { it.second !in processed }
-                val total = todo.size
-                var done = 0
-                for ((mediaStoreId, path) in todo) {
-                    if (!isRunning) break
-                    var faceCount = 0
-                    try {
-                        val bmp = decodeDownscaled(path)
-                        if (bmp != null) {
-                            val detected = detector.detect(bmp)
-                            faceCount = detected.size
-                            if (detected.isNotEmpty()) {
-                                val theEmbedder = embedder
-                                val theLandmarker = landmarker
-                                dao.insertFaces(detected.mapIndexed { i, f ->
-                                    val embedding = try {
-                                        val crop = FaceAligner.cropRegion(bmp, f.left, f.top, f.right, f.bottom, 0.3f)
-                                        if (crop != null) {
-                                            val e = FaceEmbedder.toBytes(FaceAligner.embedCrop(crop, theLandmarker, theEmbedder, detector).vec)
-                                            crop.recycle()
-                                            e
-                                        } else {
-                                            FaceEmbedder.toBytes(theEmbedder.embed(bmp, f))
-                                        }
-                                    } catch (e: Throwable) {
-                                        null
-                                    }
-                                    FaceEntity(
-                                        id = null, mediaFullPath = path, mediaStoreId = mediaStoreId, faceIndex = i,
-                                        bboxLeft = f.left, bboxTop = f.top, bboxRight = f.right, bboxBottom = f.bottom,
-                                        score = f.score, embedding = embedding, detectedAt = System.currentTimeMillis(),
-                                    )
-                                })
+                    // A5: presunuté/premenované fotky preklopiť podľa obsahu PRED detekciou (inak duplikáty)
+                    FaceRelinker.relink(appCtx, dao, active)
+                    val processed = dao.getProcessedPaths().toHashSet()
+                    // vylúčené a zamknuté priečinky sa nespracúvajú (rozhodnutie Lukáša 20.10.2026);
+                    // už uložené tváre odtiaľ sa NEmažú — UI ich len skryje
+                    val scope = IndexScope(appCtx)
+                    val candidates = queryImages(appCtx).filter { it.second !in processed && scope.allows(it.second) }
+                    // tváre z prepojeného telefónu (F4) sa zapíšu hneď aj so značkou, detekcia sa nerobí
+                    val todo = FamilyInbox.withoutSupplied(appCtx, candidates, FamilyInbox.FACES) { it.second }
+                    // fotka bez značky „spracovaná", ale s tvárami v DB (značku zmazalo staré denné
+                    // upratovanie pri dočasne nedostupnom súbore, alebo pád medzi zápisom tvárí a značky):
+                    // tváre NEdetegovať nanovo, len doplniť značku — inak by vznikli nové id a menovky
+                    // v people.db by ukazovali do prázdna
+                    val withFaces = if (todo.isEmpty()) emptySet() else dao.getPathsWithFaces().toHashSet()
+                    total = todo.size
+                    for ((mediaStoreId, path) in todo) {
+                        if (!active()) break
+                        if (path in withFaces) {
+                            try {
+                                dao.insertIndexedPhoto(IndexedPhotoEntity(path, dao.getFaceCountForPath(path), System.currentTimeMillis()))
+                            } catch (ignored: Throwable) {
                             }
-                            bmp.recycle()
+                            done++
+                            if (done % 5 == 0 || done == total) onProgress(done, total)
+                            continue
                         }
-                        dao.insertIndexedPhoto(IndexedPhotoEntity(path, faceCount, System.currentTimeMillis()))
-                    } catch (ignored: Throwable) {
-                        // jedna pokazená fotka nesmie zastaviť celé indexovanie
+                        indexPhoto(appCtx, dao, models, mediaStoreId, path)
+                        done++
+                        if (done % 5 == 0 || done == total) {
+                            onProgress(done, total)
+                            if (notify) notifyProgress(appCtx, done, total)
+                        }
                     }
-                    done++
-                    if (done % 5 == 0 || done == total) {
-                        onProgress(done, total)
-                        if (notify) notifyProgress(appCtx, done, total)
-                    }
-                }
-                cancelNotification(appCtx)
-                val info = try {
-                    val embs = dao.getAllEmbeddings().map { FaceEmbedder.toFloats(it) }
-                    val thresholds = floatArrayOf(0.35f, 0.40f, 0.45f, 0.50f, 0.55f, 0.60f, 0.65f, 0.70f)
-                    val counts = FaceClusterer.countPersonsAtThresholds(embs, thresholds)
-                    thresholds.indices.joinToString("  ") { "${thresholds[it]}->${counts[it]}" }
+                    cancelNotification(appCtx)
+                    if (active()) maybeRepairUnembedded(appCtx, dao, models, active)
+                    // (predtým sa tu po KAŽDOM behu zhlukovali všetky odtlačky pri 8 prahoch len pre
+                    // diagnostický reťazec, ktorý nikto nečítal — zbytočná záťaž CPU a batérie)
+                } catch (ignored: HeavyGate.Stopped) {
+                    cancelNotification(appCtx)
                 } catch (e: Throwable) {
-                    "?"
+                    cancelNotification(appCtx)
+                    error = describe(e)
+                } finally {
+                    models.close()
+                    owner.compareAndSet(myRun, 0)
                 }
-                onDone(safeFaceCount(dao), safePhotoCount(dao), info)
-            } catch (e: Throwable) {
-                cancelNotification(appCtx)
-                onError(describe(e))
-            } finally {
-                detector?.close()
-                embedder?.close()
-                landmarker?.close()
-                isRunning = false
+            }
+            val err = error
+            if (err != null) {
+                onError(err)
+            } else {
+                onDone(safeFaceCount(appCtx), safePhotoCount(appCtx))
             }
         }
     }
 
+    // Jedna fotka: detekcia + FaceFilter + odtlačky v2 + zápis (počas prepočtu na v2 bez odtlačku).
+    // Pokazená fotka nesmie zastaviť celé indexovanie; zastavenie počas čakania na miesto nezapíše značku.
+    private fun indexPhoto(appCtx: Context, dao: FaceDao, models: FaceModels, mediaStoreId: Long, path: String) {
+        var faceCount = 0
+        try {
+            val bmp = decodeDownscaled(path)
+            if (bmp != null) {
+                try {
+                    faceCount = FaceStore.detectAndInsert(
+                        appCtx, dao, path, mediaStoreId, bmp, MAX_DECODE_SIZE,
+                        models.detector(), models.landmarker(), models.embedder(),
+                    )
+                } finally {
+                    bmp.recycle()
+                }
+            }
+            dao.insertIndexedPhoto(IndexedPhotoEntity(path, faceCount, System.currentTimeMillis()))
+        } catch (e: HeavyGate.Stopped) {
+            throw e
+        } catch (ignored: Throwable) {
+        }
+    }
+
     fun stop() {
-        isRunning = false
+        owner.set(0)
+    }
+
+    // Raz denne skús doplniť odtlačok tváram, ktorým ho indexovanie nevypočítalo — bez neho sú
+    // v appke neviditeľné a nedajú sa označiť. Obmedzené počtom fotiek, aby to nezaťažovalo
+    // bežné (automatické) spracovanie knižnice; neopraviteľné sa skúsia znova o deň.
+    private fun maybeRepairUnembedded(
+        context: Context,
+        dao: FaceDao,
+        models: FaceModels,
+        active: () -> Boolean,
+    ) {
+        try {
+            // počas prepočtu na v2 by oprava zapísala v2 vektor medzi v1 — doplní ho prepnutie
+            if (FaceEmbedVersion.isPending(context)) return
+            val prefs = context.getSharedPreferences("galeria_faces", Context.MODE_PRIVATE)
+            if (System.currentTimeMillis() - prefs.getLong(KEY_REPAIR_AT, 0L) < REPAIR_INTERVAL_MS) return
+            prefs.edit().putLong(KEY_REPAIR_AT, System.currentTimeMillis()).apply()
+            RefreshFaces.repairUnembedded(dao, models, REPAIR_MAX_PHOTOS, active)
+        } catch (e: HeavyGate.Stopped) {
+            throw e
+        } catch (ignored: Throwable) {
+        }
     }
 
     // Zostaví reťazec príčin (root-first), aby sme videli, čo presne zlyhalo.
@@ -130,17 +185,19 @@ object FaceIndexer {
         }
     }
 
-    private fun safeFaceCount(dao: FaceDao) = try { dao.getFaceCount() } catch (e: Throwable) { 0 }
-    private fun safePhotoCount(dao: FaceDao) = try { dao.getPhotosWithFacesCount() } catch (e: Throwable) { 0 }
+    // aj otvorenie DB v try — callback sa volá mimo hlavného try behu
+    private fun safeFaceCount(context: Context) =
+        try { FacesDatabase.getInstance(context).FaceDao().getFaceCount() } catch (e: Throwable) { 0 }
+    private fun safePhotoCount(context: Context) =
+        try { FacesDatabase.getInstance(context).FaceDao().getPhotosWithFacesCount() } catch (e: Throwable) { 0 }
 
     private fun ensureChannel(context: Context) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val nm = context.getSystemService(NotificationManager::class.java) ?: return
-            if (nm.getNotificationChannel(CHANNEL_ID) == null) {
-                nm.createNotificationChannel(
-                    NotificationChannel(CHANNEL_ID, "Rozpoznávanie tvárí", NotificationManager.IMPORTANCE_LOW)
-                )
-            }
+            // vždy (aj keď kanál existuje) — systém tak premenuje kanál vytvorený staršou verziou
+            nm.createNotificationChannel(
+                NotificationChannel(CHANNEL_ID, context.getString(R.string.q1_channel_faces), NotificationManager.IMPORTANCE_LOW)
+            )
         }
     }
 
@@ -148,13 +205,15 @@ object FaceIndexer {
         try {
             val notification = NotificationCompat.Builder(context, CHANNEL_ID)
                 .setSmallIcon(android.R.drawable.stat_notify_sync)
-                .setContentTitle("Hľadám tváre")
+                .setContentTitle(context.getString(R.string.q1_notif_faces))
                 .setContentText("$done / $total")
                 .setProgress(total, done, false)
                 .setOngoing(true)
                 .setOnlyAlertOnce(true)
                 .build()
             NotificationManagerCompat.from(context).notify(NOTIF_ID, notification)
+        } catch (ignored: SecurityException) {
+            // bez povolenia na notifikácie (Android 13+) — priebeh len nezobrazíme
         } catch (ignored: Throwable) {
         }
     }

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Balík lahkost-1 (ľahšia appka): ťažké úlohy spracovania knižnice idú za sebou -->
+    <string name="lk_prog_waiting">%1$s – čaká, kým dobehne iné spracovanie</string>
+    <string name="lk_task_faces">Tváre</string>
+    <string name="lk_task_ocr">Text (OCR)</string>
+    <string name="lk_task_clip">Hľadanie predmetov</string>
+    <string name="lk_task_reembed">Prepracovanie tvárí</string>
+    <string name="lk_task_face_v2">Prepočet odtlačkov tvárí</string>
+</resources>

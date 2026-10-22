@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/family_peer_holder"
+    style="@style/SettingsHolderTextViewStyle"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content">
+
+    <org.fossify.commons.views.MyTextView
+        android:id="@+id/family_peer_name"
+        style="@style/SettingsTextLabelStyle"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        tools:text="POCO F8" />
+
+    <org.fossify.commons.views.MyTextView
+        android:id="@+id/family_peer_summary"
+        style="@style/SettingsTextValueStyle"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_below="@+id/family_peer_name"
+        tools:text="Prepojené 20. 10. 2026 · naposledy pred 5 min" />
+
+</RelativeLayout>
