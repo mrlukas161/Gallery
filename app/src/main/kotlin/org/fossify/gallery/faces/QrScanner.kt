@@ -15,6 +15,15 @@ object QrScanner {
         }
     }
 
+    // Má fotka už výsledok v qr.db (QrIndexer, OCR alebo prepojený telefón)? Každá fotka sa skenuje raz:
+    // QrIndexer preskočí fotky, ktoré oskenovalo OCR (getIndexedPaths), a OCR preskočí tie od QrIndexera.
+    // Pri chybe DB radšej „nie“ (oskenuje sa znova, ako predtým).
+    fun alreadyScanned(context: Context, path: String): Boolean = try {
+        QrDatabase.getInstance(context).QrDao().getByPath(path) != null
+    } catch (ignored: Throwable) {
+        false
+    }
+
     fun store(context: Context, path: String, text: String) {
         try {
             QrDatabase.getInstance(context).QrDao()

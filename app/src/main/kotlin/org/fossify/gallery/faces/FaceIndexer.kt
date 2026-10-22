@@ -12,6 +12,9 @@ import androidx.core.app.NotificationManagerCompat
 import org.fossify.commons.helpers.ensureBackgroundThread
 import org.fossify.gallery.R
 import org.fossify.gallery.family.FamilyInbox
+import org.fossify.gallery.helpers.BackgroundPriority
+import org.fossify.gallery.helpers.HeavyGate
+import org.fossify.gallery.helpers.HeavySlot
 import java.io.File
 import java.util.concurrent.atomic.AtomicLong
 
@@ -34,9 +37,14 @@ object FaceIndexer {
     private const val REPAIR_INTERVAL_MS = 24 * 60 * 60 * 1000L
     private const val REPAIR_MAX_PHOTOS = 100
 
+    // Modely sa načítajú až pri prvej fotke, ktorú treba naozaj spracovať (FaceModels), a s miestom
+    // v HeavyGate; onWaiting = beh čaká, kým dobehne iná ťažká úloha. Callbacky onDone/onError sa volajú
+    // až PO zatvorení modelov a uvoľnení miesta — ďalšia úloha spustená z nich (aj na tom istom
+    // vlákne) už pamäť po tvárach nemá obsadenú.
     fun index(
         context: Context,
         notify: Boolean = true,
+        onWaiting: () -> Unit = {},
         onProgress: (done: Int, total: Int) -> Unit,
         onDone: (faces: Int, photos: Int) -> Unit,
         onError: (message: String) -> Unit,
@@ -46,85 +54,95 @@ object FaceIndexer {
         val active = { owner.get() == myRun }
         val appCtx = context.applicationContext
         ensureBackgroundThread {
-            var detector: FaceDetectionHelper? = null
-            var embedder: FaceEmbedder? = null
-            var landmarker: FaceLandmarkHelper? = null
-            try {
-                val dao = FacesDatabase.getInstance(appCtx).FaceDao()
-                // nové tváre len s id nad všetkými odkazmi z people.db/extras.db (poistka proti posunu id)
-                if (!FacesDatabase.ensureIdsAboveReferences(appCtx)) {
-                    throw IllegalStateException(appCtx.getString(R.string.c1_faces_refs_unreadable))
-                }
-                detector = FaceDetectionHelper(appCtx)
-                embedder = FaceEmbedder(appCtx)
-                landmarker = FaceLandmarkHelper(appCtx)
-                if (notify) ensureChannel(appCtx)
+            var error: String? = null
+            var total = 0
+            var done = 0
+            BackgroundPriority.run {
+                val models = FaceModels(appCtx, HeavySlot(active, onWaiting, onResume = { onProgress(done, total) }))
+                try {
+                    val dao = FacesDatabase.getInstance(appCtx).FaceDao()
+                    // nové tváre len s id nad všetkými odkazmi z people.db/extras.db (poistka proti posunu id)
+                    if (!FacesDatabase.ensureIdsAboveReferences(appCtx)) {
+                        throw IllegalStateException(appCtx.getString(R.string.c1_faces_refs_unreadable))
+                    }
+                    if (notify) ensureChannel(appCtx)
 
-                // A5: presunuté/premenované fotky preklopiť podľa obsahu PRED detekciou (inak duplikáty)
-                FaceRelinker.relink(appCtx, dao, active)
-                val processed = dao.getProcessedPaths().toHashSet()
-                // vylúčené a zamknuté priečinky sa nespracúvajú (rozhodnutie Lukáša 20.10.2026);
-                // už uložené tváre odtiaľ sa NEmažú — UI ich len skryje
-                val scope = IndexScope(appCtx)
-                val candidates = queryImages(appCtx).filter { it.second !in processed && scope.allows(it.second) }
-                // tváre z prepojeného telefónu (F4) sa zapíšu hneď aj so značkou, detekcia sa nerobí
-                val todo = FamilyInbox.withoutSupplied(appCtx, candidates, FamilyInbox.FACES) { it.second }
-                // fotka bez značky „spracovaná", ale s tvárami v DB (značku zmazalo staré denné
-                // upratovanie pri dočasne nedostupnom súbore, alebo pád medzi zápisom tvárí a značky):
-                // tváre NEdetegovať nanovo, len doplniť značku — inak by vznikli nové id a menovky
-                // v people.db by ukazovali do prázdna
-                val withFaces = if (todo.isEmpty()) emptySet() else dao.getPathsWithFaces().toHashSet()
-                val total = todo.size
-                var done = 0
-                for ((mediaStoreId, path) in todo) {
-                    if (!active()) break
-                    if (path in withFaces) {
-                        try {
-                            dao.insertIndexedPhoto(IndexedPhotoEntity(path, dao.getFaceCountForPath(path), System.currentTimeMillis()))
-                        } catch (ignored: Throwable) {
-                        }
-                        done++
-                        if (done % 5 == 0 || done == total) onProgress(done, total)
-                        continue
-                    }
-                    var faceCount = 0
-                    try {
-                        val bmp = decodeDownscaled(path)
-                        if (bmp != null) {
+                    // A5: presunuté/premenované fotky preklopiť podľa obsahu PRED detekciou (inak duplikáty)
+                    FaceRelinker.relink(appCtx, dao, active)
+                    val processed = dao.getProcessedPaths().toHashSet()
+                    // vylúčené a zamknuté priečinky sa nespracúvajú (rozhodnutie Lukáša 20.10.2026);
+                    // už uložené tváre odtiaľ sa NEmažú — UI ich len skryje
+                    val scope = IndexScope(appCtx)
+                    val candidates = queryImages(appCtx).filter { it.second !in processed && scope.allows(it.second) }
+                    // tváre z prepojeného telefónu (F4) sa zapíšu hneď aj so značkou, detekcia sa nerobí
+                    val todo = FamilyInbox.withoutSupplied(appCtx, candidates, FamilyInbox.FACES) { it.second }
+                    // fotka bez značky „spracovaná", ale s tvárami v DB (značku zmazalo staré denné
+                    // upratovanie pri dočasne nedostupnom súbore, alebo pád medzi zápisom tvárí a značky):
+                    // tváre NEdetegovať nanovo, len doplniť značku — inak by vznikli nové id a menovky
+                    // v people.db by ukazovali do prázdna
+                    val withFaces = if (todo.isEmpty()) emptySet() else dao.getPathsWithFaces().toHashSet()
+                    total = todo.size
+                    for ((mediaStoreId, path) in todo) {
+                        if (!active()) break
+                        if (path in withFaces) {
                             try {
-                                // detekcia + FaceFilter + odtlačky v2 + zápis (počas prepočtu na v2 bez odtlačku)
-                                faceCount = FaceStore.detectAndInsert(
-                                    appCtx, dao, path, mediaStoreId, bmp, MAX_DECODE_SIZE,
-                                    detector, landmarker, embedder,
-                                )
-                            } finally {
-                                bmp.recycle()
+                                dao.insertIndexedPhoto(IndexedPhotoEntity(path, dao.getFaceCountForPath(path), System.currentTimeMillis()))
+                            } catch (ignored: Throwable) {
                             }
+                            done++
+                            if (done % 5 == 0 || done == total) onProgress(done, total)
+                            continue
                         }
-                        dao.insertIndexedPhoto(IndexedPhotoEntity(path, faceCount, System.currentTimeMillis()))
-                    } catch (ignored: Throwable) {
-                        // jedna pokazená fotka nesmie zastaviť celé indexovanie
+                        indexPhoto(appCtx, dao, models, mediaStoreId, path)
+                        done++
+                        if (done % 5 == 0 || done == total) {
+                            onProgress(done, total)
+                            if (notify) notifyProgress(appCtx, done, total)
+                        }
                     }
-                    done++
-                    if (done % 5 == 0 || done == total) {
-                        onProgress(done, total)
-                        if (notify) notifyProgress(appCtx, done, total)
-                    }
+                    cancelNotification(appCtx)
+                    if (active()) maybeRepairUnembedded(appCtx, dao, models, active)
+                    // (predtým sa tu po KAŽDOM behu zhlukovali všetky odtlačky pri 8 prahoch len pre
+                    // diagnostický reťazec, ktorý nikto nečítal — zbytočná záťaž CPU a batérie)
+                } catch (ignored: HeavyGate.Stopped) {
+                    cancelNotification(appCtx)
+                } catch (e: Throwable) {
+                    cancelNotification(appCtx)
+                    error = describe(e)
+                } finally {
+                    models.close()
+                    owner.compareAndSet(myRun, 0)
                 }
-                cancelNotification(appCtx)
-                if (active()) maybeRepairUnembedded(appCtx, dao, detector, embedder, landmarker, active)
-                // (predtým sa tu po KAŽDOM behu zhlukovali všetky odtlačky pri 8 prahoch len pre
-                // diagnostický reťazec, ktorý nikto nečítal — zbytočná záťaž CPU a batérie)
-                onDone(safeFaceCount(dao), safePhotoCount(dao))
-            } catch (e: Throwable) {
-                cancelNotification(appCtx)
-                onError(describe(e))
-            } finally {
-                detector?.close()
-                embedder?.close()
-                landmarker?.close()
-                owner.compareAndSet(myRun, 0)
             }
+            val err = error
+            if (err != null) {
+                onError(err)
+            } else {
+                onDone(safeFaceCount(appCtx), safePhotoCount(appCtx))
+            }
+        }
+    }
+
+    // Jedna fotka: detekcia + FaceFilter + odtlačky v2 + zápis (počas prepočtu na v2 bez odtlačku).
+    // Pokazená fotka nesmie zastaviť celé indexovanie; zastavenie počas čakania na miesto nezapíše značku.
+    private fun indexPhoto(appCtx: Context, dao: FaceDao, models: FaceModels, mediaStoreId: Long, path: String) {
+        var faceCount = 0
+        try {
+            val bmp = decodeDownscaled(path)
+            if (bmp != null) {
+                try {
+                    faceCount = FaceStore.detectAndInsert(
+                        appCtx, dao, path, mediaStoreId, bmp, MAX_DECODE_SIZE,
+                        models.detector(), models.landmarker(), models.embedder(),
+                    )
+                } finally {
+                    bmp.recycle()
+                }
+            }
+            dao.insertIndexedPhoto(IndexedPhotoEntity(path, faceCount, System.currentTimeMillis()))
+        } catch (e: HeavyGate.Stopped) {
+            throw e
+        } catch (ignored: Throwable) {
         }
     }
 
@@ -138,9 +156,7 @@ object FaceIndexer {
     private fun maybeRepairUnembedded(
         context: Context,
         dao: FaceDao,
-        detector: FaceDetectionHelper,
-        embedder: FaceEmbedder,
-        landmarker: FaceLandmarkHelper,
+        models: FaceModels,
         active: () -> Boolean,
     ) {
         try {
@@ -149,7 +165,9 @@ object FaceIndexer {
             val prefs = context.getSharedPreferences("galeria_faces", Context.MODE_PRIVATE)
             if (System.currentTimeMillis() - prefs.getLong(KEY_REPAIR_AT, 0L) < REPAIR_INTERVAL_MS) return
             prefs.edit().putLong(KEY_REPAIR_AT, System.currentTimeMillis()).apply()
-            RefreshFaces.repairUnembedded(dao, detector, embedder, landmarker, REPAIR_MAX_PHOTOS, active)
+            RefreshFaces.repairUnembedded(dao, models, REPAIR_MAX_PHOTOS, active)
+        } catch (e: HeavyGate.Stopped) {
+            throw e
         } catch (ignored: Throwable) {
         }
     }
@@ -167,8 +185,11 @@ object FaceIndexer {
         }
     }
 
-    private fun safeFaceCount(dao: FaceDao) = try { dao.getFaceCount() } catch (e: Throwable) { 0 }
-    private fun safePhotoCount(dao: FaceDao) = try { dao.getPhotosWithFacesCount() } catch (e: Throwable) { 0 }
+    // aj otvorenie DB v try — callback sa volá mimo hlavného try behu
+    private fun safeFaceCount(context: Context) =
+        try { FacesDatabase.getInstance(context).FaceDao().getFaceCount() } catch (e: Throwable) { 0 }
+    private fun safePhotoCount(context: Context) =
+        try { FacesDatabase.getInstance(context).FaceDao().getPhotosWithFacesCount() } catch (e: Throwable) { 0 }
 
     private fun ensureChannel(context: Context) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {

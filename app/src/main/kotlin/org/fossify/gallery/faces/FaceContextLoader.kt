@@ -13,12 +13,20 @@ import java.io.File
 // Zobrazí CELÚ fotku so zvýrazneným rámikom okolo konkrétnej tváre — aby bolo jasné, o ktorú
 // tvár ide, keď je na fotke ľudí viac. Dekóduje rovnako ako indexer (upright), takže rámik sedí.
 object FaceContextLoader {
+    // 8 MB (predtým 16): stačí na obrazovku výrezov, appka v pozadí drží menej pamäte
+    private const val CACHE_BYTES = 8 * 1024 * 1024
+
     // v tomto zmenšení indexer ukladal bboxy (UprightDecoder.decode s max 1024)
     private const val INDEX_DECODE_SIZE = 1024
     private const val OUT_SIZE = 480
 
-    private val cache = object : LruCache<String, Bitmap>(16 * 1024 * 1024) {
+    private val cache = object : LruCache<String, Bitmap>(CACHE_BYTES) {
         override fun sizeOf(key: String, value: Bitmap): Int = value.byteCount
+    }
+
+    // onTrimMemory (appka v pozadí / málo pamäte): výrezy sa pri ďalšom zobrazení načítajú znova
+    fun clear() {
+        cache.evictAll()
     }
 
     // A6: fotka sa otočila alebo prepísala — výrezy jej tvárí v cache už nesedia

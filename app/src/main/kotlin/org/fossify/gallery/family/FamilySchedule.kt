@@ -7,7 +7,9 @@ import org.fossify.gallery.helpers.ProcessingPolicy
 // spracovanie) dodáva FamilyAutoSync a FamilySyncJob.
 //
 // - Pri otvorení appky (onResume hlavnej obrazovky) krátky pokus, len keď je spárovaný telefón,
-//   batéria nie je slabá a od posledného pokusu ubehla aspoň RESUME_MIN_INTERVAL_MS.
+//   batéria nie je slabá a od posledného pokusu ubehla aspoň RESUME_MIN_INTERVAL_MS (15 min).
+//   Keď vo fronte niečo čaká na odoslanie, skúsi sa hneď — len nie častejšie ako raz za
+//   RESUME_PENDING_MIN_INTERVAL_MS (návraty z prehliadača by inak zakaždým hľadali telefón).
 // - Okno pri nabíjaní: JobScheduler (nabíjanie, pri spárovaní aj nemeraná sieť). Okno trvá najviac
 //   WINDOW_MS a skladá sa z krátkych behov jobu (SEGMENT_MS), každý pod 10-minútovým limitom
 //   bežného jobu (Android 14–16). Nič nebeží trvalo: po okne ďalšie najskôr o NEXT_WINDOW_DELAY_MS.
@@ -18,7 +20,8 @@ object FamilySchedule {
     const val SEGMENT_MS = 9 * 60 * 1000L
     const val RETRY_INTERVAL_MS = 2 * 60 * 1000L
     const val NEXT_WINDOW_DELAY_MS = 6 * 60 * 60 * 1000L
-    const val RESUME_MIN_INTERVAL_MS = 60 * 1000L
+    const val RESUME_MIN_INTERVAL_MS = 15 * 60 * 1000L
+    const val RESUME_PENDING_MIN_INTERVAL_MS = 60 * 1000L
     const val RESUME_TIMEOUT_MS = 5_000L
 
     // odložené operácie (napr. z obnovy zálohy, čakajú na fotky) sa skúšajú znova najviac takto často
@@ -65,14 +68,18 @@ object FamilySchedule {
         return Plan(sync = c.paired && c.unmetered, process = c.processingPending)
     }
 
+    // outboxPending = vo fronte čaká niečo na odoslanie (fotky, zrušené prepojenie)
     fun shouldTryOnResume(
         paired: Boolean,
         charging: Boolean,
         batteryPct: Int,
         lastAttemptAt: Long,
         now: Long,
+        outboxPending: Boolean = false,
     ): Boolean {
-        val paused = lastAttemptAt <= 0 || now - lastAttemptAt >= RESUME_MIN_INTERVAL_MS
+        val interval = if (outboxPending) RESUME_PENDING_MIN_INTERVAL_MS else RESUME_MIN_INTERVAL_MS
+        // posunuté hodiny (posledný pokus „v budúcnosti“) nesmú pokusy zablokovať
+        val paused = lastAttemptAt <= 0 || lastAttemptAt > now || now - lastAttemptAt >= interval
         return paired && !lowBattery(charging, batteryPct) && paused
     }
 

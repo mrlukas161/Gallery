@@ -12,6 +12,7 @@ import androidx.core.app.NotificationManagerCompat
 import org.fossify.commons.helpers.ensureBackgroundThread
 import org.fossify.gallery.R
 import org.fossify.gallery.family.FamilyInbox
+import org.fossify.gallery.helpers.BackgroundPriority
 import java.io.File
 
 // Perceptuálny hash (average hash): každú fotku zmenší na PEVNÝCH 8x8, spočíta 64-bit hash (phash.db).
@@ -36,6 +37,7 @@ object PhashIndexer {
         isRunning = true
         val appCtx = context.applicationContext
         ensureBackgroundThread {
+            val priority = BackgroundPriority.lower()
             try {
                 val dao = PhashDatabase.getInstance(appCtx).PhashDao()
                 if (notify) ensureChannel(appCtx)
@@ -70,6 +72,7 @@ object PhashIndexer {
                 cancelNotification(appCtx)
                 onError(e.javaClass.simpleName + (e.message?.let { ": " + it.take(120) } ?: ""))
             } finally {
+                BackgroundPriority.restore(priority)
                 isRunning = false
             }
         }

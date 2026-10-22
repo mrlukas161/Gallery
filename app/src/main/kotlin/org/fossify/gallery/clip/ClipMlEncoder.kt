@@ -18,7 +18,7 @@ class ClipMlEncoder(context: Context) {
     private val sessionLazy = lazy {
         try {
             val f = ClipMlModels.textFile(appCtx)
-            if (f.exists() && f.length() > 0) ortEnv.createSession(f.absolutePath, OrtSession.SessionOptions()) else null
+            if (f.exists() && f.length() > 0) OrtOptions.createText(ortEnv, f) else null
         } catch (e: Throwable) {
             null
         }

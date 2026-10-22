@@ -17,9 +17,14 @@ import java.nio.channels.FileChannel
 // Odtlačky v2: zarovnanie zmenšuje zdroj postupne po polovici (antialiasing, B3) a výsledok je súčet
 // odtlačku tváre a jej zrkadlového obrazu, L2-normalizovaný (B4, stabilnejšie pri selfie a natočení).
 class FaceEmbedder(context: Context) {
-    private val interpreter: Interpreter = Interpreter(loadModel(context), Interpreter.Options())
+    // 2 vlákna: odtlačok je malý model, viac vlákien len pridá réžiu a súperí s ostatnými úlohami
+    private val interpreter: Interpreter = Interpreter(loadModel(context), Interpreter.Options().setNumThreads(THREADS))
     val outputSize: Int = interpreter.getOutputTensor(0).shape().last()
     private val inputSize = 112
+
+    // vstup modelu sa alokuje raz na inštanciu (predtým nový priamy buffer pri každom odtlačku)
+    private val input: ByteBuffer =
+        ByteBuffer.allocateDirect(1 * inputSize * inputSize * 3 * 4).order(ByteOrder.nativeOrder())
 
     // 2-bodové zarovnanie (oči z BlazeFace) do rovnakej ArcFace šablóny, bez očí len zmenšený rámček
     fun embed(source: Bitmap, face: FaceDetectionHelper.DetectedFace): FloatArray {
@@ -104,8 +109,10 @@ class FaceEmbedder(context: Context) {
         return AlignMath.combineTta(infer(pixels, false), infer(pixels, true))
     }
 
+    // synchronized: zdieľaný vstupný buffer (inštanciu dnes používa vždy len jedno vlákno, toto je poistka)
+    @Synchronized
     private fun infer(pixels: IntArray, mirrored: Boolean): FloatArray {
-        val input = ByteBuffer.allocateDirect(1 * inputSize * inputSize * 3 * 4).order(ByteOrder.nativeOrder())
+        input.clear()
         for (y in 0 until inputSize) {
             for (x in 0 until inputSize) {
                 val p = pixels[y * inputSize + if (mirrored) inputSize - 1 - x else x]
@@ -128,6 +135,8 @@ class FaceEmbedder(context: Context) {
     }
 
     companion object {
+        private const val THREADS = 2
+
         // Identifikátor odtlačkov ULOŽENÝCH vo faces.db a v používaných vzoroch (asset face/mobilefacenet.tflite,
         // vstup 112×112, L2-normalizovaný výstup). Prenáša sa s odtlačkami do druhého telefónu
         // (family.AnchorsSet.faceModelId, PhotoBundle, záloha osôb) — vektory rôznych verzií sa nesmú miešať.

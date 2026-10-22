@@ -7,6 +7,7 @@ import androidx.exifinterface.media.ExifInterface
 import org.fossify.commons.extensions.isVideoFast
 import org.fossify.commons.helpers.ensureBackgroundThread
 import org.fossify.gallery.family.FamilyInbox
+import org.fossify.gallery.helpers.BackgroundPriority
 
 // Prečíta GPS z EXIF každej fotky (rýchle – len hlavička) a z metadát videí (ISO6709) a uloží do
 // geo.db. Typ (fotka/video) sa rozlišuje príponou cesty — bez zmeny schémy. Resumovateľné.
@@ -25,6 +26,7 @@ object GeoIndexer {
         isRunning = true
         val appCtx = context.applicationContext
         ensureBackgroundThread {
+            val priority = BackgroundPriority.lower()
             try {
                 val dao = GeoDatabase.getInstance(appCtx).GeoDao()
                 // vylúčené a zamknuté priečinky sa nespracúvajú; ich staré riadky sa z indexu zmažú
@@ -71,6 +73,7 @@ object GeoIndexer {
             } catch (e: Throwable) {
                 onError(e.javaClass.simpleName + (e.message?.let { ": " + it.take(160) } ?: ""))
             } finally {
+                BackgroundPriority.restore(priority)
                 isRunning = false
             }
         }

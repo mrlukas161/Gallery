@@ -51,7 +51,9 @@ class ComparatorActivity : SimpleActivity() {
     private var sharp = HashMap<String, Double>()
     private var quality = HashMap<String, org.fossify.gallery.faces.PhotoQuality.Result>()
     private var totalScore = HashMap<String, Double>()
-    private var pq: org.fossify.gallery.faces.PhotoQuality? = null
+    // onDestroy: výpočet na pozadí skončí po aktuálnej fotke (model si zatvára sám, nie onDestroy)
+    @Volatile
+    private var destroyed = false
     private var bestIndex = -1
     private var leftIndex = 0
     private var rightIndex = 0
@@ -204,22 +206,32 @@ class ComparatorActivity : SimpleActivity() {
         ensureBackgroundThread {
             val map = HashMap<String, Double>()
             val qmap = HashMap<String, org.fossify.gallery.faces.PhotoQuality.Result>()
-            val analyzer = pq ?: try {
+            // Model patrí LEN tomuto vláknu a zatvára sa tu vo finally — predtým ho zatváral onDestroy
+            // na hlavnom vlákne, kým ho vlákno na pozadí ešte používalo (natívny pád).
+            val analyzer = try {
                 org.fossify.gallery.faces.PhotoQuality(this)
             } catch (e: Throwable) {
                 null
-            }?.also { pq = it }
-            for (p in paths) {
-                map[p] = try {
-                    Sharpness.score(p)
-                } catch (e: Throwable) {
-                    0.0
-                }
-                analyzer?.let {
-                    try {
-                        qmap[p] = it.analyze(p)
-                    } catch (ignored: Throwable) {
+            }
+            try {
+                for (p in paths.toList()) {
+                    if (destroyed) break
+                    map[p] = try {
+                        Sharpness.score(p)
+                    } catch (e: Throwable) {
+                        0.0
                     }
+                    analyzer?.let {
+                        try {
+                            qmap[p] = it.analyze(p)
+                        } catch (ignored: Throwable) {
+                        }
+                    }
+                }
+            } finally {
+                try {
+                    analyzer?.close()
+                } catch (ignored: Throwable) {
                 }
             }
             runOnUiThread {
@@ -256,12 +268,8 @@ class ComparatorActivity : SimpleActivity() {
     }
 
     override fun onDestroy() {
+        destroyed = true
         super.onDestroy()
-        try {
-            pq?.close()
-        } catch (ignored: Throwable) {
-        }
-        pq = null
     }
 
     // ťuk na fotku vo filmstripe -> zobrazí sa VĽAVO (Ľ), doterajšia ľavá sa presunie VPRAVO (P)
