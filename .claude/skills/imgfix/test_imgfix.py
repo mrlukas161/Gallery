@@ -73,6 +73,37 @@ def test_save_roundtrip_and_cutout():
         assert imgfix.main(["apply", str(p), str(p), "-e", "flatten"]) == 2  # refuses overwrite
 
 
+def test_generate_graphics():
+    doc = imgfix.load("new:400x300:#102030")
+    doc = run(doc, "texture type=mesh colors=sunset", "texture type=stars",
+              "gradient colors=#00000000,#000000 rect=0,150,400,150",
+              "shape type=rect box=20,20,200,80 radius=20 gradient=ocean shadow=0,4,8",
+              "shape type=star cx=300 cy=150 r=60 fill=#ffd700 stroke=#000 width=3",
+              "text 'Ahoj svet, toto je dlhý text' box=20,200,360,80 tracking=2",
+              "texture type=dots colors=#ffffff scale=12 opacity=0.2")
+    assert (doc.w, doc.h) == (400, 300)
+    assert doc.rgb[290, 10].mean() < doc.rgb[10, 10].mean() + 60  # dark fade at bottom
+
+
+def test_transparent_canvas():
+    doc = run(imgfix.load("new:200x100:transparent"), "shape type=circle cx=50 cy=50 r=40 fill=#ff0000")
+    assert doc.alpha[50, 50] == 255 and doc.alpha[50, 150] == 0
+    assert tuple(doc.rgb[50, 50]) == (255, 0, 0)
+
+
+def test_collage():
+    with tempfile.TemporaryDirectory() as d:
+        files = []
+        for i in range(3):
+            f = Path(d) / f"{i}.png"
+            Image.fromarray(scene(160 + i * 40, 120)).save(f)
+            files.append(str(f))
+        out = Path(d) / "c.jpg"
+        assert imgfix.main(["collage", str(out), *files, "--cols", "2", "--width", "600",
+                            "--title", "Test", "--title-h", "60"]) == 0
+        assert Image.open(out).width == 600
+
+
 if __name__ == "__main__":
     for name, fn in list(globals().items()):
         if name.startswith("test_"):

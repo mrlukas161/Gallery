@@ -84,6 +84,8 @@ class Doc:
 
 
 def load(path) -> Doc:
+    if str(path).startswith("new:"):
+        return new_canvas(str(path))
     im = Image.open(path)
     fmt = im.format
     info = {"icc_profile": im.info.get("icc_profile"), "exif": im.info.get("exif"),
@@ -218,6 +220,16 @@ def parse_color(s: str):
     if not s.startswith("#") and all(c in "0123456789abcdefABCDEF" for c in s) and len(s) in (3, 6):
         s = "#" + s
     return ImageColor.getrgb(s)[:3]
+
+
+def parse_rgba(s: str):
+    """Colour with optional alpha: #rrggbbaa, #rgba, 'transparent', or any parse_color form."""
+    s = s.strip()
+    if s.lower() == "transparent":
+        return (0, 0, 0, 0)
+    if s.startswith("#") and len(s) in (5, 9):
+        return ImageColor.getrgb(s)
+    return (*parse_color(s), 255)
 
 
 def clamp_rect(x, y, w, h, W, H):
@@ -748,7 +760,7 @@ def op_fill(doc, P):
         new = np.broadcast_to(np.array(c, np.uint8), doc.rgb.shape)
     op_ = P.num("opacity", 1.0)
     mm = (np.ones(doc.rgb.shape[:2], np.float32) if m is None else m) * op_
-    doc.rgb = blend(doc.rgb, new, mm)
+    paint(doc, np.asarray(new, np.float32), mm)
 
 
 def _fill_params_fix(P: Params):
@@ -1113,59 +1125,509 @@ def op_extend(doc, P):
     doc.rgb = new
 
 
-@op("text", "draw text: text=\"...\" (or positional) x= y= size=48 | box=x,y,w,h (auto-fit, "
-            "centred) font=name|path color=#hex stroke=0 stroke_color=#000 anchor=la "
-            "(PIL anchor, e.g. mm=centre) align=left|center|right spacing=4 opacity=1 "
-            "angle=0 shadow=dx,dy shadow_color=#0008")
+# --------------------------------------------------------------------------
+# Drawing / generating graphics (no AI model needed)
+# --------------------------------------------------------------------------
+
+PALETTES = {
+    "sunset": "#ff5e62,#ff9966,#ffd86f", "ocean": "#0f2027,#203a43,#2c5364,#4ca1af",
+    "forest": "#134e5e,#3a7d44,#a8e063", "pastel": "#ffd1dc,#c1e1ff,#d7f9d0,#fff3b0",
+    "neon": "#f72585,#7209b7,#3a0ca3,#4cc9f0", "fire": "#200122,#6f0000,#ff4e00,#ffd200",
+    "aurora": "#00c9a7,#845ec2,#2c73d2,#0081cf", "mono": "#111111,#555555,#bbbbbb,#ffffff",
+    "earth": "#3e2723,#795548,#d7ccc8,#a1887f", "candy": "#ff9a9e,#fad0c4,#a18cd1,#fbc2eb",
+    "night": "#0b1026,#1b2a4a,#3b4f7a", "gold": "#3d2b00,#b8860b,#ffd700,#fff4c2",
+}
+
+CANVAS_PRESETS = {
+    "fullhd": (1920, 1080), "4k": (3840, 2160), "hd": (1280, 720),
+    "instagram": (1080, 1080), "insta-portrait": (1080, 1350), "story": (1080, 1920),
+    "fb-post": (1200, 630), "fb-cover": (1640, 624), "youtube": (1280, 720),
+    "linkedin": (1200, 627), "x-post": (1600, 900), "a4": (2480, 3508), "a4-land": (3508, 2480),
+    "a5": (1748, 2480), "a3": (3508, 4961), "poster": (2400, 3600), "card": (1050, 600),
+    "icon": (1024, 1024), "wallpaper-phone": (1170, 2532),
+}
+
+
+def new_canvas(spec: str) -> Doc:
+    """new:WxH[:bg]  or  new:preset[:bg]   bg = #hex | transparent | palette name."""
+    parts = spec.split(":")[1:]
+    if not parts:
+        raise ImgfixError("new: canvas needs a size, e.g. new:1920x1080 or new:instagram")
+    size = parts[0].lower()
+    if size in CANVAS_PRESETS:
+        w, h = CANVAS_PRESETS[size]
+    else:
+        try:
+            w, h = (int(v) for v in size.split("x"))
+        except ValueError:
+            raise ImgfixError(f"bad canvas size '{size}' (WxH or {', '.join(CANVAS_PRESETS)})")
+    bg = ":".join(parts[1:]) or "#ffffff"
+    if bg == "transparent":
+        return Doc(np.zeros((h, w, 3), np.uint8), np.zeros((h, w), np.uint8))
+    return Doc(np.full((h, w, 3), parse_color(bg), np.uint8))
+
+
+def paint(doc: Doc, color, mask: np.ndarray, mode="normal"):
+    """Composite `color` (H,W,3 array or rgb tuple) through float mask, 'over' the doc.
+    Updates alpha on transparent canvases."""
+    m = np.clip(mask, 0, 1).astype(np.float32)
+    if not isinstance(color, np.ndarray):
+        color = np.array(color, np.float32)
+    top = np.broadcast_to(np.asarray(color, np.float32), doc.rgb.shape)
+    if mode != "normal":
+        base, t = to_f(doc.rgb), top / 255.0
+        if mode == "multiply":
+            t = base * t
+        elif mode == "screen":
+            t = 1 - (1 - base) * (1 - t)
+        elif mode == "overlay":
+            t = np.where(base < 0.5, 2 * base * t, 1 - 2 * (1 - base) * (1 - t))
+        elif mode == "softlight":
+            t = (1 - 2 * t) * base * base + 2 * t * base
+        else:
+            raise ImgfixError(f"unknown blend mode {mode}")
+        top = t * 255.0
+    if doc.alpha is None:
+        doc.rgb = blend(doc.rgb, top, m)
+        return
+    a = doc.alpha.astype(np.float32) / 255.0
+    out_a = m + a * (1 - m)
+    rgb = (top * m[..., None] + doc.rgb.astype(np.float32) * (a * (1 - m))[..., None]) \
+        / np.maximum(out_a, 1e-6)[..., None]
+    doc.rgb = np.clip(np.round(rgb), 0, 255).astype(np.uint8)
+    doc.alpha = to_u8(out_a)
+
+
+def gradient_field(W, H, kind="linear", angle=90.0, cx=0.5, cy=0.5, r=None, box=None):
+    """t in [0,1] over the canvas (or over `box` = x,y,w,h for linear/radial geometry)."""
+    bx, by, bw, bh = box or (0, 0, W, H)
+    yy, xx = np.mgrid[0:H, 0:W].astype(np.float32)
+    if kind == "linear":
+        a = math.radians(angle)
+        dx, dy = math.cos(a), math.sin(a)
+        # project box corners to get the 0..1 span along the direction
+        corners = [(bx, by), (bx + bw, by), (bx, by + bh), (bx + bw, by + bh)]
+        proj = [x * dx + y * dy for x, y in corners]
+        t = (xx * dx + yy * dy - min(proj)) / max(max(proj) - min(proj), 1e-6)
+    elif kind == "radial":
+        px, py = bx + cx * bw, by + cy * bh
+        rr = r or math.hypot(max(px - bx, bx + bw - px), max(py - by, by + bh - py))
+        t = np.sqrt((xx - px) ** 2 + (yy - py) ** 2) / max(rr, 1e-6)
+    elif kind == "conic":
+        px, py = bx + cx * bw, by + cy * bh
+        t = ((np.arctan2(yy - py, xx - px) - math.radians(angle)) / (2 * math.pi)) % 1.0
+    else:
+        raise ImgfixError("gradient type=linear|radial|conic")
+    return np.clip(t, 0, 1)
+
+
+def color_ramp(t: np.ndarray, colors: list, stops: list | None = None, with_alpha=False):
+    """Map t (H,W) to RGB through colours, interpolating in linear light.
+    with_alpha=True returns (rgb, alpha 0..1) using the colours' alpha channel."""
+    colors = [tuple(c) + (255,) * (4 - len(c)) for c in colors]
+    n = len(colors)
+    stops = stops or ([0.0] if n == 1 else [i / (n - 1) for i in range(n)])
+    arr = np.array(colors, np.float32)
+    al = arr[:, 3] / 255.0
+    # fully transparent stops take their neighbour's colour (no grey fringes)
+    for i in range(n):
+        if al[i] == 0:
+            nb = [j for j in (i - 1, i + 1) if 0 <= j < n and al[j] > 0]
+            if nb:
+                arr[i, :3] = arr[nb[0], :3]
+    lin = srgb_to_lin(arr[:, :3] / 255.0)
+    out = np.empty(t.shape + (3,), np.float32)
+    for c in range(3):
+        out[..., c] = np.interp(t, stops, lin[:, c]) if n > 1 else lin[0, c]
+    rgb = lin_to_srgb(out) * 255.0
+    if with_alpha:
+        a = np.interp(t, stops, al).astype(np.float32) if n > 1 else np.full(t.shape, al[0],
+                                                                              np.float32)
+        return rgb, a
+    return rgb
+
+
+def _stops(P: Params, key="colors", default="#000000,#ffffff"):
+    raw = P.str(key) or P.str("stops") or default
+    raw = PALETTES.get(raw.lower(), raw)
+    cols, stops = [], []
+    for part in raw.split(","):
+        if "@" in part:
+            c, s = part.split("@")
+            stops.append(float(s.rstrip("%")) / (100 if s.endswith("%") or float(s.rstrip("%")) > 1
+                                                 else 1))
+        else:
+            c = part
+        cols.append(parse_rgba(c))
+    if stops and len(stops) != len(cols):
+        raise ImgfixError("gradient: give a stop for every colour (#a@0,#b@50%,#c@100%) or none")
+    return cols, (stops or None)
+
+
+def _layer_from(P: Params, W, H, box=None):
+    """Colour layer for fill= / gradient= keys of shape-like ops."""
+    if P.has("gradient"):
+        cols, stops = _stops(P, "gradient")
+        t = gradient_field(W, H, P.str("gtype", "linear"), P.num("angle", 90), box=box)
+        return color_ramp(t, cols, stops)
+    return np.array(P.color("fill", (255, 255, 255)), np.float32)
+
+
+@op("gradient", "[sel] gradient fill: colors=#a,#b,... | palette name (sunset ocean forest "
+                "pastel neon fire aurora mono earth candy night gold) | #a@0,#b@40%,#c@100% "
+                "type=linear|radial|conic angle=90 (0 = left->right, 90 = top->bottom) "
+                "cx=0.5 cy=0.5 r=px (radial/conic centre) opacity=1 blend=normal|multiply|"
+                "screen|overlay|softlight")
+def op_gradient(doc, P):
+    m = selection(doc, P)
+    cols, stops = _stops(P)
+    bb = mask_bbox(m) if m is not None else None
+    t = gradient_field(doc.w, doc.h, P.str("type", "linear"), P.num("angle", 90),
+                       P.num("cx", 0.5), P.num("cy", 0.5), P.num("r"), bb)
+    if P.bool("reverse"):
+        t = 1 - t
+    mm = np.ones(doc.rgb.shape[:2], np.float32) if m is None else m
+    rgb, al = color_ramp(t, cols, stops, with_alpha=True)
+    paint(doc, rgb, mm * al * P.num("opacity", 1.0), P.str("blend", "normal"))
+
+
+def _value_noise(W, H, scale, octaves, seed):
+    rng = np.random.default_rng(seed)
+    out = np.zeros((H, W), np.float32)
+    amp, tot = 1.0, 0.0
+    for o in range(octaves):
+        cells = max(2, int(max(W, H) / max(scale, 1) * (2 ** o)) + 2)
+        g = rng.random((max(2, int(cells * H / max(W, H)) + 2), cells + 2)).astype(np.float32)
+        out += cv2.resize(g, (W, H), interpolation=cv2.INTER_CUBIC) * amp
+        tot += amp
+        amp *= 0.5
+    out /= tot
+    return (out - out.min()) / max(out.max() - out.min(), 1e-6)
+
+
+@op("texture", "[sel] procedural background/texture: type=mesh|clouds|noise|bokeh|stars|dots|"
+               "stripes|grid|checker|waves|paper colors=#a,#b|palette scale=px seed=1 "
+               "count= size= angle= opacity=1 blend=normal|screen|multiply|overlay|softlight")
+def op_texture(doc, P):
+    m = selection(doc, P)
+    W, H = doc.w, doc.h
+    kind = P.str("type", "mesh")
+    seed = P.int("seed", 1)
+    rng = np.random.default_rng(seed)
+    cols, stops = _stops(P, default="aurora" if kind == "mesh" else "#000000,#ffffff")
+    cols = [tuple(c[:3]) for c in cols]
+    yy, xx = np.mgrid[0:H, 0:W].astype(np.float32)
+    mask = np.ones((H, W), np.float32) if m is None else m.copy()
+    layer = None
+    if kind == "mesh":  # soft blobs of colour, like modern "mesh gradient" wallpapers
+        n = P.int("count", max(4, len(cols) + 2))
+        acc = np.zeros((H, W, 3), np.float32)
+        wsum = np.zeros((H, W), np.float32)
+        s = P.num("size", 0.45) * max(W, H)
+        lin = srgb_to_lin(np.array(cols, np.float32) / 255)
+        for i in range(n):
+            px, py = rng.random() * W, rng.random() * H
+            wgt = np.exp(-((xx - px) ** 2 + (yy - py) ** 2) / (2 * (s * (0.6 + rng.random() * 0.6)) ** 2))
+            acc += wgt[..., None] * lin[i % len(lin)]
+            wsum += wgt
+        layer = lin_to_srgb(acc / np.maximum(wsum, 1e-6)[..., None]) * 255
+    elif kind in ("clouds", "noise", "paper"):
+        scale = P.num("scale", {"clouds": max(W, H) / 4, "noise": 6, "paper": 3}[kind])
+        oct_ = P.int("octaves", 5 if kind == "clouds" else 2)
+        t = _value_noise(W, H, scale, oct_, seed)
+        if kind == "paper":
+            t = 0.5 + (t - 0.5) * 0.25
+            cols, stops = [(225, 220, 210), (255, 252, 245)], None
+            if not P.has("blend"):
+                P.kv["blend"] = ["multiply"]
+        layer = color_ramp(t, cols, stops)
+    elif kind == "waves":
+        a = math.radians(P.num("angle", 0))
+        sc = P.num("scale", max(W, H) / 6)
+        u = (xx * math.cos(a) + yy * math.sin(a)) / sc
+        v = (-xx * math.sin(a) + yy * math.cos(a)) / sc
+        t = 0.5 + 0.5 * np.sin(u * 2 * math.pi + np.sin(v * 1.3 + seed) * 1.8)
+        layer = color_ramp(t, cols, stops)
+    elif kind in ("stripes", "grid", "checker", "dots"):
+        sc = P.num("scale", 40)
+        a = math.radians(P.num("angle", 45 if kind == "stripes" else 0))
+        u = xx * math.cos(a) + yy * math.sin(a)
+        v = -xx * math.sin(a) + yy * math.cos(a)
+        fr = P.num("size", 0.5)  # stripe/line/dot fraction of the period
+        if kind == "stripes":
+            t = ((u / sc) % 1.0 < fr).astype(np.float32)
+        elif kind == "checker":
+            t = ((np.floor(u / sc) + np.floor(v / sc)) % 2).astype(np.float32)
+        elif kind == "grid":
+            lw = max(1.0, sc * fr * 0.1)
+            t = (((u % sc) < lw) | ((v % sc) < lw)).astype(np.float32)
+        else:
+            du, dv = (u % sc) - sc / 2, (v % sc) - sc / 2
+            d = np.sqrt(du ** 2 + dv ** 2)
+            t = np.clip(sc * fr / 2 - d + 0.5, 0, 1)
+        if len(cols) == 1:
+            layer, mask = np.array(cols[0], np.float32), mask * t
+        else:
+            layer = color_ramp(t, cols[:2])
+    elif kind in ("bokeh", "stars"):
+        n = P.int("count", 40 if kind == "bokeh" else max(200, W * H // 3000))
+        acc = np.zeros((H, W), np.float32)
+        colacc = np.zeros((H, W, 3), np.float32)
+        size = P.num("size", max(W, H) / (25 if kind == "bokeh" else 900))
+        for i in range(n):
+            px, py = int(rng.random() * W), int(rng.random() * H)
+            r = max(1, int(size * (0.4 + rng.random() * (1.2 if kind == "bokeh" else 1.5))))
+            br = 0.25 + rng.random() * 0.75
+            spot = np.zeros((H, W), np.float32)
+            cv2.circle(spot, (px, py), r, br, -1, cv2.LINE_AA)
+            col = np.array(cols[i % len(cols)], np.float32)
+            acc = np.maximum(acc, spot)
+            colacc += spot[..., None] * col
+        k = max(0.6, size * (0.15 if kind == "bokeh" else 0.6))
+        acc = cv2.GaussianBlur(acc, (0, 0), k)
+        colacc = cv2.GaussianBlur(colacc, (0, 0), k)
+        cov = cv2.GaussianBlur(np.maximum(acc, 1e-6), (0, 0), 0.1)
+        layer = np.clip(colacc / np.maximum(cov, 1e-3)[..., None], 0, 255)
+        mask = mask * np.clip(acc * (0.8 if kind == "bokeh" else 1.4), 0, 1)
+        if not P.has("blend"):
+            P.kv["blend"] = ["screen"]
+    else:
+        raise ImgfixError(f"texture: unknown type {kind}")
+    paint(doc, layer, mask * P.num("opacity", 1.0), P.str("blend", "normal"))
+
+
+def _aa_shape(W, H, bbox, draw, ss=4):
+    """Anti-aliased mask: draw(ImageDraw, tf) at ss x supersampling inside bbox."""
+    x0, y0, x1, y1 = (int(math.floor(bbox[0])) - 2, int(math.floor(bbox[1])) - 2,
+                      int(math.ceil(bbox[2])) + 2, int(math.ceil(bbox[3])) + 2)
+    cx0, cy0, cx1, cy1 = max(0, x0), max(0, y0), min(W, x1), min(H, y1)
+    full = np.zeros((H, W), np.float32)
+    if cx1 <= cx0 or cy1 <= cy0:
+        return full
+    im = Image.new("L", ((cx1 - cx0) * ss, (cy1 - cy0) * ss), 0)
+
+    def tf(pts):
+        return [((x - cx0) * ss, (y - cy0) * ss) for x, y in pts]
+    draw(ImageDraw.Draw(im), tf, ss)
+    small = im.resize((cx1 - cx0, cy1 - cy0), Image.BOX)
+    full[cy0:cy1, cx0:cx1] = np.asarray(small, np.float32) / 255.0
+    return full
+
+
+def _star_pts(cx, cy, r, points, inner, rot):
+    pts = []
+    for i in range(points * 2):
+        rr = r if i % 2 == 0 else r * inner
+        a = math.radians(rot - 90) + i * math.pi / points
+        pts.append((cx + rr * math.cos(a), cy + rr * math.sin(a)))
+    return pts
+
+
+def _drop_shadow(doc, P, alpha):
+    sh = P.str("shadow")
+    if not sh:
+        return
+    v = P.nums(sh, coords=False)
+    dx, dy = v[0], v[1] if len(v) > 1 else v[0]
+    blur = v[2] if len(v) > 2 else max(2.0, (abs(dx) + abs(dy)))
+    sc = ImageColor.getrgb(P.str("shadow_color", "#00000080"))
+    sa = (sc[3] / 255.0) if len(sc) == 4 else 0.5
+    M = np.float32([[1, 0, dx], [0, 1, dy]])
+    s = cv2.warpAffine(alpha, M, (doc.w, doc.h))
+    s = cv2.GaussianBlur(s, (0, 0), max(blur / 2, 0.3))
+    paint(doc, sc[:3], s * sa)
+
+
+@op("shape", "draw a shape: type=rect|ellipse|poly|star|circle box=x,y,w,h (rect/ellipse) "
+             "radius=0 (rounded corners) pts=x,y,... (poly) cx= cy= r= (circle/star) "
+             "points=5 inner=0.45 rot=0 (star) fill=#hex|none gradient=#a,#b angle=90 "
+             "stroke=#hex width=0 opacity=1 shadow=dx,dy[,blur] shadow_color=#00000080 "
+             "blend=normal|multiply|screen|overlay|softlight")
+def op_shape(doc, P):
+    kind = P.str("type", "rect")
+    W, H = doc.w, doc.h
+    sw = P.num("width", 0.0)
+    radius = P.num("radius", 0.0)
+    if kind in ("rect", "ellipse"):
+        bx, by, bw, bh = P.nums(P.str("box") or "", 4)
+        geo = [(bx, by), (bx + bw, by + bh)]
+    elif kind in ("circle", "star"):
+        cx = P.coord(P.str("cx", "50%"), 0)
+        cy = P.coord(P.str("cy", "50%"), 1)
+        r = P.num("r", min(W, H) / 4)
+        if kind == "circle":
+            geo, kind = [(cx - r, cy - r), (cx + r, cy + r)], "ellipse"
+        else:
+            geo = _star_pts(cx, cy, r, P.int("points", 5), P.num("inner", 0.45), P.num("rot", 0))
+    elif kind == "poly":
+        v = P.nums(P.str("pts") or "")
+        geo = list(zip(v[0::2], v[1::2]))
+    else:
+        raise ImgfixError("shape type=rect|ellipse|circle|poly|star")
+    xs, ys = [p[0] for p in geo], [p[1] for p in geo]
+    bbox = (min(xs) - sw, min(ys) - sw, max(xs) + sw, max(ys) + sw)
+
+    def drawer(fill, outline_w):
+        def draw(d, tf, ss):
+            g = tf(geo)
+            kw = dict(fill=255 if fill else None, outline=255 if outline_w else None,
+                      width=int(round(outline_w * ss)) if outline_w else 0)
+            if kind == "rect":
+                if radius > 0:
+                    d.rounded_rectangle([g[0], g[1]], radius=radius * ss, **kw)
+                else:
+                    d.rectangle([g[0], g[1]], **kw)
+            elif kind == "ellipse":
+                d.ellipse([g[0], g[1]], **kw)
+            else:
+                if fill:
+                    d.polygon(g, fill=255)
+                if outline_w:
+                    d.line(g + [g[0]], fill=255, width=kw["width"], joint="curve")
+        return draw
+
+    fill_s = P.str("fill", "none" if (P.has("stroke") and not P.has("gradient")) else "#ffffff")
+    has_fill = fill_s != "none" or P.has("gradient")
+    fmask = _aa_shape(W, H, bbox, drawer(True, 0)) if has_fill else np.zeros((H, W), np.float32)
+    smask = _aa_shape(W, H, bbox, drawer(False, sw)) if sw > 0 else np.zeros((H, W), np.float32)
+    op_ = P.num("opacity", 1.0)
+    _drop_shadow(doc, P, np.maximum(fmask, smask))
+    mode = P.str("blend", "normal")
+    if has_fill:
+        if fill_s == "none":
+            P.kv.pop("fill", None)
+        box = (bbox[0], bbox[1], bbox[2] - bbox[0], bbox[3] - bbox[1])
+        paint(doc, _layer_from(P, W, H, box), fmask * op_, mode)
+    if sw > 0:
+        paint(doc, P.color("stroke", (0, 0, 0)), smask * op_, mode)
+
+
+def wrap_text(txt: str, font, max_w: float, stroke=0) -> str:
+    out = []
+    for para in txt.split("\n"):
+        line = ""
+        for word in para.split(" "):
+            cand = word if not line else line + " " + word
+            if font.getlength(cand) + 2 * stroke <= max_w or not line:
+                line = cand
+            else:
+                out.append(line)
+                line = word
+        out.append(line)
+    return "\n".join(out)
+
+
+@op("text", "draw text: text=\"...\" (or positional; \\n = new line) x= y= size=48 | "
+            "box=x,y,w,h (auto-fits the largest size, wraps words, valign=middle|top|bottom) "
+            "wrap=px (word-wrap width without box) font=name|path color=#hex "
+            "gradient=#a,#b (angle=90) stroke=0 stroke_color=#000 anchor=la (PIL anchor, "
+            "mm=centre) align=left|center|right spacing=0.25 (line gap, x size) "
+            "tracking=0 (letter spacing px) opacity=1 angle=0 shadow=dx,dy[,blur] "
+            "shadow_color=#00000088 maxsize= upper=1")
 def op_text(doc, P):
     txt = P.str("text") or " ".join(P.pos)
     if not txt:
         raise ImgfixError("text: no text given")
     txt = txt.replace("\\n", "\n")
+    if P.bool("upper"):
+        txt = txt.upper()
     font_path = find_font(P.str("font"))
-    color = P.color("color", (255, 255, 255))
-    opacity = P.num("opacity", 1.0)
     stroke = P.int("stroke", 0)
-    stroke_c = P.color("stroke_color", (0, 0, 0))
-    align = P.str("align", "center" if P.has("box") else "left")
-    spacing = P.num("spacing", 4)
     box = P.str("box")
-    anchor = P.str("anchor", "mm" if box else "la")
+    align = P.str("align", "center" if box else "left")
+    sp_k = P.num("spacing", 0.25)
+    tracking = P.num("tracking", 0)
+    probe = ImageDraw.Draw(Image.new("L", (1, 1)))
+
+    def layout(size, width=None):
+        f = ImageFont.truetype(font_path, size)
+        t = wrap_text(txt, f, width, stroke) if width else txt
+        l_, t_, r_, b_ = probe.multiline_textbbox((0, 0), t, font=f, spacing=size * sp_k,
+                                                  stroke_width=stroke, align=align)
+        extra = tracking * (len(t) - 1) if tracking and "\n" not in t else 0
+        return f, t, r_ - l_ + extra, b_ - t_
+
     if box:
         bx, by, bw, bh = P.nums(box, 4)
-        lo, hi = 4, int(bh * 2)
-        while lo < hi:  # largest size that fits the box
+        lo, hi = 4, int(P.num("maxsize", bh * 1.5))
+        while lo < hi:  # largest size whose wrapped layout fits the box
             mid = (lo + hi + 1) // 2
-            f = ImageFont.truetype(font_path, mid)
-            l_, t_, r_, b_ = ImageDraw.Draw(Image.new("L", (1, 1))).multiline_textbbox(
-                (0, 0), txt, font=f, spacing=spacing, stroke_width=stroke, align=align)
-            if r_ - l_ <= bw and b_ - t_ <= bh:
+            _, _, tw, th = layout(mid, bw if P.bool("autowrap", True) and not tracking
+                                  else None)
+            if tw <= bw and th <= bh:
                 lo = mid
             else:
                 hi = mid - 1
         size = P.int("size", lo)
-        x, y = bx + bw / 2, by + bh / 2
+        font, txt, tw, th = layout(size, bw if P.bool("autowrap", True) and not tracking
+                                   else None)
+        valign = P.str("valign", "middle")
+        hx = {"left": bx, "center": bx + bw / 2, "right": bx + bw}[align]
+        vy = {"top": by, "middle": by + bh / 2, "bottom": by + bh}[valign]
+        anchor = P.str("anchor", {"left": "l", "center": "m", "right": "r"}[align] +
+                       {"top": "a", "middle": "m", "bottom": "d"}[valign])
+        x, y = hx, vy
     else:
         size = P.int("size", 48)
+        wrap = P.num("wrap")
+        font, txt, _, _ = layout(size, wrap)
         x, y = P.coord(P.str("x", "0"), 0), P.coord(P.str("y", "0"), 1)
-    font = ImageFont.truetype(font_path, size)
-    layer = Image.new("RGBA", (doc.w, doc.h), (0, 0, 0, 0))
-    d = ImageDraw.Draw(layer)
-    sh = P.str("shadow")
-    if sh:
-        sdx, sdy = P.nums(sh, 2, coords=False)
-        scol = ImageColor.getrgb(P.str("shadow_color", "#00000088"))
-        if len(scol) == 3:
-            scol = (*scol, 136)
-        d.multiline_text((x + sdx, y + sdy), txt, font=font, fill=scol, anchor=anchor,
-                         align=align, spacing=spacing, stroke_width=stroke, stroke_fill=scol)
-    d.multiline_text((x, y), txt, font=font, fill=(*color, 255), anchor=anchor, align=align,
-                     spacing=spacing, stroke_width=stroke, stroke_fill=(*stroke_c, 255))
+        anchor = P.str("anchor", "la")
+    spacing = size * sp_k
+    m_img = Image.new("L", (doc.w, doc.h), 0)
+    d = ImageDraw.Draw(m_img)
+    kw = dict(font=font, anchor=anchor, align=align, spacing=spacing)
+    if tracking and "\n" not in txt:
+        # draw char by char for letter spacing (single line)
+        total = sum(font.getlength(c) for c in txt) + tracking * (len(txt) - 1)
+        sx = x - {"l": 0, "m": total / 2, "r": total}[anchor[0]]
+        for c in txt:
+            d.text((sx, y), c, fill=255, font=font, anchor="l" + anchor[1],
+                   stroke_width=stroke, stroke_fill=255)
+            sx += font.getlength(c) + tracking
+        fill_m = np.asarray(m_img, np.float32) / 255
+        stroke_m = None
+        if stroke:
+            m2 = Image.new("L", (doc.w, doc.h), 0)
+            d2 = ImageDraw.Draw(m2)
+            sx = x - {"l": 0, "m": total / 2, "r": total}[anchor[0]]
+            for c in txt:
+                d2.text((sx, y), c, fill=255, font=font, anchor="l" + anchor[1])
+                sx += font.getlength(c) + tracking
+            stroke_m, fill_m = fill_m, np.asarray(m2, np.float32) / 255
+    else:
+        d.multiline_text((x, y), txt, fill=255, **kw)
+        fill_m = np.asarray(m_img, np.float32) / 255
+        stroke_m = None
+        if stroke:
+            m2 = Image.new("L", (doc.w, doc.h), 0)
+            ImageDraw.Draw(m2).multiline_text((x, y), txt, fill=255, stroke_width=stroke,
+                                              stroke_fill=255, **kw)
+            stroke_m = np.asarray(m2, np.float32) / 255
     ang = P.num("angle", 0)
     if ang:
-        layer = layer.rotate(ang, resample=Image.BICUBIC, center=(x, y))
-    a = np.asarray(layer).astype(np.float32)
-    doc.rgb = blend(doc.rgb, a[..., :3], a[..., 3] / 255.0 * opacity)
+        M = cv2.getRotationMatrix2D((x, y), ang, 1.0)
+        fill_m = cv2.warpAffine(fill_m, M, (doc.w, doc.h), flags=cv2.INTER_CUBIC)
+        if stroke_m is not None:
+            stroke_m = cv2.warpAffine(stroke_m, M, (doc.w, doc.h), flags=cv2.INTER_CUBIC)
+    opacity = P.num("opacity", 1.0)
+    allm = fill_m if stroke_m is None else np.maximum(fill_m, stroke_m)
+    if P.has("shadow"):
+        if not P.has("shadow_color"):
+            P.kv["shadow_color"] = ["#00000088"]
+        _drop_shadow(doc, P, allm)
+    if stroke_m is not None:
+        paint(doc, P.color("stroke_color", (0, 0, 0)), stroke_m * opacity)
+    if P.has("gradient"):
+        ys, xs = np.nonzero(fill_m > 0.05)
+        tb = (xs.min(), ys.min(), xs.max() - xs.min() + 1, ys.max() - ys.min() + 1) \
+            if len(xs) else None
+        cols, stops = _stops(P, "gradient")
+        layer = color_ramp(gradient_field(doc.w, doc.h, "linear", P.num("gangle", 90), box=tb),
+                           cols, stops)
+    else:
+        layer = P.color("color", (255, 255, 255))
+    paint(doc, layer, fill_m * opacity)
     print(f"  text: font={Path(font_path).name} size={size}")
 
 
@@ -1180,22 +1642,40 @@ def op_line(doc, P):
     soft = P.num("soft", 0)
     if soft > 0:
         mf = cv2.GaussianBlur(mf, (0, 0), soft)
-    col = np.broadcast_to(np.array(P.color("color", (0, 0, 0)), np.uint8), doc.rgb.shape)
-    doc.rgb = blend(doc.rgb, col, mf * P.num("opacity", 1.0))
+    paint(doc, P.color("color", (0, 0, 0)), mf * P.num("opacity", 1.0))
 
 
-@op("paste", "place another image: file=path x= y= w= (or scale=) opacity=1 "
-             "blend=normal|multiply|screen|overlay feather=0")
+def fit_image(im: Image.Image, w: int, h: int, fit: str, fx=0.5, fy=0.5) -> Image.Image:
+    if fit == "stretch":
+        return im.resize((w, h), Image.LANCZOS)
+    sc = (max if fit == "cover" else min)(w / im.width, h / im.height)
+    nw, nh = max(1, round(im.width * sc)), max(1, round(im.height * sc))
+    r = im.resize((nw, nh), Image.LANCZOS if sc < 1 else Image.BICUBIC)
+    out = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+    out.paste(r, (int(round((w - nw) * fx)), int(round((h - nh) * fy))))
+    return out
+
+
+@op("paste", "place another image: file=path  x= y= w= (or scale=) | box=x,y,w,h "
+             "fit=cover|contain|stretch focus=0.5,0.5 radius=0 (rounded corners) "
+             "border=0 border_color=#fff shadow=dx,dy[,blur] opacity=1 feather=0 "
+             "blend=normal|multiply|screen|overlay|softlight")
 def op_paste(doc, P):
     src = load(P.str("file") or (P.pos[0] if P.pos else ""))
     im = src.pil().convert("RGBA")
-    sc = P.num("scale")
-    w = P.num("w")
-    if w:
-        im = im.resize((int(w), int(round(im.height * w / im.width))), Image.LANCZOS)
-    elif sc:
-        im = im.resize((int(im.width * sc), int(im.height * sc)), Image.LANCZOS)
-    x, y = int(P.coord(P.str("x", "0"), 0)), int(P.coord(P.str("y", "0"), 1))
+    box = P.str("box")
+    if box:
+        x, y, w, h = (int(round(v)) for v in P.nums(box, 4))
+        fx, fy = P.nums(P.str("focus") or "0.5,0.5", 2, coords=False)
+        im = fit_image(im, w, h, P.str("fit", "cover"), fx, fy)
+    else:
+        sc = P.num("scale")
+        w = P.num("w")
+        if w:
+            im = im.resize((int(w), int(round(im.height * w / im.width))), Image.LANCZOS)
+        elif sc:
+            im = im.resize((int(im.width * sc), int(im.height * sc)), Image.LANCZOS)
+        x, y = int(P.coord(P.str("x", "0"), 0)), int(P.coord(P.str("y", "0"), 1))
     layer = np.zeros((doc.h, doc.w, 4), np.float32)
     a = np.asarray(im).astype(np.float32)
     x0, y0 = max(0, x), max(0, y)
@@ -1203,19 +1683,29 @@ def op_paste(doc, P):
     if x1 <= x0 or y1 <= y0:
         raise ImgfixError("paste: image lands outside the canvas")
     layer[y0:y1, x0:x1] = a[y0 - y:y1 - y, x0 - x:x1 - x]
-    alpha = layer[..., 3] / 255 * P.num("opacity", 1.0)
+    alpha = layer[..., 3] / 255
+    rad = P.num("radius", 0)
+    bw_ = P.num("border", 0)
+    if rad > 0 or bw_ > 0:
+        rr = _aa_shape(doc.w, doc.h, (x, y, x + im.width, y + im.height),
+                       lambda d, tf, ss: d.rounded_rectangle(
+                           tf([(x, y), (x + im.width, y + im.height)]), radius=rad * ss, fill=255))
+        alpha = alpha * rr
     fe = P.num("feather", 0)
     if fe > 0:
         alpha = cv2.GaussianBlur(cv2.erode(alpha, np.ones((int(fe) + 1,) * 2)), (0, 0), fe / 2)
-    top, base = layer[..., :3] / 255, to_f(doc.rgb)
-    mode = P.str("blend", "normal")
-    if mode == "multiply":
-        top = base * top
-    elif mode == "screen":
-        top = 1 - (1 - base) * (1 - top)
-    elif mode == "overlay":
-        top = np.where(base < 0.5, 2 * base * top, 1 - 2 * (1 - base) * (1 - top))
-    doc.rgb = blend(doc.rgb, top * 255, alpha)
+    _drop_shadow(doc, P, alpha if bw_ <= 0 else _aa_shape(
+        doc.w, doc.h, (x - bw_, y - bw_, x + im.width + bw_, y + im.height + bw_),
+        lambda d, tf, ss: d.rounded_rectangle(
+            tf([(x - bw_, y - bw_), (x + im.width + bw_, y + im.height + bw_)]),
+            radius=(rad + bw_) * ss if rad else 0, fill=255)))
+    if bw_ > 0:
+        outer = _aa_shape(doc.w, doc.h, (x - bw_, y - bw_, x + im.width + bw_, y + im.height + bw_),
+                          lambda d, tf, ss: d.rounded_rectangle(
+                              tf([(x - bw_, y - bw_), (x + im.width + bw_, y + im.height + bw_)]),
+                              radius=(rad + bw_) * ss if rad else 0, fill=255))
+        paint(doc, P.color("border_color", (255, 255, 255)), outer)
+    paint(doc, layer[..., :3], alpha * P.num("opacity", 1.0), P.str("blend", "normal"))
 
 
 @op("cutout", "remove background -> transparent PNG. method=grabcut (rect=x,y,w,h around "
@@ -1521,6 +2011,47 @@ def cmd_compare(a):
     print(f"{a.out}: side-by-side")
 
 
+def cmd_collage(a):
+    """Grid of photos, each cropped to fill its cell (cover)."""
+    files = a.images
+    n = len(files)
+    cols = a.cols or max(1, round(math.sqrt(n * 1.0)))
+    rows = math.ceil(n / cols)
+    if a.aspect:
+        cw_, ch_ = (float(v) for v in a.aspect.replace("/", ":").split(":"))
+        cell_aspect = cw_ / ch_
+    else:
+        asp = sorted(Image.open(f).width / Image.open(f).height for f in files)
+        cell_aspect = asp[len(asp) // 2]
+    W = a.width
+    cw = (W - a.gap * (cols + 1)) / cols
+    ch = cw / cell_aspect
+    H = int(round(rows * ch + a.gap * (rows + 1) + a.title_h))
+    doc = new_canvas(f"new:{W}x{H}:{a.bg}")
+    ops = []
+    for i, f in enumerate(files):
+        r, c = divmod(i, cols)
+        # centre a short last row
+        left = n - r * cols
+        off = (cols - left) * (cw + a.gap) / 2 if r == rows - 1 and left < cols else 0
+        x = a.gap + c * (cw + a.gap) + off
+        y = a.title_h + a.gap + r * (ch + a.gap)
+        spec = f"paste file={shlex.quote(f)} box={x:.0f},{y:.0f},{cw:.0f},{ch:.0f}"
+        if a.radius:
+            spec += f" radius={a.radius}"
+        if a.shadow:
+            spec += " shadow=0,6,16"
+        ops.append(parse_op(spec))
+    if a.title:
+        ops.append(parse_op(f"text {shlex.quote(a.title)} box={a.gap},{a.gap // 2},"
+                            f"{W - 2 * a.gap},{a.title_h - a.gap // 2} color={a.title_color} "
+                            f"maxsize={int(a.title_h * 0.5)}"
+                            + (f" font={shlex.quote(a.font)}" if a.font else "")))
+    run_ops(doc, ops, verbose=False)
+    save(doc, a.out, a.quality)
+    print(f"saved {a.out} ({doc.w}x{doc.h}, {rows}x{cols} grid)")
+
+
 def cmd_apply(a):
     doc = load(a.image)
     ops = []
@@ -1531,7 +2062,8 @@ def cmd_apply(a):
     if not ops:
         raise ImgfixError("no operations: use -e \"op key=val\" or -r recipe.txt")
     out = Path(a.out)
-    if out.resolve() == Path(a.image).resolve() and not a.inplace:
+    if not a.image.startswith("new:") and out.resolve() == Path(a.image).resolve() \
+            and not a.inplace:
         raise ImgfixError("refusing to overwrite the input; pass --inplace if intended")
     run_ops(doc, ops, a.steps)
     save(doc, out, a.quality, a.strip)
@@ -1542,9 +2074,18 @@ def cmd_apply(a):
                 parts = [name] + [shlex.quote(p) for p in pos] + \
                         [f"{k}={shlex.quote(v)}" for k, vs in kv.items() for v in vs]
                 f.write(" ".join(parts) + "\n")
-    if a.preview:
+    if a.preview and not a.image.startswith("new:"):
         cmd_compare(argparse.Namespace(a=a.image, b=str(out), out=a.preview, thr=6, region=None,
                                        auto=True, max=2400, diff=True))
+
+
+def cmd_presets(a):
+    print("canvas sizes (new:<name>[:bg]):")
+    for k, (w, h) in CANVAS_PRESETS.items():
+        print(f"  {k:16s} {w}x{h}")
+    print("palettes (colors=<name> / gradient=<name>):")
+    for k, v in PALETTES.items():
+        print(f"  {k:16s} {v}")
 
 
 def cmd_ops(a):
@@ -1662,7 +2203,8 @@ def main(argv=None):
     s.set_defaults(fn=cmd_compare)
 
     s = sub.add_parser("apply", help="run edit ops and save")
-    s.add_argument("image")
+    s.add_argument("image", help="input file, or a new canvas: new:1920x1080[:#hex|"
+                                 "transparent] / new:instagram (see `presets`)")
     s.add_argument("out")
     s.add_argument("-e", action="append", help='one op, e.g. -e "inpaint rect=1,2,3,4"')
     s.add_argument("-r", "--recipe", action="append", help="recipe file (.txt lines or .json)")
@@ -1673,6 +2215,26 @@ def main(argv=None):
     s.add_argument("--strip", action="store_true", help="drop all metadata")
     s.add_argument("--inplace", action="store_true")
     s.set_defaults(fn=cmd_apply)
+
+    s = sub.add_parser("collage", help="grid of photos on a new canvas")
+    s.add_argument("out")
+    s.add_argument("images", nargs="+")
+    s.add_argument("--cols", type=int)
+    s.add_argument("--width", type=int, default=2400)
+    s.add_argument("--gap", type=int, default=16)
+    s.add_argument("--aspect", help="cell aspect, e.g. 1:1 or 4:3 (default: median of photos)")
+    s.add_argument("--bg", default="#ffffff")
+    s.add_argument("--radius", type=int, default=0)
+    s.add_argument("--shadow", action="store_true")
+    s.add_argument("--title")
+    s.add_argument("--title-h", type=int, default=0)
+    s.add_argument("--title-color", default="#222222")
+    s.add_argument("--font")
+    s.add_argument("-q", "--quality", type=int, default=92)
+    s.set_defaults(fn=cmd_collage)
+
+    s = sub.add_parser("presets", help="list canvas sizes and colour palettes")
+    s.set_defaults(fn=cmd_presets)
 
     s = sub.add_parser("ops", help="list edit operations")
     s.set_defaults(fn=cmd_ops)

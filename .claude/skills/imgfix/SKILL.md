@@ -1,9 +1,9 @@
 ---
 name: imgfix
-description: Precise retouching of images - especially AI-generated ones - without Photoshop. Use whenever the user wants to edit, fix, clean up or touch up an image (PNG/JPG/WEBP): remove a watermark, logo, signature or AI sparkle, erase objects or artifacts (extra fingers, stray blobs, garbled text), replace or fix text, retouch, clone/heal, change colours, white balance, exposure/contrast/curves, sharpen, denoise, crop, resize/upscale, straighten, extend the canvas (outpaint), remove the background, or strip AI metadata. Prefer this over driving Photoshop/GIMP through computer use - it is faster, exact to the pixel and reproducible. Triggers also in Slovak - "uprav obrázok", "odstráň vodoznak", "vymaž z fotky", "oprav text na obrázku", "retuš", "orež", "zväčši obrázok", "odstráň pozadie".
+description: Precise editing of any image (photos, screenshots, scans, AI-generated pictures) and creating graphics from scratch - without Photoshop and without an AI image model. Use whenever the user wants to make a poster, banner, flyer, invitation, social-media post or cover, thumbnail, wallpaper, background, collage, badge or simple illustration from shapes/gradients/text, or to edit, fix, clean up or touch up an image (PNG/JPG/WEBP): remove a watermark, logo, signature or AI sparkle, erase objects or artifacts (extra fingers, stray blobs, garbled text), replace or fix text, retouch, clone/heal, change colours, white balance, exposure/contrast/curves, sharpen, denoise, crop, resize/upscale, straighten, extend the canvas (outpaint), remove the background, or strip AI metadata. Prefer this over driving Photoshop/GIMP through computer use - it is faster, exact to the pixel and reproducible. Triggers also in Slovak - "uprav obrázok", "odstráň vodoznak", "vymaž z fotky", "oprav text na obrázku", "retuš", "orež", "zväčši obrázok", "odstráň pozadie", "sprav plagát / banner / pozvánku / koláž / obrázok na Instagram / pozadie".
 ---
 
-# imgfix - image retouching by command
+# imgfix - image editing and graphics by command
 
 `imgfix.py` (next to this file) is a single-file Python CLI. Every edit is an
 op with exact pixel coordinates, every step can be rendered to an image you
@@ -68,6 +68,34 @@ Keys can repeat (union). Coordinates accept `%`: `rect=88%,90%,12%,10%`.
 | background | `cutout rect=<subject box>` (GrabCut -> PNG alpha) or `method=rembg`, `bg=#fff`; `flatten` |
 | overlays | `text`, `line pts=... width= color=`, `paste file= x= y= w= blend=` |
 | privacy | `strip` op or `apply --strip` (drops EXIF/ICC/PNG text incl. AI prompts) |
+
+## Creating graphics from scratch (no AI model)
+
+Start `apply` from a new canvas instead of a file:
+`apply new:1080x1350:#0b1026 out.png -r design.txt` - size as `WxH` or a preset
+(`instagram`, `insta-portrait`, `story`, `fb-post`, `fb-cover`, `youtube`,
+`fullhd`, `4k`, `a4`, `a5`, `a3`, `poster`, `card`, `icon`, ...; `presets`
+lists them and the colour palettes). Background `:#hex` or `:transparent`
+(-> PNG with alpha). Write the design as a recipe file, render, Read the
+PNG, adjust coordinates, re-render - iterate until it looks right.
+
+| Element | Op |
+|---|---|
+| background | `texture type=mesh colors=aurora seed=3` (soft modern blobs), `clouds`, `noise`, `waves`, `bokeh`, `stars`, `dots`, `stripes`, `grid`, `checker`, `paper` |
+| gradients | `gradient colors=#a,#b type=linear|radial|conic angle=90`; stops `#a@0,#b@30%,#c@100%`; alpha `#rrggbbaa` (fade `#00000000,#000000cc`); palettes `sunset ocean forest pastel neon fire aurora mono earth candy night gold` |
+| shapes | `shape type=rect box=x,y,w,h radius=24 fill=#hex` / `circle cx= cy= r=` / `ellipse box=` / `poly pts=` / `star cx= cy= r= points=5`; `gradient=` fill, `stroke=#hex width=4`, `fill=none`, `shadow=dx,dy,blur` |
+| text | `text "..." box=x,y,w,h` = largest size that fits, word-wrapped, `align=left|center|right valign=top|middle|bottom`; `font=` (see `fonts`), `color=`, `gradient=`, `stroke=`, `shadow=`, `tracking=4` (letter spacing), `upper=1`, `maxsize=` |
+| photos | `paste file= box=x,y,w,h fit=cover|contain focus=0.5,0.3 radius=20 border=8 shadow=0,10,24` (radius = w/2 -> round photo) |
+| collage | `collage out.jpg a.jpg b.jpg ... --cols 3 --aspect 4:3 --radius 16 --shadow --title "..." --title-h 140` |
+
+Design habits that make it look professional: one or two fonts max, a
+clear hierarchy (title >> subtitle >> details), generous margins (>= 6-8 %
+of the width), text on a calm area or on a darkening gradient/shape for
+contrast, colours from one palette, `shadow=` on things that should float.
+Use characters the font has (DejaVu/Inter/Arial cover Slovak diacritics).
+What it cannot do: photorealistic or painted content (people, animals,
+landscapes) - for that a real photo or an AI generator is needed; you can
+then build the design around that image with `paste`.
 
 ## Tips for good results
 
