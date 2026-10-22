@@ -1797,8 +1797,9 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
             }
             var faceCount = 0
             val names = try {
+                // len tváre tejto fotky (s odtlačkom, ako predtým getAllFaces) — nie všetky tváre knižnice
                 val faces = org.fossify.gallery.faces.FacesDatabase.getInstance(this).FaceDao()
-                    .getAllFaces().filter { it.mediaFullPath == path }
+                    .getFacesForPath(path).filter { it.embedding != null }
                 faceCount = faces.size
                 // C9: osoby na fotke z jedného zdroja pravdy (ako Ľudia); automaticky zaradené s poznámkou
                 org.fossify.gallery.faces.PeopleIndex.get(this).personsOnPhoto(path)

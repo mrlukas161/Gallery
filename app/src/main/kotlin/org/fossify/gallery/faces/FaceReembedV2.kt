@@ -2,6 +2,9 @@ package org.fossify.gallery.faces
 
 import android.content.Context
 import org.fossify.commons.helpers.ensureBackgroundThread
+import org.fossify.gallery.helpers.BackgroundPriority
+import org.fossify.gallery.helpers.HeavyGate
+import org.fossify.gallery.helpers.HeavySlot
 import java.io.File
 
 // Jednorazový prepočet všetkých odtlačkov vo faces.db na v2 (FaceEmbedder.PIPELINE_MODEL_ID) NA MIESTE:
@@ -36,9 +39,12 @@ object FaceReembedV2 {
     private const val MAX_ROUNDS = 4
     private const val MAX_ERROR_LEN = 140
 
+    // Modely sa načítajú až pri prvej tvári na prepočet (FaceModels, s miestom v HeavyGate);
+    // onDone/onError až po ich zatvorení. Zastavenie počas čakania na miesto = nedokončené (onDone(false)).
     @Suppress("TooGenericExceptionCaught") // chyba ľubovoľného modelu sa len ohlási, prepočet pokračuje nabudúce
     fun run(
         context: Context,
+        onWaiting: () -> Unit = {},
         onProgress: (done: Int, total: Int) -> Unit,
         onDone: (switched: Boolean) -> Unit,
         onError: (String) -> Unit,
@@ -47,24 +53,32 @@ object FaceReembedV2 {
         isRunning = true
         val appCtx = context.applicationContext
         ensureBackgroundThread {
-            val models = Models(appCtx)
-            try {
-                val switched = when {
-                    !FaceEmbedVersion.isPending(appCtx) -> true
-                    FaceEmbedVersion.isFinalizing(appCtx) -> {
-                        finalizeSwitch(appCtx)
-                        true
-                    }
+            var switched = false
+            var error: String? = null
+            BackgroundPriority.run {
+                val slot = HeavySlot({ isRunning }, onWaiting, onResume = { onProgress(progressDone, progressTotal) })
+                val models = FaceModels(appCtx, slot)
+                try {
+                    switched = when {
+                        !FaceEmbedVersion.isPending(appCtx) -> true
+                        FaceEmbedVersion.isFinalizing(appCtx) -> {
+                            finalizeSwitch(appCtx)
+                            true
+                        }
 
-                    else -> migrate(appCtx, models, onProgress)
+                        else -> migrate(appCtx, models, onProgress)
+                    }
+                } catch (ignored: HeavyGate.Stopped) {
+                    switched = false
+                } catch (e: Throwable) {
+                    error = e.javaClass.simpleName + (e.message?.let { ": " + it.take(MAX_ERROR_LEN) } ?: "")
+                } finally {
+                    models.close()
+                    isRunning = false
                 }
-                onDone(switched)
-            } catch (e: Throwable) {
-                onError(e.javaClass.simpleName + (e.message?.let { ": " + it.take(MAX_ERROR_LEN) } ?: ""))
-            } finally {
-                models.close()
-                isRunning = false
             }
+            val err = error
+            if (err != null) onError(err) else onDone(switched)
         }
     }
 
@@ -83,24 +97,7 @@ object FaceReembedV2 {
         }
     }
 
-    // modely sa načítajú až keď je čo počítať
-    private class Models(private val context: Context) {
-        private var detector: FaceDetectionHelper? = null
-        private var embedder: FaceEmbedder? = null
-        private var landmarker: FaceLandmarkHelper? = null
-
-        fun detector() = detector ?: FaceDetectionHelper(context).also { detector = it }
-        fun embedder() = embedder ?: FaceEmbedder(context).also { embedder = it }
-        fun landmarker() = landmarker ?: FaceLandmarkHelper(context).also { landmarker = it }
-
-        fun close() {
-            detector?.close()
-            embedder?.close()
-            landmarker?.close()
-        }
-    }
-
-    private fun migrate(context: Context, models: Models, onProgress: (Int, Int) -> Unit): Boolean {
+    private fun migrate(context: Context, models: FaceModels, onProgress: (Int, Int) -> Unit): Boolean {
         val dao = FacesDatabase.getInstance(context).FaceDao()
         val staging = FaceV2Staging.get(context)
         val attempts = HashMap<Long, Int>()
@@ -112,7 +109,7 @@ object FaceReembedV2 {
             rounds++
         }
         if (!isRunning) return false
-        if (!EmbedVersionRules.readyToSwitch(tally(dao.getEveryFace(), staging.entries()))) return false
+        if (!EmbedVersionRules.readyToSwitch(tally(dao.getFaceRefs(), staging.entries()))) return false
         FaceEmbedVersion.markSwitchStarted(context, System.currentTimeMillis())
         finalizeSwitch(context)
         return true
@@ -123,25 +120,23 @@ object FaceReembedV2 {
     private fun runRound(
         dao: FaceDao,
         staging: FaceV2Staging,
-        models: Models,
+        models: FaceModels,
         attempts: HashMap<Long, Int>,
         onProgress: (Int, Int) -> Unit,
     ): Boolean {
-        val faces = dao.getEveryFace()
+        // len id a cesty (bez stĺpca embedding) — odtlačky sa čítajú až po fotkách v processPhoto
+        val faces = dao.getFaceRefs()
         val entries = staging.entries()
         val todo = faces.filter { f ->
-            val id = f.id
-            id != null && entries[id].let {
-                EmbedVersionRules.needsAttempt(it?.state, it?.tries ?: 0, attempts[id] ?: 0)
-            }
+            entries[f.id].let { EmbedVersionRules.needsAttempt(it?.state, it?.tries ?: 0, attempts[f.id] ?: 0) }
         }
         if (todo.isEmpty()) return false
         progressTotal = faces.size
         progressDone = entries.values.count { it.state == EmbedVersionRules.STATE_DONE }
         onProgress(progressDone, progressTotal)
-        for ((path, list) in todo.groupBy { it.mediaFullPath }) {
+        for ((path, list) in todo.groupBy({ it.mediaFullPath }, { it.id })) {
             if (!isRunning) return false
-            val (ok, processed) = processPhoto(dao, staging, path, list, models)
+            val (ok, processed) = processPhoto(dao, staging, path, list.toHashSet(), models)
             processed.forEach { attempts[it] = (attempts[it] ?: 0) + 1 }
             progressDone += ok
             onProgress(progressDone, progressTotal)
@@ -156,12 +151,12 @@ object FaceReembedV2 {
         dao: FaceDao,
         staging: FaceV2Staging,
         path: String,
-        candidates: List<FaceEntity>,
-        models: Models,
+        candidates: Set<Long>,
+        models: FaceModels,
     ): Pair<Int, List<Long>> {
+        // aktuálne tváre fotky (aj s v1 odtlačkom na zálohu); kandidáti, ktorí už na ceste nie sú, idú do ďalšieho kola
         val current = dao.getFacesForPath(path)
-        val currentIds = current.mapNotNull { it.id }.toHashSet()
-        val faces = candidates.filter { it.id in currentIds }
+        val faces = current.filter { it.id in candidates }
         val ids = faces.mapNotNull { f -> f.id?.let { it to f.embedding } }
         val processed = ids.map { it.first }
         val res = if (faces.isEmpty() || !File(path).exists()) null else decode(path)
@@ -221,14 +216,14 @@ object FaceReembedV2 {
         return byId
     }
 
-    private fun tally(faces: List<FaceEntity>, entries: Map<Long, FaceV2Staging.Entry>): EmbedVersionRules.Tally {
+    private fun tally(faces: List<FaceRef>, entries: Map<Long, FaceV2Staging.Entry>): EmbedVersionRules.Tally {
         var done = 0
         var missing = 0
         var exhausted = 0
         var transient = 0
         val rootOk = HashMap<String, Boolean>()
         for (f in faces) {
-            val e = f.id?.let { entries[it] } ?: continue
+            val e = entries[f.id] ?: continue
             when {
                 e.state == EmbedVersionRules.STATE_DONE -> done++
                 // fotku medzičasom našiel relinker pod novou cestou → nie je chýbajúca, prepočíta sa
@@ -238,7 +233,7 @@ object FaceReembedV2 {
                 e.state == EmbedVersionRules.STATE_FAILED && e.tries >= EmbedVersionRules.MAX_TRIES -> exhausted++
             }
         }
-        return EmbedVersionRules.Tally(faces.count { it.id != null }, done, missing, exhausted, transient)
+        return EmbedVersionRules.Tally(faces.size, done, missing, exhausted, transient)
     }
 
     private fun volumeMounted(path: String, cache: HashMap<String, Boolean>): Boolean {

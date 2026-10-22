@@ -57,17 +57,14 @@ class TextSelectActivity : SimpleActivity() {
         binding.textSelectStatus.isClickable = false
         binding.textSelectStatus.text = getString(R.string.live_text_reading)
         ensureBackgroundThread {
-            var engine: OcrEngine? = null
             var ocrFailed = false
             // fotka sa zobrazí tak, ako ju práve vidí používateľ v prehliadači (aj s ešte neuloženým otočením)
             val bmp = rotated(UprightDecoder.decode(photoPath, 1600)?.bitmap, extraRotation)
             val words = try {
                 if (bmp != null) {
-                    engine = OcrEngine(this)
-                    if (engine.isReady()) {
-                        engine.recognizeWords(bmp)
-                    } else {
-                        // engine sa nepodarilo inicializovať — to NIE je „fotka bez textu"
+                    // zdieľaný Tesseract pre Live Text (nevytvára sa pri každom podržaní, zavrie sa po nečinnosti);
+                    // null = engine sa nepodarilo inicializovať — to NIE je „fotka bez textu"
+                    OcrIndexer.withLiveEngine(this) { it.recognizeWords(bmp) } ?: run {
                         ocrFailed = true
                         emptyList()
                     }
@@ -77,11 +74,6 @@ class TextSelectActivity : SimpleActivity() {
             } catch (e: Throwable) {
                 ocrFailed = true
                 emptyList()
-            } finally {
-                try {
-                    engine?.close()
-                } catch (ignored: Throwable) {
-                }
             }
             // pri dočasne otočenej fotke sa do ocr.db neukladá (otočenie nemusí zodpovedať skutočnej orientácii textu)
             if (bmp != null && !ocrFailed && extraRotation % 360 == 0) {

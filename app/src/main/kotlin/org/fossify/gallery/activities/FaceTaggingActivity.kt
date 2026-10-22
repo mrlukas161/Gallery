@@ -326,8 +326,13 @@ class FaceTaggingActivity : SimpleActivity() {
         val assigned = peopleDao.getAssignments().map { it.faceId }.toHashSet()
         val ignored = ExtrasDatabase.getInstance(this).ExtrasDao().getIgnoredIds().toHashSet()
         val path = mediaPathFilter
-        val all = facesDao.getAllFaces()
-            .filter { FaceFilter.isGood(it) && (path == null || it.mediaFullPath == path) }
+        // jedna fotka: len jej tváre; inak všetky tváre s odtlačkom, ale bez samotných vektorov (tu netreba)
+        val source = if (path != null) {
+            facesDao.getFacesForPath(path).filter { it.embedding != null }
+        } else {
+            facesDao.getEmbeddedFacesWithoutVectors()
+        }
+        val all = source.filter { FaceFilter.isGood(it) }
         val wanted = if (showingIgnored) {
             all.filter { val id = it.id; id != null && ignored.contains(id) }
         } else {
@@ -351,21 +356,39 @@ class FaceTaggingActivity : SimpleActivity() {
         val index = model.indexOf(personId)
         if (index < 0) return emptyList()
         val ranker = model.newRanker()
-        val pool = facesDao.getAllFaces().filter { FaceFilter.isGood(it) }
         val assigned = peopleDao.getAssignments().map { it.faceId }.toHashSet()
         val cannot = peopleDao.getCannotLinks().filter { it.personId == personId }.map { it.faceId }.toHashSet()
         val ignored = ExtrasDatabase.getInstance(this).ExtrasDao().getIgnoredIds().toHashSet()
+        // Tváre sa skórujú po stránkach (PAGE_SIZE podľa id) a v zozname ostanú BEZ vektora — v pamäti
+        // nie sú naraz odtlačky celej knižnice. Výsledok aj poradie sú rovnaké ako predtým.
+        val excluded = assigned + cannot + ignored
+        val scored = ArrayList<Pair<FaceEntity, Float>>()
+        var afterId = Long.MIN_VALUE
+        var more = true
+        while (more) {
+            val page = facesDao.getEmbeddedFacesPage(afterId, CANDIDATE_PAGE)
+            for (f in page) {
+                val b = candidateVector(f, excluded) ?: continue
+                val score = ranker.score(FaceEmbedder.toFloats(b), index)
+                if (score > Float.NEGATIVE_INFINITY) scored.add(f.copy(embedding = null) to score)
+            }
+            afterId = page.lastOrNull()?.id ?: afterId
+            more = page.size == CANDIDATE_PAGE
+        }
         // applyThreshold ukáže najviac SUGGEST_MAX najpodobnejších nad prahom = vždy začiatok tohto
         // zoradeného zoznamu, preto stačí zistiť viditeľnosť (disk) len pre prvých SUGGEST_MAX viditeľných
-        return pool
-            .filter { val id = it.id; id != null && !assigned.contains(id) && !cannot.contains(id) && !ignored.contains(id) }
-            .mapNotNull { f -> f.embedding?.let { b -> f to ranker.score(FaceEmbedder.toFloats(b), index) } }
-            .filter { it.second > Float.NEGATIVE_INFINITY }
+        return scored
             .sortedByDescending { it.second }
             .asSequence()
             .filter { faceVisibility.isVisible(it.first.mediaFullPath) }
             .take(SUGGEST_MAX)
             .toList()
+    }
+
+    // odtlačok tváre, ktorá môže byť návrhom (dobrá, nepriradená, neodmietnutá, neignorovaná), inak null
+    private fun candidateVector(f: FaceEntity, excluded: Set<Long>): ByteArray? {
+        val id = f.id ?: return null
+        return f.embedding?.takeIf { id !in excluded && FaceFilter.isGood(f) }
     }
 
     private fun confirmSelected() {
@@ -569,6 +592,9 @@ class FaceTaggingActivity : SimpleActivity() {
         private const val COLUMNS = 4
         private const val UNLABELED_CAP = 1500
         private const val SUGGEST_MAX = 300
+
+        // tváre na jednu stránku skórovania návrhov (computeCandidates)
+        private const val CANDIDATE_PAGE = 1000
         private const val PREFS = "galeria_faces"
         private const val KEY_THRESHOLD = "suggest_threshold_pct"
         private const val DEFAULT_THRESHOLD_PCT = 30

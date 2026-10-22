@@ -1,5 +1,6 @@
 package org.fossify.gallery.faces
 
+import androidx.room.ColumnInfo
 import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
@@ -39,6 +40,22 @@ interface FaceDao {
 
     @Query("SELECT * FROM faces WHERE media_full_path = :path")
     fun getFacesForPath(path: String): List<FaceEntity>
+
+    // len id a cesta každej tváre (bez stĺpca embedding) — prepočet na v2 si odtlačky číta po fotkách
+    @Query("SELECT id, media_full_path FROM faces")
+    fun getFaceRefs(): List<FaceRef>
+
+    // Tváre s odtlačkom, ale BEZ samotného vektora (embedding = NULL vo výsledku) — pre zoznamy,
+    // ktoré vektor nepotrebujú (Návrhy bez osoby). Entita ani schéma sa nemení.
+    @Query(
+        "SELECT id, media_full_path, media_store_id, face_index, bbox_left, bbox_top, bbox_right, bbox_bottom, " +
+            "score, NULL AS embedding, detected_at FROM faces WHERE embedding IS NOT NULL"
+    )
+    fun getEmbeddedFacesWithoutVectors(): List<FaceEntity>
+
+    // tváre s odtlačkom po stránkach (podľa id) — skórovanie návrhov bez držania všetkých vektorov naraz
+    @Query("SELECT * FROM faces WHERE embedding IS NOT NULL AND id > :afterId ORDER BY id LIMIT :limit")
+    fun getEmbeddedFacesPage(afterId: Long, limit: Int): List<FaceEntity>
 
     // fotky s tvárou bez odtlačku (výpočet zlyhal) — náhodne, aby neopraviteľné neblokovali ostatné
     @Query("SELECT DISTINCT media_full_path FROM faces WHERE embedding IS NULL ORDER BY RANDOM() LIMIT :limit")
@@ -88,3 +105,9 @@ interface FaceDao {
     // ⛔ Žiadne hromadné mazanie tvárí: id sú odkazované z people.db/extras.db (menovky).
     // (Nepoužívané deleteAllFaces/deleteAllIndexedPhotos boli odstránené, aby sa nedali omylom zavolať.)
 }
+
+// projekcia faces (id, cesta) — nie je to entita, schéma faces.db sa nemení
+data class FaceRef(
+    @ColumnInfo(name = "id") val id: Long,
+    @ColumnInfo(name = "media_full_path") val mediaFullPath: String,
+)

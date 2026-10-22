@@ -12,6 +12,10 @@ import androidx.core.app.NotificationManagerCompat
 import org.fossify.commons.helpers.ensureBackgroundThread
 import org.fossify.gallery.R
 import org.fossify.gallery.family.FamilyInbox
+import org.fossify.gallery.helpers.BackgroundPriority
+import org.fossify.gallery.helpers.HeavyGate
+import org.fossify.gallery.helpers.HeavySlot
+import org.fossify.gallery.helpers.IdleCloser
 import org.fossify.gallery.helpers.TextNormalizer
 import java.io.File
 
@@ -26,10 +30,14 @@ object OcrIndexer {
     private const val CHANNEL_ID = "ocr_indexing"
     private const val NOTIF_ID = 49232
     private const val MAX_TEXT = 8000
+    private const val LIVE_IDLE_MS = 60_000L
 
+    // Tesseract sa vytvorí až pri prvej fotke, ktorú treba naozaj rozpoznať (s miestom v HeavyGate);
+    // keď nie je čo spracovať, nenačíta sa. onDone/onError až po jeho zatvorení.
     fun index(
         context: Context,
         notify: Boolean = true,
+        onWaiting: () -> Unit = {},
         onProgress: (done: Int, total: Int) -> Unit,
         onDone: (indexed: Int, withText: Int) -> Unit,
         onError: (message: String) -> Unit,
@@ -38,58 +46,137 @@ object OcrIndexer {
         isRunning = true
         val appCtx = context.applicationContext
         ensureBackgroundThread {
-            var engine: OcrEngine? = null
-            try {
-                val dao = OcrDatabase.getInstance(appCtx).OcrDao()
-                engine = OcrEngine(appCtx)
-                if (!engine.isReady()) throw IllegalStateException("Tesseract sa nepodarilo inicializovať (slk)")
-                if (notify) ensureChannel(appCtx)
-                // Pri už dekódovanej bitmape rovno skontroluj aj QR/čiarové kódy (zápis do qr.db).
-                val qrDecoder = ZxingDecoder()
+            var error: String? = null
+            var total = 0
+            var done = 0
+            BackgroundPriority.run {
+                val slot = HeavySlot({ isRunning }, onWaiting, onResume = { onProgress(done, total) })
+                var engine: OcrEngine? = null
+                try {
+                    val dao = OcrDatabase.getInstance(appCtx).OcrDao()
+                    if (notify) ensureChannel(appCtx)
+                    val qrDecoder = lazy { ZxingDecoder() }
 
-                // vylúčené a zamknuté priečinky sa nespracúvajú; ich staré riadky sa z indexu zmažú
-                val scope = IndexScope(appCtx)
-                val processed = scope.keepAllowed(dao.getIndexedPaths()) { dao.deletePaths(it) }
-                val candidates = queryImages(appCtx).filter { it !in processed && scope.allows(it) }
-                // výsledky z prepojeného telefónu (F4) sa zapíšu hneď, fotka sa druhýkrát nespracúva
-                val todo = FamilyInbox.withoutSupplied(appCtx, candidates, FamilyInbox.OCR)
-                val total = todo.size
-                var done = 0
-                for (path in todo) {
-                    if (!isRunning) break
-                    var text = ""
-                    var qr = ""
-                    try {
-                        val bmp = decodeDownscaled(path)
-                        if (bmp != null) {
-                            text = engine.recognize(bmp)
-                            qr = QrScanner.scanText(qrDecoder, bmp)
-                            bmp.recycle()
-                        }
-                    } catch (ignored: Throwable) {
+                    // vylúčené a zamknuté priečinky sa nespracúvajú; ich staré riadky sa z indexu zmažú
+                    val scope = IndexScope(appCtx)
+                    val processed = scope.keepAllowed(dao.getIndexedPaths()) { dao.deletePaths(it) }
+                    val candidates = queryImages(appCtx).filter { it !in processed && scope.allows(it) }
+                    // výsledky z prepojeného telefónu (F4) sa zapíšu hneď, fotka sa druhýkrát nespracúva
+                    val todo = FamilyInbox.withoutSupplied(appCtx, candidates, FamilyInbox.OCR)
+                    total = todo.size
+                    for (path in todo) {
+                        if (!isRunning) break
+                        val eng = engine ?: loadEngine(appCtx, slot).also { engine = it }
+                        indexPhoto(appCtx, eng, qrDecoder, path)
+                        done++
+                        reportProgress(appCtx, notify, done, total, onProgress)
                     }
-                    saveResult(appCtx, path, text)
-                    QrScanner.store(appCtx, path, qr)
-                    done++
-                    if (done % 3 == 0 || done == total) {
-                        onProgress(done, total)
-                        if (notify) notifyProgress(appCtx, done, total)
-                    }
+                    cancelNotification(appCtx)
+                } catch (ignored: HeavyGate.Stopped) {
+                    cancelNotification(appCtx)
+                } catch (e: Throwable) {
+                    cancelNotification(appCtx)
+                    error = describe(e)
+                } finally {
+                    engine?.close()
+                    slot.close()
+                    isRunning = false
                 }
-                cancelNotification(appCtx)
-                onDone(safeCount(dao), safeWithText(dao))
-            } catch (e: Throwable) {
-                cancelNotification(appCtx)
-                onError(describe(e))
-            } finally {
-                engine?.close()
-                isRunning = false
             }
+            report(appCtx, error, onDone, onError)
+        }
+    }
+
+    private fun reportProgress(
+        context: Context,
+        notify: Boolean,
+        done: Int,
+        total: Int,
+        onProgress: (Int, Int) -> Unit,
+    ) {
+        if (done % 3 != 0 && done != total) return
+        onProgress(done, total)
+        if (notify) notifyProgress(context, done, total)
+    }
+
+    // výsledok behu až po zatvorení Tesseractu (ďalšia úloha spustená z callbacku má pamäť voľnú)
+    private fun report(context: Context, error: String?, onDone: (Int, Int) -> Unit, onError: (String) -> Unit) {
+        if (error != null) {
+            onError(error)
+        } else {
+            onDone(safeCount(context), safeWithText(context))
         }
     }
 
     fun stop() {
         isRunning = false
+    }
+
+    // Tesseract až pri prvej fotke, s miestom v HeavyGate (zastavenie počas čakania → HeavyGate.Stopped)
+    private fun loadEngine(context: Context, slot: HeavySlot): OcrEngine {
+        slot.require()
+        val engine = OcrEngine(context)
+        if (!engine.isReady()) {
+            engine.close()
+            throw IllegalStateException("Tesseract sa nepodarilo inicializovať (slk)")
+        }
+        return engine
+    }
+
+    // Jedna fotka: text + pri už dekódovanej bitmape aj QR/čiarové kódy (zápis do qr.db) — QR len vtedy,
+    // ak ho fotka ešte nemá (QrIndexer ju už oskenoval): každá fotka sa skenuje raz, výsledok je rovnaký
+    // a v špičke (Tesseract + 2000 px bitmapa) netreba ešte pamäť pre ZXing.
+    private fun indexPhoto(context: Context, engine: OcrEngine, qrDecoder: Lazy<ZxingDecoder>, path: String) {
+        val needQr = !QrScanner.alreadyScanned(context, path)
+        var text = ""
+        var qr = ""
+        try {
+            val bmp = decodeDownscaled(path)
+            if (bmp != null) {
+                text = engine.recognize(bmp)
+                if (needQr) qr = QrScanner.scanText(qrDecoder.value, bmp)
+                bmp.recycle()
+            }
+        } catch (ignored: Throwable) {
+        }
+        saveResult(context, path, text)
+        if (needQr) QrScanner.store(context, path, qr)
+    }
+
+    // Live Text (podržanie prsta v prehliadači, výber textu): JEDEN Tesseract pre všetky podržania,
+    // zavrie sa LIVE_IDLE_MS po poslednom použití (alebo pri nedostatku pamäte). Tesseract nie je
+    // thread-safe, preto sa naraz používa len z jedného vlákna (synchronized na inštancii).
+    @Volatile
+    private var liveCloser: IdleCloser<OcrEngine>? = null
+
+    private fun liveCloser(context: Context): IdleCloser<OcrEngine> {
+        liveCloser?.let { return it }
+        val app = context.applicationContext
+        return synchronized(this) {
+            liveCloser ?: IdleCloser(
+                LIVE_IDLE_MS,
+                open = {
+                    val engine = OcrEngine(app)
+                    if (engine.isReady()) {
+                        engine
+                    } else {
+                        engine.close()
+                        null
+                    }
+                },
+                close = { it.close() },
+            ).also { liveCloser = it }
+        }
+    }
+
+    // Rozpoznanie zdieľaným Tesseractom pre Live Text. null = Tesseract sa nepodarilo inicializovať.
+    // Volať len z pozadia.
+    fun <R> withLiveEngine(context: Context, block: (OcrEngine) -> R): R? =
+        liveCloser(context).use { engine -> synchronized(engine) { block(engine) } }
+
+    // onTrimMemory: Tesseract pre Live Text preč (hneď, alebo po dobehnutí rozpoznávania)
+    fun releaseLiveEngine() {
+        liveCloser?.release()
     }
 
     // OCR JEDNEJ fotky na požiadanie (Live Text — podržanie prsta v prehliadači). Ak text už v DB je,
@@ -106,22 +193,18 @@ object OcrIndexer {
             if (cached != null) return cached
         } catch (ignored: Throwable) {
         }
-        var engine: OcrEngine? = null
         return try {
-            engine = OcrEngine(appCtx)
-            if (!engine.isReady()) return ""
             val bmp = decodeDownscaled(path) ?: return ""
-            val text = engine.recognize(bmp)
-            bmp.recycle()
+            val text = try {
+                withLiveEngine(appCtx) { it.recognize(bmp) }
+            } finally {
+                bmp.recycle()
+            }
+            if (text == null) return ""
             saveResult(appCtx, path, text)
             text
         } catch (e: Throwable) {
             ""
-        } finally {
-            try {
-                engine?.close()
-            } catch (ignored: Throwable) {
-            }
         }
     }
 
@@ -166,8 +249,11 @@ object OcrIndexer {
         }
     }
 
-    private fun safeCount(dao: OcrDao) = try { dao.count() } catch (e: Throwable) { 0 }
-    private fun safeWithText(dao: OcrDao) = try { dao.countWithText() } catch (e: Throwable) { 0 }
+    // aj otvorenie DB v try — callback sa volá mimo hlavného try behu
+    private fun safeCount(context: Context) =
+        try { OcrDatabase.getInstance(context).OcrDao().count() } catch (e: Throwable) { 0 }
+    private fun safeWithText(context: Context) =
+        try { OcrDatabase.getInstance(context).OcrDao().countWithText() } catch (e: Throwable) { 0 }
 
     private fun ensureChannel(context: Context) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {

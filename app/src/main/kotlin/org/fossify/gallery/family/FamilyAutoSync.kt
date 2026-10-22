@@ -36,16 +36,30 @@ object FamilyAutoSync {
     // MainActivity.onCreate: naplánuje (alebo zruší) okno pri nabíjaní
     fun onAppStarted(context: Context) = background(context) { FamilySyncJob.refresh(it) }
 
-    // MainActivity.onResume: krátky pokus o synchronizáciu, ak je s kým
+    // MainActivity.onResume: krátky pokus o synchronizáciu, ak je s kým — najviac raz za 15 min,
+    // pri čakajúcej fronte hneď (FamilySchedule.shouldTryOnResume)
     fun onAppResumed(context: Context) = background(context) { app ->
         retryPendingIfDue(app)
         val battery = IndexPerf.battery(app)
         val now = System.currentTimeMillis()
         val partners = hasPartners(app)
-        if (FamilySchedule.shouldTryOnResume(partners, battery.charging, battery.percent, lastResumeAttempt, now)) {
+        val pending = partners && outboxPending(app)
+        val due = FamilySchedule.shouldTryOnResume(
+            partners, battery.charging, battery.percent, lastResumeAttempt, now, pending,
+        )
+        if (due) {
             lastResumeAttempt = now
             syncNow(app, OWNER_RESUME, FamilySchedule.RESUME_TIMEOUT_MS)
         }
+    }
+
+    // čaká niečo na odoslanie? (fotky vo fronte, zrušené prepojenie) Pri chybe DB „nie“ — pokus ide podľa 15 min.
+    @Suppress("TooGenericExceptionCaught") // DB rodinného prepojenia nesmie zhodiť návrat do appky
+    private fun outboxPending(context: Context): Boolean = try {
+        FamilyStore(context).prefs.pendingUnpairs().isNotEmpty() ||
+            FamilyDatabase.getInstance(context).outboxDao().countOutbox(OutboxEntity.STATE_PENDING) > 0
+    } catch (ignored: RuntimeException) {
+        false
     }
 
     // spárovaný telefón alebo zrušené prepojenie, o ktorom sa druhý telefón ešte nedozvedel

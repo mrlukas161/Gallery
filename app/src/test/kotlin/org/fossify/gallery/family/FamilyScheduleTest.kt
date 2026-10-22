@@ -78,6 +78,35 @@ class FamilyScheduleTest {
     }
 
     @Test
+    fun resumeAttemptAtMostEveryFifteenMinutes() {
+        val now = 100_000_000L
+        assertEquals(15 * 60 * 1000L, FamilySchedule.RESUME_MIN_INTERVAL_MS)
+        // 2 minúty po poslednom pokuse (predtým stačila minúta) sa nič nespúšťa
+        assertFalse(FamilySchedule.shouldTryOnResume(true, false, 80, now - 2 * 60 * 1000L, now))
+        val interval = FamilySchedule.RESUME_MIN_INTERVAL_MS
+        assertFalse(FamilySchedule.shouldTryOnResume(true, false, 80, now - interval + 1, now))
+        assertTrue(FamilySchedule.shouldTryOnResume(true, false, 80, now - interval, now))
+    }
+
+    @Test
+    fun pendingOutboxTriesRightAwayButNotOnEveryResume() {
+        val now = 100_000_000L
+        val twoMinAgo = now - 2 * 60 * 1000L
+        assertTrue(FamilySchedule.shouldTryOnResume(true, false, 80, twoMinAgo, now, outboxPending = true))
+        val justNow = now - FamilySchedule.RESUME_PENDING_MIN_INTERVAL_MS + 1
+        assertFalse(FamilySchedule.shouldTryOnResume(true, false, 80, justNow, now, outboxPending = true))
+        // fronta neobíde spárovanie ani slabú batériu
+        assertFalse(FamilySchedule.shouldTryOnResume(false, false, 80, 0, now, outboxPending = true))
+        assertFalse(FamilySchedule.shouldTryOnResume(true, false, 10, 0, now, outboxPending = true))
+    }
+
+    @Test
+    fun clockMovedBackDoesNotBlockResumeAttempts() {
+        val now = 100_000_000L
+        assertTrue(FamilySchedule.shouldTryOnResume(true, false, 80, now + 60_000L, now))
+    }
+
+    @Test
     fun windowContinuesUntilOneHourThenStartsAnew() {
         val start = 10_000_000L
         assertEquals(start, FamilySchedule.windowStart(0, start))

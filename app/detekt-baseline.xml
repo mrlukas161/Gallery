@@ -36,7 +36,7 @@
     <ID>ComplexCondition:ViewPagerFragment.kt$ViewPagerFragment$gesturesAllowed &amp;&amp; !mIgnoreCloseDown &amp;&amp; verticalDominant &amp;&amp; quick &amp;&amp; context?.config?.allowDownGesture == true</ID>
     <ID>CyclomaticComplexMethod:Activity.kt$fun AppCompatActivity.fixDateTaken( paths: ArrayList&lt;String&gt;, showToasts: Boolean, hasRescanned: Boolean = false, callback: (() -&gt; Unit)? = null )</ID>
     <ID>CyclomaticComplexMethod:BertTokenizer.kt$BertTokenizer$private fun basicTokenize(text: String): List&lt;String&gt;</ID>
-    <ID>CyclomaticComplexMethod:ClipIndexer.kt$ClipIndexer$fun index( context: Context, notify: Boolean = true, onProgress: (phase: String, done: Int, total: Int) -&gt; Unit, onDone: (indexed: Int) -&gt; Unit, onError: (message: String) -&gt; Unit, )</ID>
+    <ID>CyclomaticComplexMethod:ClipIndexer.kt$ClipIndexer$fun index( context: Context, notify: Boolean = true, onWaiting: () -&gt; Unit = {}, onProgress: (phase: String, done: Int, total: Int) -&gt; Unit, onDone: (indexed: Int) -&gt; Unit, onError: (message: String) -&gt; Unit, )</ID>
     <ID>CyclomaticComplexMethod:ClipMlModels.kt$ClipMlModels$private fun downloadFile(urlStr: String, dest: File, running: () -&gt; Boolean, onProgress: (Int) -&gt; Unit): Boolean</ID>
     <ID>CyclomaticComplexMethod:ClipModels.kt$ClipModels$private fun download(urlStr: String, dest: File, running: () -&gt; Boolean, onProgress: (Int) -&gt; Unit): Boolean</ID>
     <ID>CyclomaticComplexMethod:ComparatorActivity.kt$ComparatorActivity$private fun loadPane(left: Boolean, keepZoom: Boolean = false)</ID>
@@ -51,7 +51,7 @@
     <ID>CyclomaticComplexMethod:EditActivity.kt$EditActivity$private fun initEditActivity()</ID>
     <ID>CyclomaticComplexMethod:EditActivity.kt$EditActivity$private fun updatePrimaryActionButtons()</ID>
     <ID>CyclomaticComplexMethod:FaceCropLoader.kt$FaceCropLoader$private fun decodeCropRegion(face: FaceEntity): Bitmap?</ID>
-    <ID>CyclomaticComplexMethod:FaceIndexer.kt$FaceIndexer$fun index( context: Context, notify: Boolean = true, onProgress: (done: Int, total: Int) -&gt; Unit, onDone: (faces: Int, photos: Int) -&gt; Unit, onError: (message: String) -&gt; Unit, )</ID>
+    <ID>CyclomaticComplexMethod:FaceIndexer.kt$FaceIndexer$fun index( context: Context, notify: Boolean = true, onWaiting: () -&gt; Unit = {}, onProgress: (done: Int, total: Int) -&gt; Unit, onDone: (faces: Int, photos: Int) -&gt; Unit, onError: (message: String) -&gt; Unit, )</ID>
     <ID>CyclomaticComplexMethod:FaceMediaMeta.kt$FaceMediaMeta$fun load(context: Context, paths: Collection&lt;String&gt;): Map&lt;String, Meta&gt;</ID>
     <ID>CyclomaticComplexMethod:GeoIndexer.kt$GeoIndexer$fun index( context: Context, onProgress: (done: Int, total: Int) -&gt; Unit, onDone: (indexed: Int, geotagged: Int) -&gt; Unit, onError: (message: String) -&gt; Unit, )</ID>
     <ID>CyclomaticComplexMethod:MainActivity.kt$MainActivity$@android.annotation.SuppressLint("ClickableViewAccessibility") private fun setupPages()</ID>
@@ -90,7 +90,7 @@
     <ID>CyclomaticComplexMethod:PhotoVideoActivity.kt$PhotoVideoActivity$private fun checkIntent(savedInstanceState: Bundle? = null)</ID>
     <ID>CyclomaticComplexMethod:PicasaImportService.kt$PicasaImportService$fun import( context: Context, zipUri: Uri, onProgress: (done: Int, total: Int) -&gt; Unit, onDone: (persons: Int, anchors: Int, skipped: Int, alreadyImported: Boolean) -&gt; Unit, onError: (message: String) -&gt; Unit, )</ID>
     <ID>CyclomaticComplexMethod:PickDirectoryDialog.kt$PickDirectoryDialog$private fun gotDirectories(newDirs: ArrayList&lt;Directory&gt;)</ID>
-    <ID>CyclomaticComplexMethod:RefreshFaces.kt$RefreshFaces$fun run( context: Context, onProgress: (done: Int, total: Int) -&gt; Unit, onDone: (updated: Int, added: Int) -&gt; Unit, onError: (String) -&gt; Unit, )</ID>
+    <ID>CyclomaticComplexMethod:RefreshFaces.kt$RefreshFaces$fun run( context: Context, onWaiting: () -&gt; Unit = {}, onProgress: (done: Int, total: Int) -&gt; Unit, onDone: (updated: Int, added: Int) -&gt; Unit, onError: (String) -&gt; Unit, )</ID>
     <ID>CyclomaticComplexMethod:RefreshFaces.kt$RefreshFaces$internal fun repairUnembedded( dao: FaceDao, detector: FaceDetectionHelper, embedder: FaceEmbedder, landmarker: FaceLandmarkHelper, maxPhotos: Int, running: () -&gt; Boolean, ): Int</ID>
     <ID>CyclomaticComplexMethod:SettingsActivity.kt$SettingsActivity$private fun filterSettings(rawQuery: String)</ID>
     <ID>CyclomaticComplexMethod:SettingsActivity.kt$SettingsActivity$private fun parseFile(inputStream: InputStream?)</ID>

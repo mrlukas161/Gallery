@@ -12,6 +12,7 @@ import androidx.core.app.NotificationManagerCompat
 import org.fossify.commons.helpers.ensureBackgroundThread
 import org.fossify.gallery.R
 import org.fossify.gallery.family.FamilyInbox
+import org.fossify.gallery.helpers.BackgroundPriority
 import java.io.File
 
 // QR/čiarové kódy: prejde fotky a uloží dekódovaný obsah (qr.db). RÝCHLE (ZXing jeden prechod ~0,1 s/fotka),
@@ -36,6 +37,7 @@ object QrIndexer {
         isRunning = true
         val appCtx = context.applicationContext
         ensureBackgroundThread {
+            val priority = BackgroundPriority.lower()
             try {
                 val dao = QrDatabase.getInstance(appCtx).QrDao()
                 val decoder = ZxingDecoder()
@@ -73,6 +75,7 @@ object QrIndexer {
                 cancelNotification(appCtx)
                 onError(describe(e))
             } finally {
+                BackgroundPriority.restore(priority)
                 isRunning = false
             }
         }

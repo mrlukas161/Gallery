@@ -67,6 +67,16 @@ object PeopleIndex {
         version.incrementAndGet()
     }
 
+    // onTrimMemory: snímok (osoby so všetkými tvárami, k-NN model) z pamäte preč; ďalšie get() ho
+    // na pozadí znova vypočíta. Pod tým istým zámkom ako get(), takže nikomu „nezmizne pod rukami“
+    // (kto už snímok má, používa svoj odkaz ďalej). Volať z pozadia (get() môže držať zámok dlhšie).
+    fun release() {
+        synchronized(lock) {
+            cached = null
+            cachedVersion = -1L
+        }
+    }
+
     // aktuálny snímok bez prepočtu (null = treba get() na pozadí)
     fun peek(context: Context): Snapshot? = synchronized(lock) {
         cached?.takeIf { cachedVersion == version.get() && it.threshold == FaceAuto.threshold(context) }

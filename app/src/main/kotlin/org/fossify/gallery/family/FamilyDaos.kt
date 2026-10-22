@@ -125,6 +125,10 @@ interface OutboxDao {
 
     @Query("DELETE FROM outbox WHERE id = :id")
     fun deleteOutbox(id: Long)
+
+    // koľko položiek čaká na odoslanie (FamilyAutoSync: pokus pri otvorení appky hneď)
+    @Query("SELECT COUNT(*) FROM outbox WHERE state = :state")
+    fun countOutbox(state: String): Int
 }
 
 // návrhy z druhého telefónu

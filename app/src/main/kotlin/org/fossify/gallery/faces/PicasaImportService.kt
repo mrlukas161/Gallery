@@ -7,6 +7,8 @@ import android.graphics.BitmapFactory
 import android.net.Uri
 import org.fossify.commons.helpers.ensureBackgroundThread
 import org.fossify.gallery.R
+import org.fossify.gallery.helpers.BackgroundPriority
+import org.fossify.gallery.helpers.HeavySlot
 import org.json.JSONObject
 import java.io.File
 import java.security.MessageDigest
@@ -23,6 +25,7 @@ import java.util.zip.ZipFile
 //    pri budúcej zmene odtlačkov prepočítať bez nového ZIP-u.
 //  - Kým beží prepočet odtlačkov na v2, import čaká (nové v2 vzory by sa miešali s v1 tvárami).
 //  - Import pred prepnutím na v2 (v1 vzory, teraz odložené) sa nepočíta ako „už naimportované".
+@Suppress("TooManyFunctions") // kroky importu (ZIP, odtlačky, zápis osoby, výrezy, priebeh po priečinkoch)
 object PicasaImportService {
     const val SOURCE = "picasa"
     private const val CROPS_DIR = "picasa_crops"
@@ -47,16 +50,16 @@ object PicasaImportService {
         }
         isRunning = true
         ensureBackgroundThread {
+            val priority = BackgroundPriority.lower()
+            // ťažká úloha: modely až po prečítaní manifestu a s miestom v HeavyGate (najviac jedna naraz)
+            var slot: HeavySlot? = null
             var landmarker: FaceLandmarkHelper? = null
             var embedder: FaceEmbedder? = null
             var detector: FaceDetectionHelper? = null
             var tmp: File? = null
             try {
                 // 1) skopíruj ZIP do cache (ZipFile potrebuje náhodný prístup k súboru)
-                val zipFile = File(appCtx.cacheDir, "picasa_import_${System.currentTimeMillis()}.zip").also { tmp = it }
-                appCtx.contentResolver.openInputStream(zipUri)?.use { input ->
-                    zipFile.outputStream().use { out -> input.copyTo(out) }
-                } ?: throw IllegalStateException("Nepodarilo sa otvoriť ZIP")
+                val zipFile = copyZip(appCtx, zipUri) { tmp = it }
 
                 val db = PeopleDatabase.getInstance(appCtx)
                 val dao = db.PeopleDao()
@@ -81,6 +84,11 @@ object PicasaImportService {
                         totalCrops += people.getJSONObject(i).optJSONArray("crops")?.length() ?: 0
                     }
 
+                    val heavy = HeavySlot({ isRunning }, onWait = { onProgress(0, totalCrops) }).also { slot = it }
+                    if (!heavy.ensure()) {
+                        onError(appCtx.getString(R.string.tb_picasa_interrupted))
+                        return@ensureBackgroundThread
+                    }
                     val lm = FaceLandmarkHelper(appCtx).also { landmarker = it }
                     val emb = FaceEmbedder(appCtx).also { embedder = it }
                     val det = FaceDetectionHelper(appCtx).also { detector = it }
@@ -153,10 +161,12 @@ object PicasaImportService {
                 landmarker?.close()
                 embedder?.close()
                 detector?.close()
+                slot?.close()
                 try {
                     tmp?.delete()
                 } catch (ignored: Throwable) {
                 }
+                BackgroundPriority.restore(priority)
                 isRunning = false
             }
         }
@@ -164,6 +174,15 @@ object PicasaImportService {
 
     fun stop() {
         isRunning = false
+    }
+
+    // ZIP do cache (ZipFile potrebuje náhodný prístup k súboru); onFile hneď, aby ho finally zmazal aj pri chybe
+    private fun copyZip(context: Context, zipUri: Uri, onFile: (File) -> Unit): File {
+        val zipFile = File(context.cacheDir, "picasa_import_${System.currentTimeMillis()}.zip").also(onFile)
+        context.contentResolver.openInputStream(zipUri)?.use { input ->
+            zipFile.outputStream().use { out -> input.copyTo(out) }
+        } ?: throw IllegalStateException("Nepodarilo sa otvoriť ZIP")
+        return zipFile
     }
 
     // (bajty výrezu, odtlačok) alebo null, keď sa výrez nedá dekódovať alebo zarovnať

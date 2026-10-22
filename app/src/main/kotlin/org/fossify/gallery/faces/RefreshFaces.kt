@@ -1,9 +1,11 @@
 package org.fossify.gallery.faces
 
 import android.content.Context
-import android.graphics.Bitmap
 import org.fossify.commons.helpers.ensureBackgroundThread
 import org.fossify.gallery.R
+import org.fossify.gallery.helpers.BackgroundPriority
+import org.fossify.gallery.helpers.HeavyGate
+import org.fossify.gallery.helpers.HeavySlot
 import java.util.concurrent.atomic.AtomicLong
 
 // „Prepracovať tváre" — jednorazová oprava + doplnenie:
@@ -17,6 +19,7 @@ import java.util.concurrent.atomic.AtomicLong
 //     aj tváram, ktorým sa pri indexovaní odtlačok vypočítať nepodarilo (v appke boli neviditeľné).
 // Staré záznamy bez páru sa NEMAŽÚ (radšej nechať niečo navyše, než prísť o menovku).
 // Opakované spustenie (aj po prerušení) je bezpečné: už opravené rámčeky sa spárujú bez prepočtu.
+@Suppress("TooManyFunctions") // kroky prepracovania (beh, fotka, vybrané fotky, oprava, párovanie, zápis)
 object RefreshFaces {
     // A7: beh sa „privlastní“ cez compareAndSet(0, id) — dve súbežné volania nespustia dva behy naraz.
     // owner = id bežiaceho behu (0 = nebeží). stop() ho vynuluje; koniec behu ho vynuluje len vtedy,
@@ -34,8 +37,11 @@ object RefreshFaces {
     private const val MAX_DECODE = 1024
     private const val IOU_MATCH = 0.35f
 
+    // Tváre sa čítajú po fotkách (getFacesForPath), nie všetky naraz; modely sa načítajú až pri prvej
+    // fotke (FaceModels, s miestom v HeavyGate). onDone/onError až po zatvorení modelov.
     fun run(
         context: Context,
+        onWaiting: () -> Unit = {},
         onProgress: (done: Int, total: Int) -> Unit,
         onDone: (updated: Int, added: Int) -> Unit,
         onError: (String) -> Unit,
@@ -48,64 +54,73 @@ object RefreshFaces {
         }
         val myRun = runIds.incrementAndGet()
         if (!owner.compareAndSet(0, myRun)) return
+        val active = { owner.get() == myRun }
         ensureBackgroundThread {
-            var detector: FaceDetectionHelper? = null
-            var embedder: FaceEmbedder? = null
-            var landmarker: FaceLandmarkHelper? = null
             var updated = 0
             var added = 0
-            try {
-                val dao = FacesDatabase.getInstance(appCtx).FaceDao()
-                // nové tváre len s id nad všetkými odkazmi z people.db/extras.db (poistka proti posunu id)
-                if (!FacesDatabase.ensureIdsAboveReferences(appCtx)) {
-                    throw IllegalStateException(appCtx.getString(R.string.c1_faces_refs_unreadable))
-                }
-                val det = FaceDetectionHelper(appCtx).also { detector = it }
-                val emb = FaceEmbedder(appCtx).also { embedder = it }
-                val lm = FaceLandmarkHelper(appCtx).also { landmarker = it }
-
-                // spracúvame LEN fotky, ktoré už boli indexované (nové rieši bežné indexovanie);
-                // VŠETKY ich tváre vrátane tých bez odtlačku — aby sa doplnili na mieste a aby nové
-                // poradie (face_index) nekolidovalo so žiadnym existujúcim riadkom
-                val byPath = dao.getEveryFace().groupBy { it.mediaFullPath }
-                val paths = dao.getProcessedPaths()
-                val total = paths.size
-                var done = 0
-                for (path in paths) {
-                    if (owner.get() != myRun) break
-                    try {
-                        val res = UprightDecoder.decode(path, MAX_DECODE)
-                        if (res != null) {
-                            val bmp = res.bitmap
-                            val full = FullResCrop.open(path, MAX_DECODE, bmp.width, bmp.height)
-                            try {
-                                val detected = det.detect(bmp).filter { FaceFilter.isUsable(it) }
-                                val old = byPath[path].orEmpty()
-                                val pair =
-                                    matchAndStore(dao, path, old, detected, res, lm, emb, det, Target(full, null))
-                                updated += pair.first
-                                added += pair.second
-                            } finally {
-                                full?.close()
-                                bmp.recycle()
-                            }
-                        }
-                    } catch (ignored: Throwable) {
+            var error: String? = null
+            var total = 0
+            var done = 0
+            BackgroundPriority.run {
+                val models = FaceModels(appCtx, HeavySlot(active, onWaiting, onResume = { onProgress(done, total) }))
+                try {
+                    val dao = FacesDatabase.getInstance(appCtx).FaceDao()
+                    // nové tváre len s id nad všetkými odkazmi z people.db/extras.db (poistka proti posunu id)
+                    if (!FacesDatabase.ensureIdsAboveReferences(appCtx)) {
+                        throw IllegalStateException(appCtx.getString(R.string.c1_faces_refs_unreadable))
                     }
-                    done++
-                    if (done % 5 == 0 || done == total) onProgress(done, total)
+                    // spracúvame LEN fotky, ktoré už boli indexované (nové rieši bežné indexovanie);
+                    // VŠETKY ich tváre vrátane tých bez odtlačku — aby sa doplnili na mieste a aby nové
+                    // poradie (face_index) nekolidovalo so žiadnym existujúcim riadkom
+                    val paths = dao.getProcessedPaths()
+                    total = paths.size
+                    for (path in paths) {
+                        if (!active()) break
+                        val pair = refreshPhoto(dao, path, models)
+                        updated += pair.first
+                        added += pair.second
+                        done++
+                        if (done % 5 == 0 || done == total) onProgress(done, total)
+                    }
+                    lastResult = "aktualizované $updated, nové $added"
+                } catch (ignored: HeavyGate.Stopped) {
+                    lastResult = "aktualizované $updated, nové $added"
+                } catch (e: Throwable) {
+                    error = e.javaClass.simpleName + (e.message?.let { ": " + it.take(140) } ?: "")
+                } finally {
+                    models.close()
+                    owner.compareAndSet(myRun, 0)
                 }
-                lastResult = "aktualizované $updated, nové $added"
-                onDone(updated, added)
-            } catch (e: Throwable) {
-                onError(e.javaClass.simpleName + (e.message?.let { ": " + it.take(140) } ?: ""))
+            }
+            val err = error
+            if (err != null) onError(err) else onDone(updated, added)
+        }
+    }
+
+    // jedna fotka celého prepracovania; tváre fotky sa čítajú až tu (nie všetky tváre naraz)
+    private fun refreshPhoto(dao: FaceDao, path: String, models: FaceModels): Pair<Int, Int> = try {
+        val res = UprightDecoder.decode(path, MAX_DECODE)
+        if (res == null) {
+            0 to 0
+        } else {
+            val bmp = res.bitmap
+            val full = FullResCrop.open(path, MAX_DECODE, bmp.width, bmp.height)
+            try {
+                val det = models.detector()
+                val detected = det.detect(bmp).filter { FaceFilter.isUsable(it) }
+                val old = dao.getFacesForPath(path)
+                matchAndStore(
+                    dao, path, old, detected, res, models.landmarker(), models.embedder(), det, Target(full, null),
+                )
             } finally {
-                detector?.close()
-                embedder?.close()
-                landmarker?.close()
-                owner.compareAndSet(myRun, 0)
+                full?.close()
+                bmp.recycle()
             }
         }
+    } catch (e: HeavyGate.Stopped) {
+        throw e
+    } catch (ignored: Throwable) {
+        0 to 0
     }
 
     fun stop() {
@@ -115,42 +130,47 @@ object RefreshFaces {
     // A6: prepracovanie LEN vybraných fotiek (po otočení/prepísaní, keď sa rámčeky nedali otočiť
     // bezpečne — FaceRotation). Rovnaké párovanie ako run() (IoU, obe hypotézy priestoru), takže
     // menovky ostanú na mieste. Vráti vybavené cesty (spracované alebo už neexistujúce). Volať z pozadia.
+    // Ťažká úloha: počká na miesto v HeavyGate (nevybavené cesty ostanú vo fronte).
     internal fun refreshPaths(context: Context, paths: Collection<String>): Set<String> {
         if (paths.isEmpty()) return emptySet()
         val myRun = runIds.incrementAndGet()
         if (!owner.compareAndSet(0, myRun)) return emptySet()
         val appCtx = context.applicationContext
         val done = HashSet<String>()
-        var detector: FaceDetectionHelper? = null
-        var embedder: FaceEmbedder? = null
-        var landmarker: FaceLandmarkHelper? = null
-        try {
-            if (!FacesDatabase.ensureIdsAboveReferences(appCtx)) return emptySet()
-            val dao = FacesDatabase.getInstance(appCtx).FaceDao()
-            val det = FaceDetectionHelper(appCtx).also { detector = it }
-            val emb = FaceEmbedder(appCtx).also { embedder = it }
-            val lm = FaceLandmarkHelper(appCtx).also { landmarker = it }
-            // počas prepočtu na v2 idú nové vektory bokom (FaceV2Staging), rámčeky sa opravia hneď
-            val staging = if (FaceEmbedVersion.isPending(appCtx)) FaceV2Staging.get(appCtx) else null
-            for (path in paths.asSequence().takeWhile { owner.get() == myRun }) {
-                if (!java.io.File(path).exists() || refreshOne(dao, path, det, emb, lm, staging)) done.add(path)
+        val active = { owner.get() == myRun }
+        BackgroundPriority.run {
+            val models = FaceModels(appCtx, HeavySlot(active))
+            try {
+                refreshAll(appCtx, paths, models, active, done)
+            } catch (ignored: Throwable) {
+            } finally {
+                models.close()
+                owner.compareAndSet(myRun, 0)
             }
-        } catch (ignored: Throwable) {
-        } finally {
-            detector?.close()
-            embedder?.close()
-            landmarker?.close()
-            owner.compareAndSet(myRun, 0)
         }
         return done
+    }
+
+    private fun refreshAll(
+        appCtx: Context,
+        paths: Collection<String>,
+        models: FaceModels,
+        active: () -> Boolean,
+        done: MutableSet<String>,
+    ) {
+        if (!FacesDatabase.ensureIdsAboveReferences(appCtx)) return
+        val dao = FacesDatabase.getInstance(appCtx).FaceDao()
+        // počas prepočtu na v2 idú nové vektory bokom (FaceV2Staging), rámčeky sa opravia hneď
+        val staging = if (FaceEmbedVersion.isPending(appCtx)) FaceV2Staging.get(appCtx) else null
+        for (path in paths.asSequence().takeWhile { active() }) {
+            if (!java.io.File(path).exists() || refreshOne(dao, path, models, staging)) done.add(path)
+        }
     }
 
     private fun refreshOne(
         dao: FaceDao,
         path: String,
-        det: FaceDetectionHelper,
-        emb: FaceEmbedder,
-        lm: FaceLandmarkHelper,
+        models: FaceModels,
         staging: FaceV2Staging?,
     ): Boolean = try {
         val res = UprightDecoder.decode(path, MAX_DECODE)
@@ -158,9 +178,11 @@ object RefreshFaces {
             val bmp = res.bitmap
             val full = FullResCrop.open(path, MAX_DECODE, bmp.width, bmp.height)
             try {
+                val det = models.detector()
                 val detected = det.detect(bmp).filter { FaceFilter.isUsable(it) }
                 matchAndStore(
-                    dao, path, dao.getFacesForPath(path), detected, res, lm, emb, det, Target(full, staging),
+                    dao, path, dao.getFacesForPath(path), detected, res, models.landmarker(), models.embedder(), det,
+                    Target(full, staging),
                 )
             } finally {
                 full?.close()
@@ -168,6 +190,8 @@ object RefreshFaces {
             }
         }
         res != null
+    } catch (e: HeavyGate.Stopped) {
+        throw e
     } catch (ignored: Throwable) {
         false
     }
@@ -175,42 +199,54 @@ object RefreshFaces {
     // Doplnenie odtlačku tváram, ktorým ho indexovanie nevypočítalo (výnimka v TFLite/MediaPipe) —
     // bez odtlačku sú v appke neviditeľné (getAllFaces ich filtruje) a nedajú sa označiť. Fotka sa
     // znova deteguje, staré záznamy sa spárujú ako pri prepracovaní a aktualizujú sa NA MIESTE LEN
-    // tie bez odtlačku; nič sa nepridáva ani nemaže. Volá FaceIndexer s vlastnými modelmi.
+    // tie bez odtlačku; nič sa nepridáva ani nemaže. Volá FaceIndexer so svojimi (lenivými) modelmi.
     internal fun repairUnembedded(
         dao: FaceDao,
-        detector: FaceDetectionHelper,
-        embedder: FaceEmbedder,
-        landmarker: FaceLandmarkHelper,
+        models: FaceModels,
         maxPhotos: Int,
         running: () -> Boolean,
     ): Int {
         var repaired = 0
         for (path in dao.getPathsWithUnembeddedFaces(maxPhotos)) {
             if (!running()) break
-            try {
-                val res = UprightDecoder.decode(path, MAX_DECODE) ?: continue
-                val bmp = res.bitmap
-                var full: FullResCrop? = null
-                try {
-                    val old = dao.getFacesForPath(path)
-                    val detected = detector.detect(bmp)
-                    val match = matchOldFaces(old, detected, res, bmp.width, bmp.height)
-                    full = FullResCrop.open(path, MAX_DECODE, bmp.width, bmp.height)
-                    for ((di, d) in detected.withIndex()) {
-                        val face = old.getOrNull(match[di]) ?: continue
-                        val id = face.id ?: continue
-                        if (face.embedding != null) continue
-                        val e = FaceAligner.embedDetected(bmp, d, landmarker, embedder, detector, full) ?: continue
-                        dao.updateFaceBox(id, d.left, d.top, d.right, d.bottom, d.score)
-                        dao.updateEmbedding(id, e)
-                        repaired++
-                    }
-                } finally {
-                    full?.close()
-                    bmp.recycle()
+            repaired += repairPhoto(dao, models, path)
+        }
+        return repaired
+    }
+
+    // jedna fotka dennej opravy: odtlačok LEN spárovaným tváram bez neho; vráti počet opravených
+    private fun repairPhoto(dao: FaceDao, models: FaceModels, path: String): Int = try {
+        val res = UprightDecoder.decode(path, MAX_DECODE)
+        if (res == null) 0 else repairDecoded(dao, models, path, res)
+    } catch (e: HeavyGate.Stopped) {
+        throw e
+    } catch (ignored: Throwable) {
+        0
+    }
+
+    private fun repairDecoded(dao: FaceDao, models: FaceModels, path: String, res: UprightDecoder.Result): Int {
+        val bmp = res.bitmap
+        var full: FullResCrop? = null
+        var repaired = 0
+        try {
+            val old = dao.getFacesForPath(path)
+            val detector = models.detector()
+            val detected = detector.detect(bmp)
+            val match = matchOldFaces(old, detected, res, bmp.width, bmp.height)
+            full = FullResCrop.open(path, MAX_DECODE, bmp.width, bmp.height)
+            for ((di, d) in detected.withIndex()) {
+                // len spárovaná tvár bez odtlačku
+                val id = old.getOrNull(match[di])?.takeIf { it.embedding == null }?.id ?: continue
+                val e = FaceAligner.embedDetected(bmp, d, models.landmarker(), models.embedder(), detector, full)
+                if (e != null) {
+                    dao.updateFaceBox(id, d.left, d.top, d.right, d.bottom, d.score)
+                    dao.updateEmbedding(id, e)
+                    repaired++
                 }
-            } catch (ignored: Throwable) {
             }
+        } finally {
+            full?.close()
+            bmp.recycle()
         }
         return repaired
     }

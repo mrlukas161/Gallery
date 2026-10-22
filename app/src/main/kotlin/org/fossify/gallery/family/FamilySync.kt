@@ -38,7 +38,8 @@ class FamilySync(context: Context) {
     fun prepareOwnOps() {
         try {
             snapshotIfNeeded()
-            OpRecorder(app).anchors.flush()
+            // OpRecorder je Closeable (overovač priestoru tvárí drží modely) — zavrieť aj pri chybe
+            OpRecorder(app).use { it.anchors.flush() }
         } catch (ignored: RuntimeException) {
             // odtlačky sú vedľajšie, operácie sa odovzdajú aj bez nich
         }

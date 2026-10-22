@@ -23,13 +23,16 @@ import org.fossify.gallery.faces.PhashIndexer
 import org.fossify.gallery.faces.QrIndexer
 import org.fossify.gallery.extensions.config
 import org.fossify.gallery.helpers.IndexPerf
+import org.fossify.gallery.helpers.MemoryPressure
 import org.fossify.gallery.helpers.PendingCounter
 import org.fossify.gallery.helpers.ProcessingPolicy
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
 
 // Foreground služba pre indexovanie. V režime Max/nabíjanie bežia funkcie PARALELNE (všetko naraz),
-// v obmedzenom režime postupne. Notifikácia ukazuje priebeh KAŽDEJ bežiacej funkcie. Ref-counted:
+// v obmedzenom režime postupne. Ťažké úlohy (tváre, OCR, CLIP, prepracovanie a prepočet tvárí) však
+// v každom režime idú za sebou — najviac jedna naraz (HeavyGate); čakajúca má v notifikácii „čaká…“.
+// Notifikácia ukazuje priebeh KAŽDEJ bežiacej funkcie. Ref-counted:
 // viac spustení (aj z rôznych tlačidiel) beží súčasne; služba skončí až keď dobehnú všetky.
 class IndexingService : Service() {
     private val progressMap = ConcurrentHashMap<String, String>()
@@ -65,6 +68,20 @@ class IndexingService : Service() {
     @Volatile
     private var batteryReceiver: BroadcastReceiver? = null
 
+    // automaticky spustené úlohy, ktoré práve bežia (pri kritickom nedostatku pamäte sa ťažké zastavia)
+    private val autoRunning: MutableSet<String> = ConcurrentHashMap.newKeySet()
+
+    // kritický nedostatok pamäte počas tejto služby — ďalšie automatické ťažké úlohy sa odložia
+    @Volatile
+    private var memoryLow = false
+
+    private val memoryListener: () -> Unit = { onMemoryCritical() }
+
+    override fun onCreate() {
+        super.onCreate()
+        MemoryPressure.addCriticalListener(memoryListener)
+    }
+
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -87,7 +104,7 @@ class IndexingService : Service() {
                 org.fossify.commons.helpers.ensureBackgroundThread {
                     try {
                         val tasks = applyPolicy(autoTasks(), ProcessingPolicy.Trigger.AUTO)
-                        launch(tasks, sequential = !IndexPerf.parallel(this))
+                        launch(tasks, sequential = !IndexPerf.parallel(this), auto = true)
                     } finally {
                         taskFinished()
                     }
@@ -243,14 +260,28 @@ class IndexingService : Service() {
         }
     }
 
+    // App.onTrimMemory (RUNNING_CRITICAL / COMPLETE): automaticky spustené ťažké úlohy sa zastavia
+    // a odložia — ProcessingPolicy ich pustí znova neskôr (okno pri nabíjaní, autoScanIfStale).
+    // Ručne spustené úlohy bežia ďalej (výslovná voľba používateľa). Volá sa z vlákna na pozadí.
+    private fun onMemoryCritical() {
+        memoryLow = true
+        for (task in autoRunning) {
+            if (task !in HEAVY_TASKS || task in policyStopped) continue
+            policyStopped.add(task)
+            deferred = true
+            stopTask(task)
+        }
+    }
+
     override fun onDestroy() {
+        MemoryPressure.removeCriticalListener(memoryListener)
         unregisterBatteryWatch()
         super.onDestroy()
     }
 
     // --- orchestrácia (ref-counted, paralelne alebo postupne) ---
 
-    private fun launch(tasks: List<String>, sequential: Boolean) {
+    private fun launch(tasks: List<String>, sequential: Boolean, auto: Boolean = false) {
         val toRun = tasks.filter { !isTaskRunning(it) }
         if (toRun.isEmpty()) {
             maybeFinish()
@@ -258,23 +289,23 @@ class IndexingService : Service() {
         }
         active.addAndGet(toRun.size)
         if (sequential) {
-            chain(toRun, 0)
+            chain(toRun, 0, auto)
         } else {
-            toRun.forEach { t -> runOne(t) { taskFinished() } }
+            toRun.forEach { t -> runOne(t, auto) { taskFinished() } }
         }
     }
 
-    private fun chain(tasks: List<String>, i: Int) {
+    private fun chain(tasks: List<String>, i: Int, auto: Boolean) {
         if (i >= tasks.size || timedOut) return
         if (!allowedNow(tasks[i])) {
             // pravidlá spracovania ju teraz nepustia (batéria / nabíjanie) — dobehne neskôr
             taskFinished()
-            chain(tasks, i + 1)
+            chain(tasks, i + 1, auto)
             return
         }
-        runOne(tasks[i]) {
+        runOne(tasks[i], auto) {
             taskFinished()
-            chain(tasks, i + 1)
+            chain(tasks, i + 1, auto)
         }
     }
 
@@ -300,15 +331,30 @@ class IndexingService : Service() {
         else -> false
     }
 
-    private fun runOne(task: String, finished: () -> Unit) {
+    private fun runOne(task: String, auto: Boolean, finished: () -> Unit) {
+        // najprv zapísať, potom skontrolovať príznak: onMemoryCritical príznak nastaví pred prechodom
+        // autoRunning, takže úlohu buď zastaví, alebo ju táto kontrola vôbec nespustí
+        if (auto) autoRunning.add(task)
+        // po kritickom nedostatku pamäte sa ďalšie automatické ťažké úlohy nespúšťajú — dobehnú neskôr
+        if (auto && memoryLow && task in HEAVY_TASKS) {
+            autoRunning.remove(task)
+            deferred = true
+            finished()
+            return
+        }
         // chyba z minula sa maže až keď sa ROVNAKÝ typ úlohy reálne spúšťa znova — ak zlyhá
         // opäť, fail() ju nastaví nanovo; iné úlohy ju nechávajú viditeľnú
         if (task == lastErrorTask) clearLastError()
         launched.add(task)
         val done = {
             launched.remove(task)
+            if (auto) autoRunning.remove(task)
             finished()
         }
+        dispatch(task, done)
+    }
+
+    private fun dispatch(task: String, done: () -> Unit) {
         when (task) {
             TASK_FACES -> runFaces(done)
             TASK_GEO -> runGeo(done)
@@ -331,6 +377,7 @@ class IndexingService : Service() {
         }
         FaceIndexer.index(
             applicationContext, notify = false,
+            onWaiting = { waiting("faces", R.string.lk_task_faces) },
             onProgress = { d, t -> prog("faces", getString(R.string.q1_prog_faces, d, t)) },
             onDone = { _, _ -> clearProg("faces"); next() },
             onError = { fail("faces", it); next() },
@@ -367,6 +414,7 @@ class IndexingService : Service() {
         }
         OcrIndexer.index(
             applicationContext, notify = false,
+            onWaiting = { waiting("ocr", R.string.lk_task_ocr) },
             onProgress = { d, t -> prog("ocr", getString(R.string.q1_prog_ocr, d, t)) },
             onDone = { _, _ -> clearProg("ocr"); next() },
             onError = { fail("ocr", it); next() },
@@ -391,6 +439,7 @@ class IndexingService : Service() {
         }
         ClipIndexer.index(
             applicationContext, notify = false,
+            onWaiting = { waiting("clip", R.string.lk_task_clip) },
             onProgress = { phase, d, t -> prog("clip", "$phase $d/$t") },
             onDone = { _ -> ClipSearch.invalidate(); clearProg("clip"); next() },
             onError = { fail("clip", it); next() },
@@ -417,6 +466,7 @@ class IndexingService : Service() {
         }
         org.fossify.gallery.faces.RefreshFaces.run(
             applicationContext,
+            onWaiting = { waiting("reembed", R.string.lk_task_reembed) },
             onProgress = { d, t -> prog("reembed", getString(R.string.q1_prog_reembed, d, t)) },
             onDone = { _, _ -> clearProg("reembed"); next() },
             onError = { fail("reembed", it); next() },
@@ -431,6 +481,7 @@ class IndexingService : Service() {
         }
         org.fossify.gallery.faces.FaceReembedV2.run(
             applicationContext,
+            onWaiting = { waiting("facev2", R.string.lk_task_face_v2) },
             onProgress = { d, t -> prog("facev2", getString(R.string.tb_prog_face_v2, d, t)) },
             onDone = { switched ->
                 clearProg("facev2")
@@ -484,6 +535,11 @@ class IndexingService : Service() {
                 .apply()
         } catch (ignored: Throwable) {
         }
+    }
+
+    // ťažká úloha čaká na miesto (HeavyGate) — v notifikácii aj v Nastaveniach je vidno, že nestojí
+    private fun waiting(key: String, nameRes: Int) {
+        prog(key, getString(R.string.lk_prog_waiting, getString(nameRes)))
     }
 
     private fun prog(key: String, text: String) {
@@ -581,6 +637,8 @@ class IndexingService : Service() {
         }
         watched.clear()
         policyStopped.clear()
+        autoRunning.clear()
+        memoryLow = false
         progressMap.clear()
         stopForegroundCompat()
         stopSelf()
@@ -660,6 +718,9 @@ class IndexingService : Service() {
 
         @Volatile
         private var autoStarted = false
+
+        // ťažké úlohy (veľké modely) — idú za sebou cez HeavyGate; pri nedostatku pamäte sa odložia
+        private val HEAVY_TASKS = setOf(TASK_FACES, TASK_OCR, TASK_CLIP, TASK_REEMBED, TASK_FACE_V2)
 
         private fun kindOf(task: String): ProcessingPolicy.Indexer = when (task) {
             TASK_FACES -> ProcessingPolicy.Indexer.FACES
