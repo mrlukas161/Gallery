@@ -22,8 +22,10 @@ peak() { p=0; for i in $(seq 1 $1); do v=$(adb shell dumpsys meminfo $PKG | grep
 adb shell settings put global window_animation_scale 0; adb shell settings put global transition_animation_scale 0; adb shell settings put global animator_duration_scale 0
 adb shell mkdir -p /sdcard/DCIM/Camera
 i=0; for r in 1 2 3 4 5; do for f in photos/*; do i=$((i+1)); adb push "$f" "/sdcard/DCIM/Camera/p${i}_$(basename $f)" >/dev/null; done; done
-adb shell content call --uri content://media --method scan_volume --arg external_primary >/dev/null 2>&1
-for t in 1 2 3 4 5 6 7 8 9 10 11 12; do c=$(adb shell content query --uri content://media/external/images/media --projection _id 2>/dev/null | grep -c Row); [ "$c" -ge 20 ] && break; sleep 5; done
+for f in $(adb shell ls /sdcard/DCIM/Camera/); do adb shell am broadcast -a android.intent.action.MEDIA_SCANNER_SCAN_FILE -d "file:///sdcard/DCIM/Camera/$f" >/dev/null 2>&1; done
+adb shell content call --uri content://media/ --method scan_volume --arg external_primary >/dev/null 2>&1
+adb shell cmd media.provider scan external_primary >/dev/null 2>&1 || true
+for t in $(seq 1 36); do c=$(adb shell content query --uri content://media/external/images/media --projection _id:_data 2>/dev/null | grep -c "DCIM/Camera"); [ "$c" -ge 20 ] && break; sleep 5; done
 echo "MediaStore fotiek: $c" >> $OUT/steps.txt
 adb shell dumpsys battery set ac 1; adb shell dumpsys battery set level 90
 
@@ -33,7 +35,8 @@ for TAG in base new; do
   launch 10; mem "po_starte"
   adb exec-out screencap -p > $OUT/shots/${TAG}_start.png
   tap_text "Spustiť spracovanie"
-  peak 48
+  peak 60
+  adb logcat -d | grep -iE "Tesseract|onnx|FaceDetector|landmark" | head -5 >> $OUT/steps.txt
   mem "po_4min"
   adb exec-out screencap -p > $OUT/shots/${TAG}_po_4min.png
   adb shell input keyevent 3; sleep 30; mem "pozadie_30s"
