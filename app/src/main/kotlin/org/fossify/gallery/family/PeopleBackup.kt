@@ -55,50 +55,55 @@ class PeopleBackup(context: Context) {
 
         // ručné priradenia (tváre zo zamknutých a vylúčených priečinkov sa nezálohujú, spec 2.5)
         // D2/D3: nejasná tvár (priestor rámčeka sa nedá overiť ani odtlačkom) sa vynechá sama
+        // model tvárí overovača sa zatvorí aj pri chybe (natívna pamäť)
         val verifier = FaceSpaceVerifier(app)
-        val keys = ContentKeyStore(family.contentKeyDao())
-        val faces = FamilyFaces(app, faceDao, keys, family.faceSpaceDao(), verifier = verifier)
-        val assignments = people.getAssignments().filter { it.personId in uuids }
-        val manual = assignments.filter { it.isManual }
-        val refs = links(faceDao, faces, manual.map { it.faceId to it.personId }, uuids)
-            .map { it.face to it.uuid }
+        try {
+            val keys = ContentKeyStore(family.contentKeyDao())
+            val faces = FamilyFaces(app, faceDao, keys, family.faceSpaceDao(), verifier = verifier)
+            val assignments = people.getAssignments().filter { it.personId in uuids }
+            val manual = assignments.filter { it.isManual }
+            val refs = links(faceDao, faces, manual.map { it.faceId to it.personId }, uuids)
+                .map { it.face to it.uuid }
 
-        // A3: automatické priradenia, „nie je to on“ a ignorované tváre (mimo op-logu)
-        val auto = links(faceDao, faces, assignments.filter { !it.isManual }.map { it.faceId to it.personId }, uuids)
-        val cannotSource = people.getCannotLinks().filter { it.personId in uuids }
-        val cannot = links(faceDao, faces, cannotSource.map { it.faceId to it.personId }, uuids)
-        val ignoredIds = extras.getIgnoredIds()
-        val ignored = facesByIds(faceDao, ignoredIds).mapNotNull { faces.refFor(it) }
-        val omitted = (assignments.size - refs.size - auto.size) + (cannotSource.size - cannot.size) +
-            (ignoredIds.size - ignored.size)
-        verifier.close()
+            // A3: automatické priradenia, „nie je to on“ a ignorované tváre (mimo op-logu)
+            val autoPairs = assignments.filter { !it.isManual }.map { it.faceId to it.personId }
+            val auto = links(faceDao, faces, autoPairs, uuids)
+            val cannotSource = people.getCannotLinks().filter { it.personId in uuids }
+            val cannot = links(faceDao, faces, cannotSource.map { it.faceId to it.personId }, uuids)
+            val ignoredIds = extras.getIgnoredIds()
+            val ignored = facesByIds(faceDao, ignoredIds).mapNotNull { faces.refFor(it) }
+            val omitted = (assignments.size - refs.size - auto.size) + (cannotSource.size - cannot.size) +
+                (ignoredIds.size - ignored.size)
 
-        val groups = extras.getGroups().map { g ->
-            PeopleBackupFormat.SnapGroup(g.name, extras.getMembers(g.id).mapNotNull { uuids[it] })
+            val groups = extras.getGroups().map { g ->
+                PeopleBackupFormat.SnapGroup(g.name, extras.getMembers(g.id).mapNotNull { uuids[it] })
+            }
+            val anchors = AnchorOutbox.pick(app, persons.map { it.id })
+                .mapNotNull { (id, vectors) -> uuids[id]?.let { it to vectors } }.toMap()
+
+            val ops = PeopleBackupFormat.snapshotOps(
+                persons = persons.map { PeopleBackupFormat.SnapPerson(uuids.getValue(it.id), it.name) },
+                manual = refs,
+                groups = groups,
+                anchors = anchors,
+                faceModelId = FaceEmbedder.MODEL_ID,
+            )
+            val backup = PeopleBackupFormat.build(
+                UUID.randomUUID().toString(),
+                System.currentTimeMillis(),
+                FamilyStore(app).selfName(),
+                FaceEmbedder.MODEL_ID,
+                ops,
+                PeopleBackupFormat.Extras(auto, cannot, ignored),
+            )
+            val summary = Summary(
+                persons.size, refs.size, groups.size, anchors.values.count { it.isNotEmpty() },
+                auto.size, cannot.size, ignored.size, maxOf(0, omitted),
+            )
+            return backup to summary
+        } finally {
+            verifier.close()
         }
-        val anchors = AnchorOutbox.pick(app, persons.map { it.id })
-            .mapNotNull { (id, vectors) -> uuids[id]?.let { it to vectors } }.toMap()
-
-        val ops = PeopleBackupFormat.snapshotOps(
-            persons = persons.map { PeopleBackupFormat.SnapPerson(uuids.getValue(it.id), it.name) },
-            manual = refs,
-            groups = groups,
-            anchors = anchors,
-            faceModelId = FaceEmbedder.MODEL_ID,
-        )
-        val backup = PeopleBackupFormat.build(
-            UUID.randomUUID().toString(),
-            System.currentTimeMillis(),
-            FamilyStore(app).selfName(),
-            FaceEmbedder.MODEL_ID,
-            ops,
-            PeopleBackupFormat.Extras(auto, cannot, ignored),
-        )
-        val summary = Summary(
-            persons.size, refs.size, groups.size, anchors.values.count { it.isNotEmpty() },
-            auto.size, cannot.size, ignored.size, maxOf(0, omitted),
-        )
-        return backup to summary
     }
 
     @Throws(IOException::class)
