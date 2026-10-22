@@ -1,0 +1,72 @@
+name: CI diagnostika – emulátor (dočasné)
+
+on:
+  push:
+    branches: [ci-diag]
+
+permissions:
+  contents: write
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Keystore
+        run: echo "${{ secrets.SIGNING_KEYSTORE_BASE64 }}" | base64 -d > "${{ runner.temp }}/galeriaplus.jks"
+      - name: Build new (s úpravami) a base (0351efe)
+        env:
+          SIGNING_KEY_ALIAS: ${{ secrets.SIGNING_KEY_ALIAS }}
+          SIGNING_KEY_PASSWORD: ${{ secrets.SIGNING_KEY_PASSWORD }}
+          SIGNING_STORE_PASSWORD: ${{ secrets.SIGNING_STORE_PASSWORD }}
+          SIGNING_STORE_FILE: ${{ runner.temp }}/galeriaplus.jks
+        run: |
+          ./gradlew assembleFossRelease -PtestAbi=x86_64 -q
+          cp $(ls app/build/outputs/apk/foss/release/*.apk | head -n1) new.apk
+          git worktree add ../base 0351efe
+          cd ../base && ./gradlew assembleFossRelease -PtestAbi=x86_64 -q
+          cp $(ls app/build/outputs/apk/foss/release/*.apk | head -n1) $GITHUB_WORKSPACE/base.apk
+      - name: Testovacie fotky s tvárami
+        run: |
+          mkdir -p photos
+          for u in \
+            https://raw.githubusercontent.com/ageitgey/face_recognition/master/examples/obama.jpg \
+            https://raw.githubusercontent.com/ageitgey/face_recognition/master/examples/obama2.jpg \
+            https://raw.githubusercontent.com/ageitgey/face_recognition/master/examples/biden.jpg \
+            https://raw.githubusercontent.com/ageitgey/face_recognition/master/examples/two_people.jpg \
+            https://raw.githubusercontent.com/opencv/opencv/4.x/samples/data/messi5.jpg \
+            https://raw.githubusercontent.com/opencv/opencv/4.x/samples/data/lena.jpg ; do
+            curl -sSfL -o "photos/$(basename $u)" "$u" || echo "nestiahnuté $u"
+          done
+      - name: KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules && sudo udevadm trigger --name-match=kvm
+      - name: Emulátor + meranie
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          arch: x86_64
+          target: google_apis
+          profile: pixel_6
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          script: bash .github/smoke/smoke.sh
+      - name: Push výsledkov do ci-diag-out
+        if: always()
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout --orphan ci-diag-out
+          git rm -rf --cached . >/dev/null
+          git add -f out
+          git commit -m "Meranie pamäte" || true
+          git push -f origin ci-diag-out
