@@ -34,8 +34,10 @@ for TAG in base new; do
   adb install $TAG.apk >> $OUT/steps.txt 2>&1; grant
   launch 10; mem "po_starte"
   adb exec-out screencap -p > $OUT/shots/${TAG}_start.png
+  for k in 1 2 3 4 5 6 7 8; do adb shell uiautomator dump /sdcard/ui.xml >/dev/null 2>&1; adb pull /sdcard/ui.xml /tmp/ui.xml >/dev/null 2>&1; grep -q "Spustiť spracovanie" /tmp/ui.xml && break; sleep 5; done
   tap_text "Spustiť spracovanie"
-  peak 60
+  adb exec-out screencap -p > $OUT/shots/${TAG}_po_tapnuti.png
+  peak 72
   adb logcat -d | grep -iE "Tesseract|onnx|FaceDetector|landmark" | head -5 >> $OUT/steps.txt
   mem "po_4min"
   adb exec-out screencap -p > $OUT/shots/${TAG}_po_4min.png
