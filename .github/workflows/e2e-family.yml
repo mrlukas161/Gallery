@@ -1,0 +1,63 @@
+name: E2E rodinné prepojenie (dva emulátory)
+
+on:
+  push:
+    branches: [e2e-family]
+
+permissions:
+  contents: write
+
+jobs:
+  family:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Debug APK (x86_64)
+        run: |
+          mkdir -p out
+          ./gradlew assembleFossDebug -PtestAbi=x86_64 -q 2>&1 | tail -80 | tee out/build.txt
+          cp "$(ls app/build/outputs/apk/foss/debug/*.apk | head -n1)" app.apk
+      - name: Nástroje a testovacie fotky
+        run: |
+          sudo apt-get install -y -qq zbar-tools > /dev/null
+          mkdir -p photos
+          for u in \
+            https://raw.githubusercontent.com/ageitgey/face_recognition/master/examples/obama.jpg \
+            https://raw.githubusercontent.com/ageitgey/face_recognition/master/examples/obama2.jpg \
+            https://raw.githubusercontent.com/ageitgey/face_recognition/master/examples/biden.jpg \
+            https://raw.githubusercontent.com/ageitgey/face_recognition/master/examples/two_people.jpg ; do
+            curl -sSfL -o "photos/$(basename $u)" "$u" || echo "nestiahnuté $u" | tee -a out/steps.txt
+          done
+      - name: KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules && sudo udevadm trigger --name-match=kvm
+      - name: Dva emulátory + scenáre
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          arch: x86_64
+          target: google_apis
+          profile: pixel_6
+          ram-size: 2048M
+          cores: 2
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -no-snapshot -memory 2048
+          script: bash .github/e2e/run.sh
+      - name: Push výsledkov do e2e-family-out
+        if: always()
+        run: |
+          echo "commit ${GITHUB_SHA}" > out/commit.txt
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout --orphan e2e-family-out
+          git rm -rf --cached . >/dev/null
+          git add -f out
+          git commit -m "E2E rodinné prepojenie ${GITHUB_SHA}" || true
+          git push -f origin e2e-family-out
