@@ -167,7 +167,9 @@ object FaceRelinker {
         val geometry = RelinkData.rawGeometry(newPath) ?: return
         val transform = RelBox.exifTransform(geometry[2])
         fun boxes(f: FaceEntity) =
-            FaceMatch.relBoxes(f.bboxLeft, f.bboxTop, f.bboxRight, f.bboxBottom, geometry[0], geometry[1], transform)
+            FaceMatch.relBoxes(
+                f.bboxLeft, f.bboxTop, f.bboxRight, f.bboxBottom, geometry[0], geometry[1], transform, f.boxSpace,
+            )
         val oldBoxes = oldFaces.mapNotNull { f -> f.id?.let { it to boxes(f) } }.filter { it.second.isNotEmpty() }
         // nové tváre z indexera sú vždy v upright priestore → len prvá hypotéza
         val newBoxes = newFaces.mapNotNull { f -> f.id?.let { it to boxes(f).take(1) } }
@@ -186,7 +188,8 @@ object FaceRelinker {
                     val old = assignments[oldId]
                     val existing = assignments[newId]
                     if (old != null && existing == null) {
-                        people.upsertAssignment(FaceAssignmentEntity(newId, old.personId, old.isManual, now))
+                        // E2: pôvod (source) aj istota sa prenesú so starým priradením
+                        people.upsertAssignment(old.copy(faceId = newId, updatedAt = now))
                     }
                     val owner = existing?.personId ?: old?.personId
                     cannot[oldId].orEmpty().filter { it != owner }

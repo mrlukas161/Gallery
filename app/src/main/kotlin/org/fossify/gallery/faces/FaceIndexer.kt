@@ -3,7 +3,6 @@ package org.fossify.gallery.faces
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.Context
-import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.os.Build
 import android.provider.MediaStore
@@ -41,9 +40,13 @@ object FaceIndexer {
     // v HeavyGate; onWaiting = beh čaká, kým dobehne iná ťažká úloha. Callbacky onDone/onError sa volajú
     // až PO zatvorení modelov a uvoľnení miesta — ďalšia úloha spustená z nich (aj na tom istom
     // vlákne) už pamäť po tvárach nemá obsadenú.
+    // E3: multiScale = navyše detekcia malých tvárí v dlaždiciach (len pri nabíjaní alebo v Plnom profile,
+    // rozhoduje IndexingService cez ProcessingPolicy.multiScale)
+    @Suppress("LongParameterList", "CyclomaticComplexMethod")
     fun index(
         context: Context,
         notify: Boolean = true,
+        multiScale: Boolean = false,
         onWaiting: () -> Unit = {},
         onProgress: (done: Int, total: Int) -> Unit,
         onDone: (faces: Int, photos: Int) -> Unit,
@@ -93,7 +96,7 @@ object FaceIndexer {
                             if (done % 5 == 0 || done == total) onProgress(done, total)
                             continue
                         }
-                        indexPhoto(appCtx, dao, models, mediaStoreId, path)
+                        indexPhoto(appCtx, dao, models, mediaStoreId, path, multiScale)
                         done++
                         if (done % 5 == 0 || done == total) {
                             onProgress(done, total)
@@ -125,15 +128,25 @@ object FaceIndexer {
 
     // Jedna fotka: detekcia + FaceFilter + odtlačky v2 + zápis (počas prepočtu na v2 bez odtlačku).
     // Pokazená fotka nesmie zastaviť celé indexovanie; zastavenie počas čakania na miesto nezapíše značku.
-    private fun indexPhoto(appCtx: Context, dao: FaceDao, models: FaceModels, mediaStoreId: Long, path: String) {
+    @Suppress("LongParameterList")
+    private fun indexPhoto(
+        appCtx: Context,
+        dao: FaceDao,
+        models: FaceModels,
+        mediaStoreId: Long,
+        path: String,
+        multiScale: Boolean,
+    ) {
         var faceCount = 0
         try {
-            val bmp = decodeDownscaled(path)
-            if (bmp != null) {
+            val res = decodeDownscaled(path)
+            if (res != null) {
+                val bmp = res.bitmap
                 try {
                     faceCount = FaceStore.detectAndInsert(
                         appCtx, dao, path, mediaStoreId, bmp, MAX_DECODE_SIZE,
                         models.detector(), models.landmarker(), models.embedder(),
+                        sample = res.sample, multiScale = multiScale,
                     )
                 } finally {
                     bmp.recycle()
@@ -245,6 +258,6 @@ object FaceIndexer {
     }
 
     // VŽDY „na stojato" (EXIF) — inak detektor na fotkách na výšku tváre nenájde a výrezy sú otočené
-    private fun decodeDownscaled(path: String): Bitmap? =
-        UprightDecoder.decode(path, MAX_DECODE_SIZE)?.bitmap
+    private fun decodeDownscaled(path: String): UprightDecoder.Result? =
+        UprightDecoder.decode(path, MAX_DECODE_SIZE)
 }

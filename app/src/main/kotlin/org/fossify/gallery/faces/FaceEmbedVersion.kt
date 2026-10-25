@@ -22,6 +22,9 @@ object FaceEmbedVersion {
     private const val V1 = 1
     private const val V2 = 2
 
+    // E1: hodnota faces.embed_version pre odtlačok z aktuálnej cesty (FaceEmbedder.PIPELINE_MODEL_ID)
+    const val PIPELINE_VERSION = V2
+
     // stav v pamäti pre MODEL_ID (číta ho aj rodinné prepojenie bez Contextu); null = ešte nenačítané
     @Volatile
     private var storedV2: Boolean? = null
@@ -33,6 +36,9 @@ object FaceEmbedVersion {
         } catch (ignored: Throwable) {
         }
     }
+
+    // E1: verzia odtlačkov uložených vo faces.db (1/2) — pre faces.embed_version; pred načítaním stavu v1
+    fun storedVersion(): Int = if (storedV2 == true) V2 else V1
 
     // MODEL_ID uložených odtlačkov; pred načítaním stavu konzervatívne v1
     fun storedModelId(): String =

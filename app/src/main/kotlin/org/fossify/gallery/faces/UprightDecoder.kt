@@ -18,7 +18,8 @@ import java.io.IOException
 // priestore — konzistentne so zobrazením.
 object UprightDecoder {
 
-    data class Result(val bitmap: Bitmap, val rotationDegrees: Int, val mirrored: Boolean)
+    // sample = inSampleSize dekódovania (pôvodné rozlíšenie ≈ bitmapa × sample), E1 veľkosť tváre
+    data class Result(val bitmap: Bitmap, val rotationDegrees: Int, val mirrored: Boolean, val sample: Int = 1)
 
     fun decode(path: String, maxSize: Int): Result? {
         val f = File(path)
@@ -41,7 +42,7 @@ object UprightDecoder {
             ExifInterface.ORIENTATION_NORMAL
         }
         if (orientation == ExifInterface.ORIENTATION_NORMAL || orientation == ExifInterface.ORIENTATION_UNDEFINED) {
-            return Result(raw, 0, false)
+            return Result(raw, 0, false, sample)
         }
 
         val m = Matrix()
@@ -56,13 +57,18 @@ object UprightDecoder {
                 mirrored = true
                 deg = 180
             }
+            // E1: 5/7 rovnako ako Glide (TransformationUtils: TRANSPOSE = otočenie o 90° a zrkadlenie,
+            // teda preklopenie podľa uhlopriečky (x, y) → (y, x); TRANSVERSE = −90° a zrkadlenie). Tu sa
+            // zrkadlí PRED otočením, preto TRANSPOSE = zrkadlenie + 270° a TRANSVERSE = zrkadlenie + 90°.
+            // Predtým to bolo naopak a obraz (aj rámčeky tvárí, box_space = 1) bol o 180° otočený oproti
+            // zobrazeniu; staré rámčeky preklopí FaceMetaBackfill (FaceBoxSpace).
             ExifInterface.ORIENTATION_TRANSPOSE -> {
                 mirrored = true
-                deg = 90
+                deg = 270
             }
             ExifInterface.ORIENTATION_TRANSVERSE -> {
                 mirrored = true
-                deg = 270
+                deg = 90
             }
         }
         if (mirrored) m.postScale(-1f, 1f)
@@ -70,9 +76,9 @@ object UprightDecoder {
         return try {
             val out = Bitmap.createBitmap(raw, 0, 0, raw.width, raw.height, m, true)
             if (out != raw) raw.recycle()
-            Result(out, deg, mirrored)
+            Result(out, deg, mirrored, sample)
         } catch (e: Throwable) {
-            Result(raw, 0, false) // pri nedostatku pamäte radšej neotočená než žiadna
+            Result(raw, 0, false, sample) // pri nedostatku pamäte radšej neotočená než žiadna
         }
     }
 

@@ -33,7 +33,8 @@ object AccuracyEstimate {
     private const val FIELDS = 9
     private const val PERCENT = 100
 
-    class Sample(val faceId: Long, val personId: Long, val vec: FloatArray)
+    // takenAt = dátum nasnímania (E1 vekové váhy, 0 = neznámy)
+    class Sample(val faceId: Long, val personId: Long, val vec: FloatArray, val takenAt: Long = KnnModel.UNKNOWN_DATE)
 
     // osoba [personId] sa najčastejšie plietla s [otherId]: [count] z jej [samples] vyhodnotených tvárí
     data class Confusion(val personId: Long, val otherId: Long, val count: Int, val samples: Int)
@@ -70,7 +71,7 @@ object AccuracyEstimate {
         val th = if (threshold > 0f) threshold else PersonGrouper.REFERENCE_THRESHOLD
         val tally = Tally(model, th, margin)
         val ranker = model.newRanker()
-        for (s in samples) tally.add(s, ranker.rank(s.vec, exclude = s.faceId))
+        for (s in samples) tally.add(s, ranker.rank(s.vec, exclude = s.faceId, takenAt = s.takenAt))
         return Result(
             samples.size, tally.auto, tally.correct, tally.uncertain, th,
             recommend(model, tally.rows), tally.confusions(), now,

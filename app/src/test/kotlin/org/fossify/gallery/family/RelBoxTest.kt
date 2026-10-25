@@ -49,11 +49,41 @@ class RelBoxTest {
         assertEquals(RelBox.Transform(0, true), RelBox.exifTransform(RelBox.EXIF_FLIP_HORIZONTAL))
         assertEquals(RelBox.Transform(180, false), RelBox.exifTransform(RelBox.EXIF_ROTATE_180))
         assertEquals(RelBox.Transform(180, true), RelBox.exifTransform(RelBox.EXIF_FLIP_VERTICAL))
-        assertEquals(RelBox.Transform(90, true), RelBox.exifTransform(RelBox.EXIF_TRANSPOSE))
+        assertEquals(RelBox.Transform(270, true), RelBox.exifTransform(RelBox.EXIF_TRANSPOSE))
         assertEquals(RelBox.Transform(90, false), RelBox.exifTransform(RelBox.EXIF_ROTATE_90))
-        assertEquals(RelBox.Transform(270, true), RelBox.exifTransform(RelBox.EXIF_TRANSVERSE))
+        assertEquals(RelBox.Transform(90, true), RelBox.exifTransform(RelBox.EXIF_TRANSVERSE))
         assertEquals(RelBox.Transform(270, false), RelBox.exifTransform(RelBox.EXIF_ROTATE_270))
         assertEquals(RelBox.Transform(0, false), RelBox.exifTransform(99))
+    }
+
+    // E1: EXIF 5 (TRANSPOSE) = preklopenie podľa hlavnej uhlopriečky (x, y) → (y, x), presne ako Glide
+    // (TransformationUtils: setRotate(90) + postScale(-1, 1)); EXIF 7 = podľa vedľajšej uhlopriečky
+    @Test
+    fun transposeAndTransverseMatchGlide() {
+        val src = RelBox(0.1f, 0.2f, 0.3f, 0.6f)
+        val t5 = RelBox.exifTransform(RelBox.EXIF_TRANSPOSE)
+        assertBox(RelBox(0.2f, 0.1f, 0.6f, 0.3f), src.transformed(t5.rotationDegrees, t5.mirrored))
+        val t7 = RelBox.exifTransform(RelBox.EXIF_TRANSVERSE)
+        assertBox(RelBox(0.4f, 0.7f, 0.8f, 0.9f), src.transformed(t7.rotationDegrees, t7.mirrored))
+        // stará (chybná) hypotéza v1 je o 180° otočená oproti správnej
+        val v1For5 = src.transformed(90, true)
+        assertBox(src.transformed(t5.rotationDegrees, t5.mirrored), v1For5.transformed(180, false))
+    }
+
+    // pixelový prepočet ako UprightDecoder.mapBox: surový bod (x, y) skončí pri EXIF 5 na (y, x)
+    @Test
+    fun transposePixelsLikeGlide() {
+        val rawW = 400
+        val rawH = 300
+        val t5 = RelBox.exifTransform(RelBox.EXIF_TRANSPOSE)
+        val mapped = mapBox(10, 20, 50, 80, rawW, rawH, t5.rotationDegrees, t5.mirrored)
+        assertArrayEquals(intArrayOf(20, 10, 80, 50), mapped)
+        val t7 = RelBox.exifTransform(RelBox.EXIF_TRANSVERSE)
+        // anti-transpozícia: (x, y) → (H − y, W − x)
+        assertArrayEquals(
+            intArrayOf(rawH - 80, rawW - 50, rawH - 20, rawW - 10),
+            mapBox(10, 20, 50, 80, rawW, rawH, t7.rotationDegrees, t7.mirrored),
+        )
     }
 
     // referenčný prepočet v pixeloch, prepísaný 1:1 z UprightDecoder.mapBox

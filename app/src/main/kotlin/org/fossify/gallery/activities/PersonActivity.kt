@@ -31,6 +31,7 @@ import org.fossify.gallery.adapters.PhotoPathsAdapter
 import org.fossify.gallery.databinding.ActivityPersonBinding
 import org.fossify.gallery.dialogs.ChangeSortingDialog
 import org.fossify.gallery.extensions.config
+import org.fossify.gallery.faces.AssignmentSource
 import org.fossify.gallery.faces.FaceCropLoader
 import org.fossify.gallery.faces.FaceEntity
 import org.fossify.gallery.faces.FaceMediaMeta
@@ -332,7 +333,12 @@ class PersonActivity : SimpleActivity() {
         if (personId < 0 || ids.isEmpty()) return
         FaceTaggingActivity.confirmSamePhoto(this, ids, personId, personName) {
             ensureBackgroundThread {
-                PeopleDatabase.getInstance(this).PeopleDao().assignFaces(ids, personId, System.currentTimeMillis())
+                // E2: potvrdená neistá tvár; istota = kNN skóre zo zdroja pravdy (ak je snímok ešte platný)
+                val scores = PeopleIndex.peek(this)?.uncertain?.get(personId).orEmpty()
+                    .mapNotNull { sc -> sc.face.id?.let { it to sc.score } }.toMap()
+                PeopleDatabase.getInstance(this).PeopleDao().assignFaces(
+                    ids, personId, System.currentTimeMillis(), AssignmentSource.AUTO_CONFIRMED, scores,
+                )
                 FamilyRecorder.facesAssigned(this, ids, personId)
                 runOnUiThread {
                     if (isDestroyed || isFinishing) return@runOnUiThread

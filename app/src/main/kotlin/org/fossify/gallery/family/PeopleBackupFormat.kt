@@ -22,7 +22,7 @@ import java.util.zip.ZipOutputStream
 //
 // Doplnené kľúče (balík A3, verzia ostáva 1 — staršia appka ich ignoruje), mimo op-logu, lebo ide
 // o lokálne rozhodnutia, ktoré sa medzi telefónmi neposielajú:
-//   "auto_assign":   [{"ck","boxes","uuid"}, …]  automatické priradenia tvárí
+//   "auto_assign":   [{"ck","boxes","uuid"[,"src","conf"]}, …]  automatické priradenia tvárí (E2: pôvod, istota)
 //   "cannot_links":  [{"ck","boxes","uuid"}, …]  „toto nie je táto osoba“
 //   "ignored_faces": [{"ck","boxes"}, …]          ignorované tváre
 // Obnova ich len dopĺňa (PeopleBackupExtras), nič neprepisuje.
@@ -58,8 +58,9 @@ object PeopleBackupFormat {
         val deviceId: String get() = deviceIdFor(id)
     }
 
-    // tvár (obsahový kľúč fotky + rámček) a rodinné UUID osoby
-    data class FaceLink(val face: FaceRef, val uuid: String)
+    // tvár (obsahový kľúč fotky + rámček) a rodinné UUID osoby; E2: pôvod a istota automatického priradenia
+    // (doplnené kľúče "src"/"conf", nepovinné — staršie zálohy ich nemajú)
+    data class FaceLink(val face: FaceRef, val uuid: String, val source: String? = null, val confidence: Float? = null)
 
     // lokálne rozhodnutia mimo op-logu (A3)
     data class Extras(

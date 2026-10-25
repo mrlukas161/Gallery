@@ -3,6 +3,7 @@ package org.fossify.gallery.family
 import android.content.Context
 import org.fossify.gallery.faces.ExtrasDatabase
 import org.fossify.gallery.faces.FacesDatabase
+import org.fossify.gallery.faces.MergeUndo
 import org.fossify.gallery.faces.PeopleDatabase
 import org.fossify.gallery.faces.PeopleIndex
 import java.io.Closeable
@@ -140,7 +141,12 @@ class OpRecorder(context: Context, private val clock: () -> Long = System::curre
     fun facesAssigned(faceIds: List<Long>, localId: Long) {
         if (faceIds.isEmpty()) return
         val uuid = uuidFor(localId)
-        faceDao.getFacesByIds(faceIds).forEach { f -> faces.refFor(f)?.let { append(AssignFace(it, uuid, true)) } }
+        // E2: pôvod priradenia sa pošle ako informácia (AssignFace.source)
+        val sources = faceIds.chunked(MergeUndo.ID_CHUNK).flatMap { people.getAssignmentsForFaces(it) }
+            .associate { it.faceId to it.source }
+        faceDao.getFacesByIds(faceIds).forEach { f ->
+            faces.refFor(f)?.let { append(AssignFace(it, uuid, true, f.id?.let { id -> sources[id] })) }
+        }
         anchors.markDirty(listOf(localId))
     }
 

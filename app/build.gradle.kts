@@ -36,6 +36,8 @@ android {
         targetSdk = project.libs.versions.app.build.targetSDK.get().toInt()
         versionName = project.property("VERSION_NAME").toString()
         versionCode = project.property("VERSION_CODE").toString().toInt()
+        // E: migračné testy Room (app/src/androidTest) bežia na emulátore
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
         ndk {
             // len arm64 (Xiaomi 15) — drží APK malé, nech MediaPipe natívne knižnice
@@ -102,6 +104,9 @@ android {
     sourceSets {
         getByName("main").java.directories.add("src/main/kotlin")
         getByName("test").java.directories.add("src/test/kotlin")
+        getByName("androidTest").java.directories.add("src/androidTest/kotlin")
+        // MigrationTestHelper číta exportované schémy (app/schemas) z assets testovacieho APK
+        getByName("androidTest").assets.directories.add("$projectDir/schemas")
     }
 
     compileOptions {
@@ -211,5 +216,9 @@ dependencies {
     testImplementation("junit:junit:4.13.2")
     // skutočné org.json pre JVM unit testy (v android.jar sú len prázdne náhrady)
     testImplementation("org.json:json:20240303")
+    // E: migračné testy Room (MigrationTestHelper) na emulátore
+    androidTestImplementation(libs.androidx.room.testing)
+    androidTestImplementation(libs.androidx.test.runner)
+    androidTestImplementation(libs.androidx.test.ext.junit)
     detektPlugins(libs.compose.detekt)
 }

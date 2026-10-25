@@ -26,7 +26,8 @@ interface ExtrasTarget {
 }
 
 sealed interface ExtrasAction {
-    data class AutoAssign(val faceId: Long, val personId: Long) : ExtrasAction
+    // E2: confidence = istota zo zálohy (nepovinná); zapisuje sa s pôvodom „restore“
+    data class AutoAssign(val faceId: Long, val personId: Long, val confidence: Float? = null) : ExtrasAction
 
     data class CannotLink(val faceId: Long, val personId: Long) : ExtrasAction
 
@@ -103,7 +104,7 @@ object PeopleBackupExtras {
                 target.isCannot(face, person) || (face to person) in cannot -> kept()
                 else -> {
                     assigned.add(face)
-                    actions.add(ExtrasAction.AutoAssign(face, person))
+                    actions.add(ExtrasAction.AutoAssign(face, person, link.confidence))
                     report = report.copy(auto = report.auto + 1)
                 }
             }
@@ -120,6 +121,8 @@ internal object PeopleBackupExtrasJson {
     private const val K_CK = "ck"
     private const val K_BOXES = "boxes"
     private const val K_UUID = "uuid"
+    private const val K_SOURCE = "src"
+    private const val K_CONFIDENCE = "conf"
     private const val BOX_VALUES = 4
     private const val LEFT = 0
     private const val TOP = 1
@@ -143,7 +146,12 @@ internal object PeopleBackupExtrasJson {
         return JSONObject().put(K_CK, f.contentKey).put(K_BOXES, JSONArray(boxes))
     }
 
-    private fun linkJson(l: PeopleBackupFormat.FaceLink): JSONObject = faceJson(l.face).put(K_UUID, l.uuid)
+    private fun linkJson(l: PeopleBackupFormat.FaceLink): JSONObject {
+        val o = faceJson(l.face).put(K_UUID, l.uuid)
+        l.source?.let { o.put(K_SOURCE, it) }
+        l.confidence?.let { o.put(K_CONFIDENCE, it.toDouble()) }
+        return o
+    }
 
     private fun face(o: JSONObject): FaceRef? {
         val key = o.optString(K_CK)
@@ -161,7 +169,9 @@ internal object PeopleBackupExtrasJson {
 
     private fun links(arr: JSONArray?): List<PeopleBackupFormat.FaceLink> = items(arr) { o ->
         val uuid = o.optString(K_UUID)
-        if (uuid.isEmpty()) null else face(o)?.let { PeopleBackupFormat.FaceLink(it, uuid) }
+        val source = if (o.has(K_SOURCE) && !o.isNull(K_SOURCE)) o.optString(K_SOURCE) else null
+        val confidence = o.optDouble(K_CONFIDENCE).takeIf { o.has(K_CONFIDENCE) && !it.isNaN() }?.toFloat()
+        if (uuid.isEmpty()) null else face(o)?.let { PeopleBackupFormat.FaceLink(it, uuid, source, confidence) }
     }
 
     private fun <T> items(arr: JSONArray?, parse: (JSONObject) -> T?): List<T> {

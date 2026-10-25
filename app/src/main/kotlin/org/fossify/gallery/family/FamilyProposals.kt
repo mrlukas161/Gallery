@@ -1,9 +1,11 @@
 package org.fossify.gallery.family
 
 import android.content.Context
+import org.fossify.gallery.faces.AssignmentSource
 import org.fossify.gallery.faces.ExtrasDatabase
 import org.fossify.gallery.faces.FaceAssignmentEntity
 import org.fossify.gallery.faces.PeopleDatabase
+import org.fossify.gallery.helpers.PersonMerges
 
 // Rozhodnutia o návrhoch z druhého telefónu (lišta a zoznam v Ľuďoch). Volá sa len z pozadia.
 // Do people.db/extras.db zapisuje len cez existujúce DAO metódy a len na výslovné rozhodnutie
@@ -49,14 +51,18 @@ class FamilyProposals(context: Context) {
             }
             is SameNameProposal -> linkSameName(p, persons)
             is MergeProposal -> if (persons.containsKey(p.fromLocalId) && persons.containsKey(p.toLocalId)) {
-                people.mergeManyInto(listOf(p.fromLocalId), p.toLocalId)
-                extras.moveMemberships(p.fromLocalId, p.toLocalId)
+                // E2: so záznamom na vrátenie (merge_log), skupiny sa presunú tiež
+                check(PersonMerges.merge(app, listOf(p.fromLocalId), p.toLocalId)) { "zlúčenie osôb zlyhalo" }
                 // vlastné zlúčenie = alias UUID (a druhý telefón sa dozvie, že sme to prijali)
                 OpRecorder(app).append(PersonMerge(p.fromUuid, p.toUuid))
             }
 
             is FaceMoveProposal -> if (persons.containsKey(p.toLocalId)) {
-                people.upsertAssignment(FaceAssignmentEntity(p.faceId, p.toLocalId, true, System.currentTimeMillis()))
+                people.upsertAssignment(
+                    FaceAssignmentEntity(
+                        p.faceId, p.toLocalId, true, System.currentTimeMillis(), AssignmentSource.FAMILY,
+                    )
+                )
             }
 
             is FaceRemoveProposal -> people.rejectFacesForPerson(listOf(p.faceId), p.localId)

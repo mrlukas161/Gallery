@@ -1,6 +1,7 @@
 package org.fossify.gallery.family
 
 import android.content.Context
+import org.fossify.gallery.faces.AssignmentSource
 import org.fossify.gallery.faces.AnchorEmbeddingEntity
 import org.fossify.gallery.faces.ExtrasDao
 import org.fossify.gallery.faces.ExtrasDatabase
@@ -179,7 +180,13 @@ class LocalActionSink(context: Context, private val state: LocalFamilyState, pri
             is ApplyAction.CreatePerson -> createPerson(action, op)
             is ApplyAction.RenamePerson -> renamePerson(action, op)
             is ApplyAction.Assign -> {
-                val entity = FaceAssignmentEntity(action.faceId, action.localId, action.manual, clock())
+                // E2: pôvod — obnova zálohy osôb (F6) je „restore“, inak prepojený telefón
+                val source = if (PeopleBackupFormat.isBackupDevice(op.deviceId)) {
+                    AssignmentSource.RESTORE
+                } else {
+                    AssignmentSource.FAMILY
+                }
+                val entity = FaceAssignmentEntity(action.faceId, action.localId, action.manual, clock(), source)
                 people.upsertAssignment(entity)
                 state.onAssignmentChanged(action.faceId, entity)
                 // D6: pôvod priradenia (obnova zálohy osôb je vlastná, nie cudzia)

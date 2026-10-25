@@ -1,11 +1,13 @@
 package org.fossify.gallery.family
 
+import org.fossify.gallery.faces.FaceBoxSpace
+
 // Spárovanie tváre z druhého telefónu (FaceRef) s lokálnou tvárou na tej istej fotke.
 // Čistá logika bez Androidu (testovaná vo FaceMatchTest).
 //
 // Rámčeky vo faces.db sú v priestore bitmapy z UprightDecoder.decode(path, 1024). Staré záznamy
-// (pred 0.47) na fotkách s EXIF otočením môžu byť v neotočenom priestore a DB to nerozlišuje
-// (pozri RefreshFaces.matchOldFaces). Preto pri otočenej fotke vzniknú DVE hypotézy rámčeka
+// (pred 0.47) na fotkách s EXIF otočením môžu byť v neotočenom priestore; od faces.db v3 to rozlišuje
+// box_space (E1, FaceBoxSpace). Len pri neznámom priestore a otočenej fotke vzniknú DVE hypotézy rámčeka
 // (upright aj surová) a tvár sa spáruje len vtedy, keď zhoda vyjde jednoznačne.
 object FaceMatch {
     // rovnaký limit dekódovania ako FaceIndexer/RefreshFaces/FaceCropLoader (MAX_DECODE_SIZE)
@@ -21,7 +23,11 @@ object FaceMatch {
     const val AMBIGUITY_MARGIN = 0.05f
 
     // Relatívne rámčeky uloženého rámčeka (FaceEntity.bbox*) fotky rawWidth × rawHeight (hlavička súboru)
-    // s EXIF transformáciou. Prvý je upright hypotéza; pri otočení/zrkadlení pribudne surová.
+    // s EXIF transformáciou. Prvý je upright hypotéza; pri otočení/zrkadlení a neznámom priestore
+    // (boxSpace = FaceBoxSpace.UNKNOWN) pribudne surová. Pri známom priestore (E1) je hypotéza jediná.
+    // Upright v1 na fotke s EXIF 5/7 je o 180° otočený oproti v2 (oprava UprightDecoder) — prevedie sa na v2;
+    // neznámy priestor na fotke 5/7 je upright v1 alebo surový (v2 rámčeky majú vždy box_space = 2).
+    @Suppress("LongParameterList")
     fun relBoxes(
         left: Int,
         top: Int,
@@ -30,10 +36,20 @@ object FaceMatch {
         rawWidth: Int,
         rawHeight: Int,
         transform: RelBox.Transform,
+        boxSpace: Int = FaceBoxSpace.UNKNOWN,
     ): List<RelBox> {
         if (rawWidth <= 0 || rawHeight <= 0) return emptyList()
         val upright = RelBox.decodedUprightSize(rawWidth, rawHeight, DECODE_MAX_SIZE, transform.rotationDegrees)
-        val asUpright = RelBox.fromAbsolute(left, top, right, bottom, upright[0], upright[1])
+        val v2 = if (boxSpace == FaceBoxSpace.UPRIGHT_V2) {
+            intArrayOf(left, top, right, bottom)
+        } else {
+            FaceBoxSpace.toV2(
+                intArrayOf(left, top, right, bottom), FaceBoxSpace.UPRIGHT_V1, FaceBoxSpace.isTransposed(transform),
+                upright[0], upright[1],
+            )
+        }
+        val asUpright = RelBox.fromAbsolute(v2[0], v2[1], v2[2], v2[v2.size - 1], upright[0], upright[1])
+        if (FaceBoxSpace.isKnown(boxSpace)) return listOf(asUpright)
         if (transform.rotationDegrees == 0 && !transform.mirrored) return listOf(asUpright)
         val raw = RelBox.decodedUprightSize(rawWidth, rawHeight, DECODE_MAX_SIZE, 0)
         val asRaw = RelBox.fromAbsolute(left, top, right, bottom, raw[0], raw[1])
