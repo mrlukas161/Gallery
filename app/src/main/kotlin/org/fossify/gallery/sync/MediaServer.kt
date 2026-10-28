@@ -54,7 +54,14 @@ class MediaServer(
 
         // strop na počet fotiek v jednej požiadavke na zmazanie (PC posiela dávky po desiatkach)
         private const val MAX_DELETE_IDS = 1000
+
+        // strop na telo /api/delete (1000 id sa zmestí s rezervou) — parseBody inak načíta celé telo do pamäte
+        private const val MAX_DELETE_BODY_BYTES = 64L * 1024
     }
+
+    // jedno mazanie naraz: NanoHTTPD obsluhuje každé spojenie vo vlastnom vlákne a dve súbežné
+    // požiadavky s rovnakým id by kopírovali do toho istého súboru v Koši
+    private val deleteLock = Any()
 
     data class Item(
         val id: Long,
@@ -295,30 +302,40 @@ class MediaServer(
     // mazanie z PC porovnávača priamo v mobile (do Koša podľa nastavenia) — len po potvrdení na PC
     private fun handleDelete(session: IHTTPSession): Response {
         if (session.method != Method.POST) return json(Status.METHOD_NOT_ALLOWED, """{"error":"use POST"}""")
+        // veľkosť tela over PRED parseBody (ten číta celé telo bez limitu); telo ostáva neprečítané,
+        // preto spojenie zavrieť (Connection: close) — inak by zvyšok tela skazil ďalšiu požiadavku na keep-alive
+        when (IndexDiff.deleteBodyReject(session.headers["content-length"], MAX_DELETE_BODY_BYTES)) {
+            411 -> return json(Status.LENGTH_REQUIRED, """{"error":"missing Content-Length"}""").also { it.closeConnection(true) }
+            413 -> return json(Status.PAYLOAD_TOO_LARGE, """{"error":"body too large"}""").also { it.closeConnection(true) }
+        }
         // telo prečítať vždy, aj pri 409: neprečítané by na keep-alive spojení skazilo ďalšiu požiadavku (400)
         val files = HashMap<String, String>()
         session.parseBody(files)
         if (!PcDeleter.canDelete()) return json(Status.CONFLICT, """{"error":"no_all_files_access"}""")
         val body = files["postData"].orEmpty()
+        // Throwable: hlboko vnorený JSON hodí StackOverflowError, ktorý by inak zhodil vlákno servera aj appku
         val arr = try {
             JSONObject(body).getJSONArray("ids")
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             return json(Status.BAD_REQUEST, """{"error":"bad body"}""")
         }
         if (arr.length() > MAX_DELETE_IDS) return json(Status.BAD_REQUEST, """{"error":"too many ids"}""")
-        val failed = JSONObject()
-        val items = ArrayList<Item>()
-        // duplicitné id by sa mazalo dvakrát (druhýkrát by skončilo ako „missing“ vo failed)
-        for (id in IndexDiff.uniqueIds((0 until arr.length()).map { arr.optLong(it, -1L) })) {
-            val item = index[id]
-            if (item == null) failed.put(id.toString(), "unknown id") else items.add(item)
+        // jedno mazanie naraz (rovnaké id v dvoch súbežných požiadavkách)
+        synchronized(deleteLock) {
+            val failed = JSONObject()
+            val items = ArrayList<Item>()
+            // duplicitné id by sa mazalo dvakrát (druhýkrát by skončilo ako „missing“ vo failed)
+            for (id in IndexDiff.uniqueIds((0 until arr.length()).map { arr.optLong(it, -1L) })) {
+                val item = index[id]
+                if (item == null) failed.put(id.toString(), "unknown id") else items.add(item)
+            }
+            val r = PcDeleter.delete(appContext, items)
+            r.failed.forEach { (id, msg) -> failed.put(id.toString(), msg) }
+            val gonePaths = items.filter { it.id in r.deleted }.map { it.path }
+            if (gonePaths.isNotEmpty()) SyncStore.removeMarked(syncPrefs, gonePaths)
+            rebuildIndex()
+            return json(Status.OK, JSONObject().put("deleted", JSONArray(r.deleted)).put("failed", failed).put("recycleBin", r.toRecycleBin).toString())
         }
-        val r = PcDeleter.delete(appContext, items)
-        r.failed.forEach { (id, msg) -> failed.put(id.toString(), msg) }
-        val gonePaths = items.filter { it.id in r.deleted }.map { it.path }
-        if (gonePaths.isNotEmpty()) SyncStore.removeMarked(syncPrefs, gonePaths)
-        rebuildIndex()
-        return json(Status.OK, JSONObject().put("deleted", JSONArray(r.deleted)).put("failed", failed).put("recycleBin", r.toRecycleBin).toString())
     }
 
     // ---------- SYNC MANAŽÉR: skupiny, značky na zmazanie, evidencia stiahnutých ----------
@@ -632,6 +649,20 @@ object IndexDiff {
 
     // duplicity preč, poradie zachovať
     fun uniqueIds(ids: List<Long>): List<Long> = LinkedHashSet(ids).toList()
+
+    // rozhodnutie o tele /api/delete podľa hlavičky Content-Length: null = v poriadku (telo sa smie čítať),
+    // 411 = dĺžka chýba / je neplatná, 413 = telo je väčšie než strop
+    fun deleteBodyReject(contentLength: String?, max: Long): Int? {
+        val len = contentLength?.trim()?.toLongOrNull()
+        return when {
+            len == null || len < 0 -> 411
+            len > max -> 413
+            else -> null
+        }
+    }
+
+    // stačí voľné miesto na kópiu súboru + rezervu? free < 0 = nezistené -> nebrániť
+    fun hasRoomForCopy(free: Long, size: Long, reserve: Long): Boolean = free < 0 || free >= size.coerceAtLeast(0) + reserve
 
     // kľúče nastavení, po ktorých sa zmení rozsah indexu (IndexScope): vylúčené/zahrnuté priečinky a
     // ochrana priečinka PIN-om/heslom (commons BaseConfig: protected_folder_hash_<cesta>, protected_folder_type_<cesta>)

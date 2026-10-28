@@ -23,6 +23,9 @@ import java.io.File
 object PcDeleter {
     data class Result(val deleted: List<Long>, val failed: Map<Long, String>, val toRecycleBin: Boolean)
 
+    // rezerva voľného miesta v cieli Koša, aby kopírovanie nezaplnilo telefón do nuly
+    private const val BIN_SPACE_RESERVE = 50L * 1024 * 1024
+
     fun canDelete(): Boolean = Build.VERSION.SDK_INT < Build.VERSION_CODES.R || Environment.isExternalStorageManager()
 
     fun delete(context: Context, items: List<MediaServer.Item>): Result {
@@ -43,7 +46,20 @@ object PcDeleter {
                 if (useBin) {
                     val target = File(context.recycleBinPath, item.path)
                     val lastModified = file.lastModified()
-                    if (!file.copyRecursively(target, true) || target.length() != file.length()) {
+                    // veľkosť zdroja raz pred kopírovaním — porovnáva sa s ňou aj pri zmene originálu počas kopírovania
+                    val size = file.length()
+                    // plné úložisko: kopírovanie by zlyhalo uprostred a v Koši by ostala čiastočná kópia
+                    if (!IndexDiff.hasRoomForCopy(freeSpaceAt(File(context.recycleBinPath)), size, BIN_SPACE_RESERVE)) {
+                        failed[item.id] = "no space"
+                        continue
+                    }
+                    // akékoľvek zlyhanie (výnimka, false, nezhoda veľkosti) zmaže čiastočnú kópiu; originál sa nedotkne
+                    val copied = try {
+                        file.copyRecursively(target, true) && target.length() == size
+                    } catch (e: Throwable) {
+                        false
+                    }
+                    if (!copied) {
                         target.delete()
                         failed[item.id] = "copy failed"
                         continue
@@ -71,6 +87,14 @@ object PcDeleter {
             }
         }
         return Result(deleted, failed, useBin)
+    }
+
+    // voľné miesto na najbližšom existujúcom predkovi (priečinok Koša sa zakladá až pri prvom kopírovaní);
+    // -1 = nedá sa zistiť -> kontrola sa preskočí
+    private fun freeSpaceAt(dir: File): Long {
+        var d: File? = dir
+        while (d != null && !d.exists()) d = d.parentFile
+        return d?.usableSpace ?: -1L
     }
 
     // fotka, ktorú Galéria+ ešte nemala v DB (napr. práve odfotená a v appke neotvorená), by po presune

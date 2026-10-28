@@ -34,6 +34,11 @@ class HttpSyncService : Service() {
     @Volatile
     private var starting = false
 
+    // táto inštancia služby už bola zastavená (stopEverything / onDestroy); globálne isRunning patrí aj
+    // novej inštancii, takže štartovacie vlákno staršej inštancie sa naň spoliehať nesmie
+    @Volatile
+    private var stopped = false
+
     // zmeny v MediaStore (nová fotka z Fotoaparátu, zmazanie) -> po 1 s ticha obnov zoznam servera,
     // aby PC videlo novú fotku hneď (bez toho server poznal len fotky spred svojho spustenia)
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -105,9 +110,18 @@ class HttpSyncService : Service() {
                         }
                     }
                     s.start(NanoHTTPD.SOCKET_READ_TIMEOUT, false)
+                    // štart trvá sekundy (prvý prepočet indexu) — medzitým sa služba mohla zastaviť (Štart -> Stop);
+                    // server vtedy nepriraďovať ani nič nehlásiť, inak by osirel na porte a rušil nový beh
+                    if (stopped) {
+                        try {
+                            s.stop()
+                        } catch (ignored: Throwable) {
+                        }
+                        return@ensureBackgroundThread
+                    }
                     server = s
                     mainHandler.post {
-                        if (server === s && isRunning) {
+                        if (server === s && !stopped) {
                             registerMediaObserver()
                             // fotka nasnímaná medzi prvým prepočtom a registráciou observera by sa inak neukázala
                             ensureBackgroundThread {
@@ -129,7 +143,8 @@ class HttpSyncService : Service() {
                     // obsadený port, zakázaný socket… — NIE ticho zhasnúť, ale povedať prečo
                     val reason = e.message?.take(120) ?: e.javaClass.simpleName
                     Handler(Looper.getMainLooper()).post {
-                        failWith(getString(R.string.a3_pc_server_start_failed, reason))
+                        // zastavená inštancia nemá prepisovať stav novej
+                        if (!stopped) failWith(getString(R.string.a3_pc_server_start_failed, reason))
                     }
                 } finally {
                     starting = false
@@ -162,6 +177,7 @@ class HttpSyncService : Service() {
     }
 
     private fun stopEverything() {
+        stopped = true
         unregisterMediaObserver()
         try {
             server?.stop()
@@ -176,6 +192,7 @@ class HttpSyncService : Service() {
     }
 
     override fun onDestroy() {
+        stopped = true
         unregisterMediaObserver()
         try {
             server?.stop()
