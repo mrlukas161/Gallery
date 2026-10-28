@@ -67,4 +67,21 @@ class MediaServerLogicTest {
     @Test fun nezistene_volne_miesto_kopiu_nebrani() {
         assertTrue(IndexDiff.hasRoomForCopy(-1, 1000, 50L * 1024 * 1024))
     }
+
+    @Test fun exif_orientacia_na_uhol_a_zrkadlenie() {
+        assertEquals(ExifOrient.T(0, false), ExifOrient.of(1))
+        assertEquals(ExifOrient.T(0, true), ExifOrient.of(2))
+        assertEquals(ExifOrient.T(180, false), ExifOrient.of(3))
+        assertEquals(ExifOrient.T(180, true), ExifOrient.of(4))
+        assertEquals(ExifOrient.T(90, true), ExifOrient.of(5))
+        assertEquals(ExifOrient.T(90, false), ExifOrient.of(6))
+        assertEquals(ExifOrient.T(270, true), ExifOrient.of(7))
+        assertEquals(ExifOrient.T(270, false), ExifOrient.of(8))
+    }
+
+    @Test fun exif_neznama_orientacia_bez_otocenia() {
+        assertEquals(ExifOrient.T(0, false), ExifOrient.of(0))
+        assertEquals(ExifOrient.T(0, false), ExifOrient.of(9))
+        assertEquals(ExifOrient.T(0, false), ExifOrient.of(-1))
+    }
 }

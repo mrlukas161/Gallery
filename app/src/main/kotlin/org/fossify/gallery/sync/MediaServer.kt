@@ -5,10 +5,12 @@ import android.content.Context
 import android.content.SharedPreferences
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.Matrix
 import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.os.StatFs
 import android.provider.MediaStore
+import androidx.exifinterface.media.ExifInterface
 import org.json.JSONArray
 import org.json.JSONObject
 import fi.iki.elonen.NanoHTTPD
@@ -452,9 +454,35 @@ class MediaServer(
                 inPreferredConfig = Bitmap.Config.ARGB_8888
             }
             val bmp = resolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, opts) } ?: return null
-            scaleToMax(bmp, maxPx)
+            // najprv zmenši (lacnejšie), potom otoč podľa EXIF — BitmapFactory orientáciu ignoruje
+            // a zvislé fotky by prišli do PC otočené na bok
+            applyExifOrientation(scaleToMax(bmp, maxPx), uri)
         } catch (e: Throwable) {
             null
+        }
+    }
+
+    // EXIF orientácia (1–8) z uri; pri akejkoľvek chybe čítania 1 = bez otočenia
+    private fun readExifOrientation(uri: Uri): Int = try {
+        resolver.openInputStream(uri)?.use {
+            ExifInterface(it).getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL)
+        } ?: ExifInterface.ORIENTATION_NORMAL
+    } catch (e: Throwable) {
+        ExifInterface.ORIENTATION_NORMAL
+    }
+
+    private fun applyExifOrientation(bmp: Bitmap, uri: Uri): Bitmap {
+        val t = ExifOrient.of(readExifOrientation(uri))
+        if (t.degrees == 0 && !t.mirror) return bmp
+        return try {
+            val m = Matrix()
+            m.setRotate(t.degrees.toFloat())
+            if (t.mirror) m.postScale(-1f, 1f)
+            val out = Bitmap.createBitmap(bmp, 0, 0, bmp.width, bmp.height, m, true)
+            if (out !== bmp) bmp.recycle()
+            out
+        } catch (e: Throwable) {
+            bmp // pri nedostatku pamäte radšej neotočený náhľad než žiadny
         }
     }
 
@@ -636,6 +664,24 @@ class MediaServer(
         name: String, mime: String, sizeHint: Long,
         writer: (java.io.OutputStream) -> Unit,
     ): Pair<String, String>? = saveMediaScoped(appContext, name, mime, SAVE_SUBDIR, writer)
+}
+
+// EXIF orientácia (1–8) -> (uhol v smere hodín, potom zrkadlenie vodorovne). Čistá logika, testovateľná na JVM.
+// Poradie „najprv otoč, potom zrkadli" je rovnaké ako v Glide (TransformationUtils), teda ako zobrazenie
+// v appke: 5 (transpose) = otoč 90° + zrkadli, 7 (transverse) = otoč 270° + zrkadli.
+object ExifOrient {
+    data class T(val degrees: Int, val mirror: Boolean)
+
+    fun of(orientation: Int): T = when (orientation) {
+        ExifInterface.ORIENTATION_FLIP_HORIZONTAL -> T(0, true)
+        ExifInterface.ORIENTATION_ROTATE_180 -> T(180, false)
+        ExifInterface.ORIENTATION_FLIP_VERTICAL -> T(180, true)
+        ExifInterface.ORIENTATION_TRANSPOSE -> T(90, true)
+        ExifInterface.ORIENTATION_ROTATE_90 -> T(90, false)
+        ExifInterface.ORIENTATION_TRANSVERSE -> T(270, true)
+        ExifInterface.ORIENTATION_ROTATE_270 -> T(270, false)
+        else -> T(0, false) // 1 = bez otočenia, 0 a neznáme hodnoty tiež
+    }
 }
 
 // čistá logika živého zoznamu (bez Androidu -> testovateľná)
