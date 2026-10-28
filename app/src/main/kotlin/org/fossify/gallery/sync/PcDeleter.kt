@@ -29,6 +29,9 @@ object PcDeleter {
         val useBin = context.config.useRecycleBin
         val deleted = ArrayList<Long>()
         val failed = LinkedHashMap<Long, String>()
+        // cesty známe v DB Galérie+ po priečinkoch, načítané raz na priečinok (celý Camera naraz do pamäte
+        // pre každú fotku by pri dávke zbytočne zaťažil telefón)
+        val knownByParent = HashMap<String, HashSet<String>>()
         for (item in items) {
             try {
                 val file = File(item.path)
@@ -46,7 +49,7 @@ object PcDeleter {
                         continue
                     }
                     if (context.config.keepLastModified && lastModified != 0L) target.setLastModified(lastModified)
-                    ensureMediumRow(context, item, file)
+                    ensureMediumRow(context, item, file, knownByParent)
                     context.mediaDB.updateDeleted("$RECYCLE_BIN${item.path}", System.currentTimeMillis(), item.path)
                     binFile = target
                 }
@@ -72,9 +75,10 @@ object PcDeleter {
 
     // fotka, ktorú Galéria+ ešte nemala v DB (napr. práve odfotená a v appke neotvorená), by po presune
     // do Koša v Koši nebola vidno — preto riadok najprv založiť
-    private fun ensureMediumRow(context: Context, item: MediaServer.Item, file: File) {
+    private fun ensureMediumRow(context: Context, item: MediaServer.Item, file: File, knownByParent: HashMap<String, HashSet<String>>) {
         val parent = item.path.getParentPath()
-        if (context.mediaDB.getMediaFromPath(parent).any { it.path == item.path }) return
+        val known = knownByParent.getOrPut(parent) { context.mediaDB.getMediaFromPath(parent).mapTo(HashSet()) { it.path } }
+        if (!known.add(item.path)) return
         val type = when {
             item.mime.startsWith("video/") -> TYPE_VIDEOS
             item.mime == "image/gif" -> TYPE_GIFS

@@ -1170,6 +1170,8 @@ class SettingsActivity : SimpleActivity() {
         override fun run() {
             if (isDestroyed || isFinishing) return
             refreshIndexOverview()
+            // server sa mohol sám zastaviť (zámok po zlých PIN-och) -> text „Beží“ nenechať zastaraný
+            updatePcServerSummary()
             binding.settingsIndexOverviewSummary.postDelayed(this, 1500)
         }
     }

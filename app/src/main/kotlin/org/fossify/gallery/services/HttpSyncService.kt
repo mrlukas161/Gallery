@@ -106,7 +106,25 @@ class HttpSyncService : Service() {
                     }
                     s.start(NanoHTTPD.SOCKET_READ_TIMEOUT, false)
                     server = s
-                    mainHandler.post { registerMediaObserver() }
+                    mainHandler.post {
+                        if (server === s && isRunning) {
+                            registerMediaObserver()
+                            // fotka nasnímaná medzi prvým prepočtom a registráciou observera by sa inak neukázala
+                            ensureBackgroundThread {
+                                try {
+                                    s.refreshIndex()
+                                } catch (ignored: Throwable) {
+                                }
+                            }
+                        } else {
+                            // služba sa medzičasom zastavila (ACTION_STOP / zámok) -> server nenechať bežať osirelý
+                            try {
+                                s.stop()
+                            } catch (ignored: Throwable) {
+                            }
+                            if (server === s) server = null
+                        }
+                    }
                 } catch (e: Throwable) {
                     // obsadený port, zakázaný socket… — NIE ticho zhasnúť, ale povedať prečo
                     val reason = e.message?.take(120) ?: e.javaClass.simpleName

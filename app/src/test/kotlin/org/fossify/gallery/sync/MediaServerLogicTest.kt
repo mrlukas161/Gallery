@@ -26,4 +26,17 @@ class MediaServerLogicTest {
     @Test fun since_vrati_len_novsie_alebo_rovnake() {
         assertEquals(listOf(9L, 12L), IndexDiff.since(listOf(5L, 9L, 12L), 9L) { it })
     }
+
+    @Test fun unikatne_id_zachovaju_poradie() {
+        assertEquals(listOf(7L, 3L, 9L), IndexDiff.uniqueIds(listOf(7L, 3L, 7L, 9L, 3L)))
+    }
+
+    @Test fun kluce_rozsahu_su_vylucene_zahrnute_a_zamknute_priecinky() {
+        assertTrue(IndexDiff.isScopeKey("excluded_folders"))
+        assertTrue(IndexDiff.isScopeKey("included_folders"))
+        assertTrue(IndexDiff.isScopeKey("protected_folder_hash_/storage/emulated/0/DCIM/Sukromne"))
+        assertTrue(IndexDiff.isScopeKey("protected_folder_type_/storage/emulated/0/DCIM/Sukromne"))
+        assertFalse(IndexDiff.isScopeKey("use_recycle_bin"))
+        assertFalse(IndexDiff.isScopeKey("sort_order"))
+    }
 }
