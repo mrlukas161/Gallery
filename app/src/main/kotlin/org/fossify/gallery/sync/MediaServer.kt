@@ -107,6 +107,7 @@ class MediaServer(
                 "/api/file" -> handleFile(session)
                 "/api/thumb" -> handleThumb(session)
                 "/api/upload" -> handleUpload(session)
+                "/api/delete" -> handleDelete(session)
                 "/api/groups" -> handleGroups()
                 "/api/state" -> handleState()
                 "/api/mark" -> handleMark(session)
@@ -155,8 +156,7 @@ class MediaServer(
             .put("count", index.size)
             .put("gen", generation)
             .put("newest", newestMtime)
-            // v M3 sa nahradí PcDeleter.canDelete()
-            .put("allFiles", android.os.Build.VERSION.SDK_INT < 30 || android.os.Environment.isExternalStorageManager())
+            .put("allFiles", PcDeleter.canDelete())
             .put("recycleBin", appContext.config.useRecycleBin)
         return json(Status.OK, o.toString())
     }
@@ -255,6 +255,33 @@ class MediaServer(
         } ?: return json(Status.INTERNAL_ERROR, """{"error":"save failed"}""")
         rebuildIndex()
         return json(Status.OK, JSONObject().put("saved", saved.first).put("uri", saved.second).toString())
+    }
+
+    // mazanie z PC porovnávača priamo v mobile (do Koša podľa nastavenia) — len po potvrdení na PC
+    private fun handleDelete(session: IHTTPSession): Response {
+        if (session.method != Method.POST) return json(Status.METHOD_NOT_ALLOWED, """{"error":"use POST"}""")
+        if (!PcDeleter.canDelete()) return json(Status.CONFLICT, """{"error":"no_all_files_access"}""")
+        val files = HashMap<String, String>()
+        session.parseBody(files)
+        val body = files["postData"].orEmpty()
+        val arr = try {
+            JSONObject(body).getJSONArray("ids")
+        } catch (e: Exception) {
+            return json(Status.BAD_REQUEST, """{"error":"bad body"}""")
+        }
+        val failed = JSONObject()
+        val items = ArrayList<Item>()
+        for (i in 0 until arr.length()) {
+            val id = arr.optLong(i, -1L)
+            val item = index[id]
+            if (item == null) failed.put(id.toString(), "unknown id") else items.add(item)
+        }
+        val r = PcDeleter.delete(appContext, items)
+        r.failed.forEach { (id, msg) -> failed.put(id.toString(), msg) }
+        val gonePaths = items.filter { it.id in r.deleted }.map { it.path }
+        if (gonePaths.isNotEmpty()) SyncStore.removeMarked(syncPrefs, gonePaths)
+        rebuildIndex()
+        return json(Status.OK, JSONObject().put("deleted", JSONArray(r.deleted)).put("failed", failed).put("recycleBin", r.toRecycleBin).toString())
     }
 
     // ---------- SYNC MANAŽÉR: skupiny, značky na zmazanie, evidencia stiahnutých ----------
