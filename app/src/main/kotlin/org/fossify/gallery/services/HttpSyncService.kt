@@ -8,10 +8,12 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
+import android.database.ContentObserver
 import android.os.Build
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
+import android.provider.MediaStore
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import org.fossify.commons.helpers.ensureBackgroundThread
@@ -32,6 +34,47 @@ class HttpSyncService : Service() {
     @Volatile
     private var starting = false
 
+    // zmeny v MediaStore (nová fotka z Fotoaparátu, zmazanie) -> po 1 s ticha obnov zoznam servera,
+    // aby PC videlo novú fotku hneď (bez toho server poznal len fotky spred svojho spustenia)
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private var mediaObserver: ContentObserver? = null
+    private val refreshRunnable = Runnable {
+        val s = server ?: return@Runnable
+        ensureBackgroundThread {
+            try {
+                s.refreshIndex()
+            } catch (ignored: Throwable) {
+            }
+        }
+    }
+
+    private fun registerMediaObserver() {
+        if (mediaObserver != null) return
+        val o = object : ContentObserver(mainHandler) {
+            override fun onChange(selfChange: Boolean) {
+                mainHandler.removeCallbacks(refreshRunnable)
+                mainHandler.postDelayed(refreshRunnable, 1000)
+            }
+        }
+        try {
+            contentResolver.registerContentObserver(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, true, o)
+            contentResolver.registerContentObserver(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, true, o)
+            mediaObserver = o
+        } catch (ignored: Throwable) {
+        }
+    }
+
+    private fun unregisterMediaObserver() {
+        mainHandler.removeCallbacks(refreshRunnable)
+        mediaObserver?.let {
+            try {
+                contentResolver.unregisterContentObserver(it)
+            } catch (ignored: Throwable) {
+            }
+        }
+        mediaObserver = null
+    }
+
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -45,16 +88,9 @@ class HttpSyncService : Service() {
         val port = MediaServer.DEFAULT_PORT
         val ip = NetUtil.getWifiIpv4(this)
         currentPin = pin
+        // bez Wi-Fi sa dá spojiť USB káblom (PC si port presmeruje cez adb) -> server spustiť aj tak
         currentUrl = if (ip != null) "http://$ip:$port" else null
-
-        startForegroundCompat(buildNotification(currentUrl ?: "", pin))
-
-        // bez WiFi adresy by sa zobrazila (a kopírovala) nezmyselná adresa „http://?:8089" —
-        // radšej server nespúšťať a rovno povedať, čo treba spraviť
-        if (ip == null) {
-            failWith(getString(R.string.a3_pc_server_no_wifi))
-            return START_NOT_STICKY
-        }
+        startForegroundCompat(buildNotification(currentUrl, pin))
 
         lastError = null
         if (server == null && !starting) {
@@ -70,6 +106,7 @@ class HttpSyncService : Service() {
                     }
                     s.start(NanoHTTPD.SOCKET_READ_TIMEOUT, false)
                     server = s
+                    mainHandler.post { registerMediaObserver() }
                 } catch (e: Throwable) {
                     // obsadený port, zakázaný socket… — NIE ticho zhasnúť, ale povedať prečo
                     val reason = e.message?.take(120) ?: e.javaClass.simpleName
@@ -107,6 +144,7 @@ class HttpSyncService : Service() {
     }
 
     private fun stopEverything() {
+        unregisterMediaObserver()
         try {
             server?.stop()
         } catch (ignored: Throwable) {
@@ -120,6 +158,7 @@ class HttpSyncService : Service() {
     }
 
     override fun onDestroy() {
+        unregisterMediaObserver()
         try {
             server?.stop()
         } catch (ignored: Throwable) {
@@ -129,18 +168,21 @@ class HttpSyncService : Service() {
         super.onDestroy()
     }
 
-    private fun buildNotification(url: String, pin: String): Notification {
+    private fun buildNotification(url: String?, pin: String): Notification {
         val stopIntent = PendingIntent.getService(
             this, 1,
             Intent(this, HttpSyncService::class.java).setAction(ACTION_STOP),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
-        val fullLink = "$url/?token=$pin"
+        val fullLink = if (url != null) "$url/?token=$pin" else null
+        // bez Wi-Fi adresy niet -> v notifikácii len PIN a poznámka, že spojenie ide káblom
+        val shortText = fullLink ?: getString(R.string.porovnavac_server_len_kabel, pin)
+        val longText = if (fullLink != null) getString(R.string.pc_server_notif_text, fullLink, pin) else shortText
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.stat_sys_upload)
             .setContentTitle(getString(R.string.pc_server_notif_title))
-            .setContentText(fullLink)
-            .setStyle(NotificationCompat.BigTextStyle().bigText(getString(R.string.pc_server_notif_text, fullLink, pin)))
+            .setContentText(shortText)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(longText))
             .setOngoing(true)
             .setOnlyAlertOnce(true)
             .addAction(0, getString(R.string.pc_server_stop), stopIntent)

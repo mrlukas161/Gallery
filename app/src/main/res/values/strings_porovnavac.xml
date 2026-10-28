@@ -2,4 +2,7 @@
 <resources>
     <!-- Server pre PC porovnávač — zastavenie po hádaní PIN-u (HttpSyncService) -->
     <string name="c1_pc_server_locked">Server sa zastavil: niekto na sieti skúšal priveľa nesprávnych PIN-ov. Spusti ho znova — dostane nový PIN.</string>
+    <!-- Server bez Wi-Fi: PC sa spojí USB káblom (adb forward) -->
+    <string name="porovnavac_server_len_kabel">Wi-Fi nie je – spojenie len USB káblom. PIN: %1$s</string>
+    <string name="porovnavac_server_len_kabel_beziaci">Beží len pre USB kábel (bez Wi-Fi)\nŤuknutím zastavíš</string>
 </resources>

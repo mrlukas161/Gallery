@@ -200,5 +200,7 @@ dependencies {
     implementation("org.nanohttpd:nanohttpd:2.3.1")
     implementation("com.microsoft.onnxruntime:onnxruntime-android:1.20.0")
     ksp(libs.androidx.room.compiler)
+    // JVM testy čistej logiky servera (IndexDiff)
+    testImplementation("junit:junit:4.13.2")
     detektPlugins(libs.compose.detekt)
 }

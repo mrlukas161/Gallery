@@ -20,6 +20,7 @@ import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.InputStream
 import java.net.URLDecoder
+import org.fossify.gallery.extensions.config
 import org.fossify.gallery.faces.IndexScope
 
 // Telefónny LAN media server (NanoHTTPD). Sprístupní LEN MediaStore Images+Videos, adresované cez
@@ -35,7 +36,7 @@ class MediaServer(
     companion object {
         const val DEFAULT_PORT = 8089
         const val SERVER_NAME = "Galéria+"
-        const val SERVER_VERSION = "1"
+        const val SERVER_VERSION = "2"
         private const val SAVE_SUBDIR = "Galéria"
 
         // po toľkých RÔZNYCH zlých tokenoch sa server zamkne (šanca uhádnuť 6-miestny PIN ~ 20 : 900 000)
@@ -63,6 +64,13 @@ class MediaServer(
     @Volatile
     private var index: Map<Long, Item> = emptyMap()
 
+    // generácia zoznamu: PC sa pýta /api/ping každé 2 s a pri zmene si vypýta nové položky
+    @Volatile
+    private var generation = 0L
+
+    @Volatile
+    private var newestMtime = 0L
+
     // Ochrana PIN-u pred hádaním na LAN: rátajú sa RÔZNE zlé tokeny (otvorená stará karta v PC
     // prehliadači posiela stále ten istý starý token a server by inak zbytočne zamkla); požiadavky
     // úplne bez tokenu (favicon…) nie sú hádanie. Po zamknutí sa odmietne všetko a služba server
@@ -75,6 +83,9 @@ class MediaServer(
     private val resolver: ContentResolver get() = appContext.contentResolver
 
     fun itemCount(): Int = index.size
+
+    // volá HttpSyncService po zmene v MediaStore (nová / zmazaná fotka) — mimo hlavného vlákna
+    fun refreshIndex() = rebuildIndex()
 
     override fun start(timeout: Int, daemon: Boolean) {
         rebuildIndex()
@@ -92,7 +103,7 @@ class MediaServer(
             }
             when (session.uri) {
                 "/api/ping" -> handlePing()
-                "/api/list" -> handleList()
+                "/api/list" -> handleList(session)
                 "/api/file" -> handleFile(session)
                 "/api/thumb" -> handleThumb(session)
                 "/api/upload" -> handleUpload(session)
@@ -142,12 +153,18 @@ class MediaServer(
             .put("name", SERVER_NAME)
             .put("version", SERVER_VERSION)
             .put("count", index.size)
+            .put("gen", generation)
+            .put("newest", newestMtime)
+            // v M3 sa nahradí PcDeleter.canDelete()
+            .put("allFiles", android.os.Build.VERSION.SDK_INT < 30 || android.os.Environment.isExternalStorageManager())
+            .put("recycleBin", appContext.config.useRecycleBin)
         return json(Status.OK, o.toString())
     }
 
-    private fun handleList(): Response {
+    private fun handleList(session: IHTTPSession): Response {
+        val since = session.parameters["since"]?.firstOrNull()?.toLongOrNull()
         val arr = JSONArray()
-        for (it in index.values) {
+        for (it in IndexDiff.since(index.values, since) { i -> i.mtime }) {
             arr.put(
                 JSONObject()
                     .put("id", it.id)
@@ -395,13 +412,17 @@ class MediaServer(
         return r
     }
 
+    @Synchronized
     private fun rebuildIndex() {
         val map = LinkedHashMap<Long, Item>()
         // zamknuté a vylúčené priečinky PC nevidí (rozhodnutie Lukáša 20.10.2026)
         val scope = IndexScope(appContext)
         collect(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, false, map, scope)
         collect(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, true, map, scope)
+        val old = index
         index = map
+        newestMtime = map.values.maxOfOrNull { it.mtime } ?: 0L
+        if (IndexDiff.changed(old.mapValues { it.value.mtime to it.value.size }, map.mapValues { it.value.mtime to it.value.size })) generation++
     }
 
     private fun collect(base: Uri, isVideo: Boolean, into: MutableMap<Long, Item>, scope: IndexScope) {
@@ -529,4 +550,14 @@ class MediaServer(
         name: String, mime: String, sizeHint: Long,
         writer: (java.io.OutputStream) -> Unit,
     ): Pair<String, String>? = saveMediaScoped(appContext, name, mime, SAVE_SUBDIR, writer)
+}
+
+// čistá logika živého zoznamu (bez Androidu -> testovateľná)
+object IndexDiff {
+    // kľúč = id, hodnota = (mtime, size); zmena = pribudla/ubudla/zmenila sa fotka
+    fun changed(old: Map<Long, Pair<Long, Long>>, new: Map<Long, Pair<Long, Long>>): Boolean =
+        old.size != new.size || new.any { (id, v) -> old[id] != v }
+
+    fun <T> since(items: Collection<T>, since: Long?, mtime: (T) -> Long): List<T> =
+        if (since == null) items.toList() else items.filter { mtime(it) >= since }
 }
