@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Server pre PC porovnávač — zastavenie po hádaní PIN-u (HttpSyncService) -->
+    <string name="c1_pc_server_locked">Server sa zastavil: niekto na sieti skúšal priveľa nesprávnych PIN-ov. Spusti ho znova — dostane nový PIN.</string>
+</resources>
