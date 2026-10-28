@@ -83,12 +83,12 @@ object PersonGrouper {
 
     // Vektory osoby: vlastné = ručne potvrdené tváre (is_manual=true) + vlastné vzory (Picasa, záloha),
     // rodinné = priradenia s is_manual=false + vzory „family:". Auto-zaradené tváre sa nerátajú nikdy.
+    // E1: len tváre nad bránou kvality (prototypeFaces).
     fun evidenceOf(person: Person, anchors: Anchors?, decode: (ByteArray) -> FloatArray): Evidence {
         val own = ArrayList<FloatArray>()
         val family = ArrayList<FloatArray>()
-        for (f in person.faces) {
+        for (f in prototypeFaces(person)) {
             val id = f.id ?: continue
-            if (!person.manualFaceIds.contains(id)) continue
             val e = f.embedding ?: continue
             if (person.familyFaceIds.contains(id)) family.add(decode(e)) else own.add(decode(e))
         }
@@ -97,6 +97,15 @@ object PersonGrouper {
             family.addAll(it.family)
         }
         return Evidence(own, family)
+    }
+
+    // E1 — potvrdené tváre osoby, ktoré smú byť prototypom/ťažiskom: len nad bránou kvality (FaceQuality).
+    // Keď bránou neprejde žiadna (osoba len z rozmazaných alebo profilových fotiek), použijú sa všetky — ručné
+    // potvrdenie platí vždy a osoba nesmie z porovnania zmiznúť.
+    fun prototypeFaces(person: Person): List<FaceEntity> {
+        val manual = person.faces.filter { f -> f.id?.let { person.manualFaceIds.contains(it) } == true }
+        val good = manual.filter { FaceQuality.passes(it) }
+        return good.ifEmpty { manual }
     }
 
     // váha jedného rodinného vektora: najviac FAMILY_WEIGHT a spolu najviac toľko, koľko je vlastných
@@ -201,10 +210,14 @@ object PersonGrouper {
             val fid = f.id ?: return
             val e = f.embedding ?: return
             if (fixed.assigned.contains(fid) || ignored.contains(fid)) return
-            val r = ranker.rank(decode(e), banned[fid], fixed.onPhoto[f.mediaFullPath]) ?: return
+            val takenAt = f.takenAt ?: KnnModel.UNKNOWN_DATE
+            val r = ranker.rank(decode(e), banned[fid], fixed.onPhoto[f.mediaFullPath], takenAt = takenAt)
+                ?: return
             if (r.best < low) return
             val scored = Scored(f, r.bestId, r.best, r.secondId, r.second)
-            byPhoto.getOrPut(f.mediaFullPath) { ArrayList() }.add(Candidate(scored, isAuto(r)))
+            // E1: tvár pod bránou kvality sa nezaradí automaticky, ostane nanajvýš „neistá“ (návrh)
+            val auto = isAuto(r) && FaceQuality.passes(f)
+            byPhoto.getOrPut(f.mediaFullPath) { ArrayList() }.add(Candidate(scored, auto))
             if (r.hasSecond && r.second >= low) contested.add(scored)
         }
 
@@ -233,12 +246,12 @@ object PersonGrouper {
             val pid = p.id ?: return@mapNotNull null
             val own = ArrayList<KnnModel.FaceVec>()
             val family = ArrayList<KnnModel.FaceVec>()
-            for (f in p.faces) {
+            // E1: prototypy len nad bránou kvality, s dátumom nasnímania (vekové váhy)
+            for (f in prototypeFaces(p)) {
                 val id = f.id ?: continue
-                if (!p.manualFaceIds.contains(id)) continue
                 val e = f.embedding ?: continue
                 val target = if (p.familyFaceIds.contains(id)) family else own
-                target.add(KnnModel.FaceVec(id, decode(e)))
+                target.add(KnnModel.FaceVec(id, decode(e), f.takenAt ?: KnnModel.UNKNOWN_DATE))
             }
             val anchors = anchorsByPerson[pid]
             KnnModel.PersonInput(

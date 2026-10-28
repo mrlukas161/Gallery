@@ -4,6 +4,8 @@ import android.content.Context
 import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 import org.fossify.gallery.safety.SafeOpenHelperFactory
 
 // Samostatná databáza pre POMENOVANÉ osoby a korekcie (people.db). Oddelená od faces.db,
@@ -22,6 +24,7 @@ import org.fossify.gallery.safety.SafeOpenHelperFactory
         CannotLinkEntity::class,
         AnchorEmbeddingEntity::class,
         ImportManifestEntity::class,
+        MergeLogEntity::class,
     ],
     version = PeopleDatabase.SCHEMA_VERSION,
 )
@@ -30,7 +33,25 @@ abstract class PeopleDatabase : RoomDatabase() {
 
     companion object {
         // verzia schémy (= @Database.version); DbVersionGuard podľa nej spozná DB z novšej appky
-        const val SCHEMA_VERSION = 2
+        const val SCHEMA_VERSION = 3
+
+        // E2 (v2 → v3): pôvod a istota priradení (nullable stĺpce) + tabuľka merge_log na vrátenie zlúčenia.
+        // Existujúce riadky sa nemenia ani nemažú (staré priradenia majú source = NULL = neznámy pôvod).
+        // Testy: androidTest PeopleMigrationTest.
+        val MIGRATION_2_3 = object : Migration(2, SCHEMA_VERSION) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                MIGRATION_2_3_SQL.forEach { db.execSQL(it) }
+            }
+        }
+
+        val MIGRATION_2_3_SQL = listOf(
+            "ALTER TABLE `face_assignments` ADD COLUMN `source` TEXT",
+            "ALTER TABLE `face_assignments` ADD COLUMN `confidence` REAL",
+            "CREATE TABLE IF NOT EXISTS `merge_log` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                "`from_person_id` INTEGER NOT NULL, `to_person_id` INTEGER NOT NULL, `face_ids` TEXT NOT NULL, " +
+                "`cannot_links` TEXT NOT NULL, `created_at` INTEGER NOT NULL, `from_name` TEXT, " +
+                "`from_created_at` INTEGER, `anchor_ids` TEXT, `group_ids` TEXT, `undone_at` INTEGER)",
+        )
 
         private var db: PeopleDatabase? = null
 
@@ -41,6 +62,7 @@ abstract class PeopleDatabase : RoomDatabase() {
                         db = Room.databaseBuilder(context.applicationContext, PeopleDatabase::class.java, "people.db")
                             // A1: poškodený súbor sa premenuje, nezmaže (inak by SQLite vytvoril prázdnu DB)
                             .openHelperFactory(SafeOpenHelperFactory())
+                            .addMigrations(MIGRATION_2_3)
                             .build()
                     }
                 }

@@ -49,7 +49,8 @@ interface FaceDao {
     // ktoré vektor nepotrebujú (Návrhy bez osoby). Entita ani schéma sa nemení.
     @Query(
         "SELECT id, media_full_path, media_store_id, face_index, bbox_left, bbox_top, bbox_right, bbox_bottom, " +
-            "score, NULL AS embedding, detected_at FROM faces WHERE embedding IS NOT NULL"
+            "score, NULL AS embedding, detected_at, quality, yaw, pitch, blur, align_method, box_space, " +
+            "embed_version, taken_at FROM faces WHERE embedding IS NOT NULL"
     )
     fun getEmbeddedFacesWithoutVectors(): List<FaceEntity>
 
@@ -64,12 +65,54 @@ interface FaceDao {
     @Query("SELECT * FROM faces WHERE id IN (:ids)")
     fun getFacesByIds(ids: List<Long>): List<FaceEntity>
 
-    @Query("UPDATE faces SET embedding = :embedding WHERE id = :id")
-    fun updateEmbedding(id: Long, embedding: ByteArray)
+    // E1: s odtlačkom sa zapíše aj jeho verzia (FaceEmbedVersion.PIPELINE_VERSION pre nový výpočet)
+    @Query("UPDATE faces SET embedding = :embedding, embed_version = :version WHERE id = :id")
+    fun updateEmbedding(id: Long, embedding: ByteArray, version: Int)
 
-    // oprava polohy tváre po prepracovaní (upright priestor) — id ostáva, menovka prežije
-    @Query("UPDATE faces SET bbox_left = :left, bbox_top = :top, bbox_right = :right, bbox_bottom = :bottom, score = :score WHERE id = :id")
+    // oprava polohy tváre po prepracovaní (upright priestor) — id ostáva, menovka prežije.
+    // Rámček je z novej detekcie nad opraveným UprightDecoder → box_space = 2 (FaceBoxSpace.UPRIGHT_V2).
+    @Query(
+        "UPDATE faces SET bbox_left = :left, bbox_top = :top, bbox_right = :right, bbox_bottom = :bottom, " +
+            "score = :score, box_space = 2 WHERE id = :id"
+    )
     fun updateFaceBox(id: Long, left: Int, top: Int, right: Int, bottom: Int, score: Float)
+
+    // --- E1: dopĺňanie údajov tvárí (FaceStore pri prepracovaní, FaceMetaBackfill pri nabíjaní) ---
+
+    @Query(
+        "UPDATE faces SET quality = :quality, yaw = :yaw, pitch = :pitch, blur = :blur, align_method = :method " +
+            "WHERE id = :id"
+    )
+    fun updateQuality(id: Long, quality: Float?, yaw: Float?, pitch: Float?, blur: Float?, method: Int?)
+
+    // priestor rámčeka (a pri preklopení v1 → v2 na fotke 5/7 aj rámček otočený o 180°), na mieste
+    @Query(
+        "UPDATE faces SET bbox_left = :left, bbox_top = :top, bbox_right = :right, bbox_bottom = :bottom, " +
+            "box_space = :space WHERE id = :id"
+    )
+    fun updateBoxSpace(id: Long, left: Int, top: Int, right: Int, bottom: Int, space: Int)
+
+    @Query("UPDATE faces SET taken_at = :takenAt WHERE media_full_path = :path AND taken_at IS NULL")
+    fun fillTakenAt(path: String, takenAt: Long): Int
+
+    // verzia odtlačkov starých tvárí = verzia uložená vo faces.db (FaceEmbedVersion.storedVersion)
+    @Query("UPDATE faces SET embed_version = :version WHERE embedding IS NOT NULL AND embed_version IS NULL")
+    fun fillEmbedVersion(version: Int): Int
+
+    // fotky s tvárou bez priestoru rámčeka alebo bez dátumu (1. krok dopĺňania, bez modelov)
+    @Query("SELECT DISTINCT media_full_path FROM faces WHERE box_space = 0 OR taken_at IS NULL")
+    fun getPathsNeedingMeta(): List<String>
+
+    // fotky s tvárou, ktorej chýba kvalita a priestor rámčeka je známy (2. krok, s modelmi)
+    @Query("SELECT DISTINCT media_full_path FROM faces WHERE quality IS NULL AND box_space != 0")
+    fun getPathsNeedingQuality(): List<String>
+
+    // tváre pribudnuté po poslednom úplnom dopĺňaní, ktorým niečo chýba (napr. z balíka prepojeného telefónu)
+    @Query(
+        "SELECT COUNT(*) FROM faces WHERE detected_at > :since AND " +
+            "(quality IS NULL OR taken_at IS NULL OR box_space = 0)"
+    )
+    fun countNewNeedingMeta(since: Long): Int
 
     // A6: otočenie rámčeka po otočení fotky v appke — id, skóre aj odtlačok ostávajú
     @Query(

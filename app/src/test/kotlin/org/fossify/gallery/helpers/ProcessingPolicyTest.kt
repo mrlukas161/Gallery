@@ -23,7 +23,7 @@ class ProcessingPolicyTest {
     @Test
     fun fullProfileWithoutOptionBehavesAsBefore() {
         // ani slabá batéria, ani veľká dávka nič nemenia — správanie ako doteraz
-        for (indexer in Indexer.values().filter { it != Indexer.FACE_V2 }) {
+        for (indexer in Indexer.values().filter { it != Indexer.FACE_V2 && it != Indexer.FACE_META }) {
             assertEquals(Decision.RUN, decide(indexer = indexer, batteryPct = 5, batchSize = 10_000))
             assertEquals(Decision.RUN, decide(indexer = indexer, batteryPct = ProcessingPolicy.UNKNOWN))
         }
@@ -32,7 +32,7 @@ class ProcessingPolicyTest {
     @Test
     fun lightProfileRunsOnlyFacesAndGeo() {
         val allowed = setOf(Indexer.FACES, Indexer.GEO)
-        for (indexer in Indexer.values().filter { it != Indexer.FACE_V2 }) {
+        for (indexer in Indexer.values().filter { it != Indexer.FACE_V2 && it != Indexer.FACE_META }) {
             val auto = decide(profile = Profile.LIGHT, charging = true, indexer = indexer)
             val manual = decide(profile = Profile.LIGHT, indexer = indexer, trigger = Trigger.MANUAL)
             if (indexer in allowed) {
@@ -128,5 +128,25 @@ class ProcessingPolicyTest {
             }
         }
         assertFalse(ProcessingPolicy.needsWatching(Profile.FULL, false, Indexer.FACES))
+    }
+
+    // E1: dopĺňanie údajov tvárí ako prepočet v2 — automaticky len pri nabíjaní, ručne vždy
+    @Test
+    fun faceMetaRunsOnlyWhileCharging() {
+        for (profile in Profile.values()) {
+            val auto = decide(profile = profile, batchSize = 1, indexer = Indexer.FACE_META)
+            assertEquals(Decision.WAIT_FOR_CHARGING, auto)
+            assertEquals(Decision.RUN, decide(profile = profile, charging = true, indexer = Indexer.FACE_META))
+            assertEquals(Decision.RUN, decide(profile = profile, indexer = Indexer.FACE_META, trigger = Trigger.MANUAL))
+            assertTrue(ProcessingPolicy.needsWatching(profile, false, Indexer.FACE_META))
+        }
+    }
+
+    // E3: dlaždice len pri nabíjaní alebo v Plnom profile
+    @Test
+    fun multiScaleOnlyChargingOrFull() {
+        assertTrue(ProcessingPolicy.multiScale(Profile.FULL, charging = false))
+        assertTrue(ProcessingPolicy.multiScale(Profile.LIGHT, charging = true))
+        assertFalse(ProcessingPolicy.multiScale(Profile.LIGHT, charging = false))
     }
 }

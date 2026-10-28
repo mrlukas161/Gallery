@@ -150,3 +150,10 @@ object AlignMath {
         return sqrt(dx * dx + dy * dy)
     }
 }
+
+// Metódy zarovnania odtlačku (faces.align_method, FaceAligner, FaceQuality) — čisté konštanty bez Androidu.
+object AlignMethod {
+    const val M5 = 0 // 5-bodové zarovnanie
+    const val M2 = 1 // 2-bodové zarovnanie (BlazeFace)
+    const val MR = 2 // resize bez zarovnania
+}

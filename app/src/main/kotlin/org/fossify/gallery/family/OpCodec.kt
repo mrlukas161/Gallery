@@ -18,6 +18,7 @@ object OpCodec {
     private const val TO = "to"
     private const val FACE = "face"
     private const val MANUAL = "manual"
+    private const val SOURCE = "source"
     private const val MEMBERS = "members"
     private const val OLD = "old"
     private const val NEW = "new"
@@ -42,7 +43,7 @@ object OpCodec {
         is PersonRename -> obj(UUID to op.uuid, NAME to op.name, PREV to op.previousName)
         is PersonMerge -> obj(FROM to op.fromUuid, TO to op.toUuid)
         is PersonDelete -> obj(UUID to op.uuid, NAME to op.name)
-        is AssignFace -> obj(FACE to faceJson(op.face), UUID to op.uuid, MANUAL to op.manual)
+        is AssignFace -> obj(FACE to faceJson(op.face), UUID to op.uuid, MANUAL to op.manual, SOURCE to op.source)
         is UnassignFace -> obj(FACE to faceJson(op.face), UUID to op.uuid)
         is GroupSet -> obj(NAME to op.name, MEMBERS to JSONArray(op.memberUuids))
         is GroupRename -> obj(OLD to op.oldName, NEW to op.newName)
@@ -61,7 +62,9 @@ object OpCodec {
             OpType.PERSON_RENAME -> PersonRename(o.getString(UUID), o.getString(NAME), o.optStr(PREV))
             OpType.PERSON_MERGE -> PersonMerge(o.getString(FROM), o.getString(TO))
             OpType.PERSON_DELETE -> PersonDelete(o.getString(UUID), o.optStr(NAME))
-            OpType.ASSIGN_FACE -> AssignFace(face(o.getJSONObject(FACE)), o.getString(UUID), o.getBoolean(MANUAL))
+            OpType.ASSIGN_FACE -> AssignFace(
+                face(o.getJSONObject(FACE)), o.getString(UUID), o.getBoolean(MANUAL), o.optStr(SOURCE),
+            )
             OpType.UNASSIGN_FACE -> UnassignFace(face(o.getJSONObject(FACE)), o.getString(UUID))
             OpType.GROUP_SET -> GroupSet(o.getString(NAME), strings(o.getJSONArray(MEMBERS)))
             OpType.GROUP_RENAME -> GroupRename(o.getString(OLD), o.getString(NEW))

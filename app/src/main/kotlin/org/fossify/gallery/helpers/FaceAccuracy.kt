@@ -8,6 +8,8 @@ import androidx.annotation.WorkerThread
 import org.fossify.gallery.R
 import org.fossify.gallery.faces.AccuracyEstimate
 import org.fossify.gallery.faces.FaceEmbedder
+import org.fossify.gallery.faces.FaceQuality
+import org.fossify.gallery.faces.KnnModel
 import org.fossify.gallery.faces.PeopleIndex
 import java.text.NumberFormat
 import java.util.Locale
@@ -38,14 +40,16 @@ object FaceAccuracy {
         try {
             val snapshot = PeopleIndex.get(context)
             val model = snapshot.model ?: return null
-            // vzorky = vlastné ručne potvrdené tváre (rodinné priradenia sa nehodnotia)
+            // vzorky = vlastné ručne potvrdené tváre (rodinné priradenia sa nehodnotia); E1: len nad bránou
+            // kvality — tvár pod ňou sa automaticky nezaraďuje, jej hodnotenie by presnosť automatiky skreslilo
             val samples = snapshot.persons.flatMap { p ->
                 val pid = p.id ?: return@flatMap emptyList()
                 p.faces.mapNotNull { f ->
                     val id = f.id ?: return@mapNotNull null
                     val e = f.embedding ?: return@mapNotNull null
                     if (!p.manualFaceIds.contains(id) || p.familyFaceIds.contains(id)) return@mapNotNull null
-                    AccuracyEstimate.Sample(id, pid, FaceEmbedder.toFloats(e))
+                    if (!FaceQuality.passes(f)) return@mapNotNull null
+                    AccuracyEstimate.Sample(id, pid, FaceEmbedder.toFloats(e), f.takenAt ?: KnnModel.UNKNOWN_DATE)
                 }
             }
             if (samples.isEmpty()) return null

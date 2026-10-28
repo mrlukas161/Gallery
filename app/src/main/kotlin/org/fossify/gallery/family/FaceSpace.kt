@@ -1,5 +1,6 @@
 package org.fossify.gallery.family
 
+import org.fossify.gallery.faces.FaceBoxSpace
 import kotlin.math.sqrt
 
 // V akom priestore je uložený rámček tváre (faces.db) na fotke s EXIF otočením (D2, D3).
@@ -19,6 +20,7 @@ enum class BoxSpace(val code: String) {
 // Rozhodovanie o priestore rámčeka. Čistá logika bez Androidu (FaceSpaceTest, BundleRulesTest).
 //
 // Poradie dôkazov pre fotku s otočením/zrkadlením:
+//  0) E1: uložený box_space (1/2) — priestor je istý, nič sa nehádá;
 //  1) uložené overenie odtlačkom (face_space), ak je v súlade s rozmermi;
 //  2) geometria: rámček, ktorý sa zmestí len do jedného z priestorov, patrí doň;
 //  3) overenie odtlačkom teraz (len pri odosielaní, lenivo — prepočet výrezu pre obe hypotézy);
@@ -82,7 +84,8 @@ object FaceSpaceRules {
         val max = FaceMatch.DECODE_MAX_SIZE
         val upright = RelBox.decodedUprightSize(rawWidth, rawHeight, max, transform.rotationDegrees)
         val fitsUpright = fits(box, upright[0], upright[1])
-        if (!isRotated(transform)) return if (fitsUpright) BoxSpace.UPRIGHT else null
+        // E1: priestor je uložený (box_space 1/2) alebo fotka nie je otočená — nič sa nehádá
+        if (singleSpace(box, transform)) return if (fitsUpright) BoxSpace.UPRIGHT else null
         val raw = RelBox.decodedUprightSize(rawWidth, rawHeight, max, 0)
         val fitsRaw = fits(box, raw[0], raw[1])
         if (consistent(cached, fitsUpright, fitsRaw)) return cached
@@ -93,6 +96,9 @@ object FaceSpaceRules {
             else -> verify?.invoke() ?: if (box.detectedAt >= BundleRules.UPRIGHT_SINCE_MS) BoxSpace.UPRIGHT else null
         }
     }
+
+    private fun singleSpace(box: StoredBox, transform: RelBox.Transform): Boolean =
+        !isRotated(transform) || FaceBoxSpace.isKnown(box.boxSpace)
 
     // uložené overenie platí, len keď sa rámček do daného priestoru zmestí
     private fun consistent(cached: BoxSpace?, fitsUpright: Boolean, fitsRaw: Boolean) = when (cached) {
@@ -108,7 +114,14 @@ object FaceSpaceRules {
         return when (space) {
             BoxSpace.UPRIGHT -> {
                 val s = RelBox.decodedUprightSize(rawWidth, rawHeight, max, transform.rotationDegrees)
-                RelBox.fromAbsolute(box.left, box.top, box.right, box.bottom, s[0], s[1])
+                // E1: upright rámček, ktorý nie je v2 (box_space 1, alebo 0 — v2 rámčeky majú vždy 2), je na
+                // fotke 5/7 o 180° otočený oproti zobrazeniu (pôvodná chyba UprightDecoder)
+                val space = if (box.boxSpace == FaceBoxSpace.UPRIGHT_V2) box.boxSpace else FaceBoxSpace.UPRIGHT_V1
+                val b = FaceBoxSpace.toV2(
+                    intArrayOf(box.left, box.top, box.right, box.bottom), space, FaceBoxSpace.isTransposed(transform),
+                    s[0], s[1],
+                )
+                RelBox.fromAbsolute(b[0], b[1], b[2], b[b.size - 1], s[0], s[1])
             }
 
             BoxSpace.RAW -> {
@@ -134,7 +147,9 @@ object FaceSpaceRules {
         val space = resolve(box, rawWidth, rawHeight, transform, cached)
         if (space == BoxSpace.BROKEN) return emptyList()
         relBox(box, rawWidth, rawHeight, transform, space)?.let { return listOf(it) }
-        return FaceMatch.relBoxes(box.left, box.top, box.right, box.bottom, rawWidth, rawHeight, transform)
+        return FaceMatch.relBoxes(
+            box.left, box.top, box.right, box.bottom, rawWidth, rawHeight, transform, box.boxSpace,
+        )
     }
 
     // Odtlačok rámčeka a uloženého vektora: zmena ktoréhokoľvek zneplatní uložené overenie.

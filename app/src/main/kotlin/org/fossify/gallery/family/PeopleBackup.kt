@@ -2,6 +2,7 @@ package org.fossify.gallery.family
 
 import android.content.Context
 import android.net.Uri
+import org.fossify.gallery.faces.AssignmentSource
 import org.fossify.gallery.faces.CannotLinkEntity
 import org.fossify.gallery.faces.ExtrasDatabase
 import org.fossify.gallery.faces.FaceAssignmentEntity
@@ -66,8 +67,10 @@ class PeopleBackup(context: Context) {
                 .map { it.face to it.uuid }
 
             // A3: automatické priradenia, „nie je to on“ a ignorované tváre (mimo op-logu)
-            val autoPairs = assignments.filter { !it.isManual }.map { it.faceId to it.personId }
-            val auto = links(faceDao, faces, autoPairs, uuids)
+            val autoRows = assignments.filter { !it.isManual }
+            val autoPairs = autoRows.map { it.faceId to it.personId }
+            // E2: pôvod a istota sa zálohujú (len doplnené kľúče, staršia appka ich ignoruje)
+            val auto = links(faceDao, faces, autoPairs, uuids, autoRows.associateBy { it.faceId })
             val cannotSource = people.getCannotLinks().filter { it.personId in uuids }
             val cannot = links(faceDao, faces, cannotSource.map { it.faceId to it.personId }, uuids)
             val ignoredIds = extras.getIgnoredIds()
@@ -126,15 +129,19 @@ class PeopleBackup(context: Context) {
         faces: FamilyFaces,
         pairs: List<Pair<Long, Long>>,
         uuids: Map<Long, String>,
+        meta: Map<Long, FaceAssignmentEntity> = emptyMap(),
     ): List<PeopleBackupFormat.FaceLink> {
         val byFace = pairs.groupBy({ it.first }, { it.second })
         return facesByIds(faceDao, byFace.keys.toList()).flatMap { f ->
             val persons = f.id?.let { byFace[it] }.orEmpty()
             val ref = if (persons.isEmpty()) null else faces.refFor(f)
+            val a = f.id?.let { meta[it] }
             if (ref == null) {
                 emptyList()
             } else {
-                persons.mapNotNull { pid -> uuids[pid]?.let { PeopleBackupFormat.FaceLink(ref, it) } }
+                persons.mapNotNull { pid ->
+                    uuids[pid]?.let { PeopleBackupFormat.FaceLink(ref, it, a?.source, a?.confidence) }
+                }
             }
         }
     }
@@ -204,7 +211,9 @@ class PeopleBackup(context: Context) {
         actions.forEach { a ->
             when (a) {
                 is ExtrasAction.AutoAssign ->
-                    people.upsertAssignment(FaceAssignmentEntity(a.faceId, a.personId, false, now))
+                    people.upsertAssignment(
+                        FaceAssignmentEntity(a.faceId, a.personId, false, now, AssignmentSource.RESTORE, a.confidence)
+                    )
 
                 is ExtrasAction.CannotLink -> people.insertCannotLink(CannotLinkEntity(a.faceId, a.personId))
                 is ExtrasAction.Ignore -> extrasDao.insertIgnored(IgnoredFaceEntity(a.faceId))

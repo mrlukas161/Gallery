@@ -70,15 +70,17 @@ data class RelBox(val left: Float, val top: Float, val right: Float, val bottom:
             )
         }
 
-        // Rovnaké mapovanie EXIF orientácie ako UprightDecoder.decode (vrátane 5/7 = zrkadlenie + 90/270).
+        // Rovnaké mapovanie EXIF orientácie ako UprightDecoder.decode a Glide. Zrkadlí sa PRED otočením:
+        // 5 (TRANSPOSE, (x, y) → (y, x)) = zrkadlenie + 270°, 7 (TRANSVERSE) = zrkadlenie + 90° (E1 oprava,
+        // predtým naopak — o 180° oproti zobrazeniu; staré rámčeky preklápa FaceMetaBackfill).
         fun exifTransform(orientation: Int): Transform = when (orientation) {
             EXIF_ROTATE_90 -> Transform(DEG_90, false)
             EXIF_ROTATE_180 -> Transform(DEG_180, false)
             EXIF_ROTATE_270 -> Transform(DEG_270, false)
             EXIF_FLIP_HORIZONTAL -> Transform(0, true)
             EXIF_FLIP_VERTICAL -> Transform(DEG_180, true)
-            EXIF_TRANSPOSE -> Transform(DEG_90, true)
-            EXIF_TRANSVERSE -> Transform(DEG_270, true)
+            EXIF_TRANSPOSE -> Transform(DEG_270, true)
+            EXIF_TRANSVERSE -> Transform(DEG_90, true)
             else -> IDENTITY
         }
 

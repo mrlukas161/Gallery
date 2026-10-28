@@ -49,8 +49,10 @@ data class PersonDelete(val uuid: String, val name: String?) : Op {
     override val type: String get() = OpType.PERSON_DELETE
 }
 
-// Priradenie tváre osobe; manual = používateľ ho potvrdil ručne (is_manual).
-data class AssignFace(val face: FaceRef, val uuid: String, val manual: Boolean) : Op {
+// Priradenie tváre osobe; manual = používateľ ho potvrdil ručne (is_manual). E2: source = pôvod priradenia
+// u odosielateľa (AssignmentSource, len informácia; nepovinné — staršia appka ho neposiela ani nečíta).
+// Prijímateľ si zapíše vlastný pôvod („family“, pri obnove zálohy „restore“).
+data class AssignFace(val face: FaceRef, val uuid: String, val manual: Boolean, val source: String? = null) : Op {
     override val type: String get() = OpType.ASSIGN_FACE
 }
 

@@ -2,6 +2,8 @@ package org.fossify.gallery.faces
 
 import org.fossify.gallery.family.AnchorPicker
 import java.util.IdentityHashMap
+import kotlin.math.abs
+import kotlin.math.pow
 
 // C6 — skóre osoby z NAJBLIŽŠÍCH prototypov (k-NN) namiesto jedného priemeru. Jeden priemer zlieva
 // rôzne podoby osoby (dieťa v rôznom veku, s okuliarmi a bez, veľká a malá tvár) do bodu „medzi nimi“,
@@ -17,7 +19,10 @@ import java.util.IdentityHashMap
 //    vektor s váhou 0,5 je teda pol suseda — jeden chybný vektor z druhého telefónu neurčí skóre sám;
 //  - osoba s menším súčtom váh než K použije všetky prototypy, ktoré má;
 //  - C8: negatívne prototypy (odmietnuté tváre osoby): skóre −= NEGATIVE_LAMBDA · max(0, neg − pos), kde
-//    neg = najbližšia odmietnutá tvár a pos = najbližší vlastný prototyp.
+//    neg = najbližšia odmietnutá tvár a pos = najbližší vlastný prototyp;
+//  - E1 vekové prototypy: váha prototypu sa násobí časovou blízkosťou dátumu nasnímania kandidáta a prototypu
+//    (ageWeight: polčas AGE_HALF_LIFE_MS, najmenej AGE_MIN_WEIGHT), vztiahnutou k najbližšiemu prototypu osoby
+//    — dieťa sa porovnáva hlavne so svojimi fotkami z podobného veku. Bez dátumu (0) váha 1.
 //
 // Výkon: kNN pre všetky osoby by bolo 10 000 tvárí × (100 osôb × desiatky prototypov). Preto sa najprv
 // spočíta kosínus k ťažisku každej osoby (jeden riadok na osobu) a kNN sa počíta len pre SHORTLIST
@@ -36,6 +41,7 @@ class KnnModel private constructor(
     internal val protos: FloatArray,
     internal val protoWeight: FloatArray,
     internal val protoFace: LongArray,
+    internal val protoTaken: LongArray,
     internal val negStart: IntArray,
     internal val negs: FloatArray,
     internal val negFace: LongArray,
@@ -73,7 +79,8 @@ class KnnModel private constructor(
         val negatives: List<FaceVec> = emptyList(),
     )
 
-    class FaceVec(val faceId: Long, val vec: FloatArray)
+    // takenAt = dátum nasnímania fotky tváre (faces.taken_at), 0 = neznámy
+    class FaceVec(val faceId: Long, val vec: FloatArray, val takenAt: Long = UNKNOWN_DATE)
 
     // Výsledok porovnania tváre so všetkými osobami: najlepšia a druhá najlepšia (bestIndex = index v modeli).
     class Ranking(val bestIndex: Int, val bestId: Long, val best: Float, val secondId: Long, val second: Float) {
@@ -89,12 +96,14 @@ class KnnModel private constructor(
         private var weights = FloatArray(INITIAL_BUFFER)
 
         // najlepšia a druhá osoba; [banned] = osoby zakázané cannot-linkom, [blocked] = osoby, ktoré na fotke
-        // už sú; [exclude] = id tváre, ktorá sa medzi prototypmi aj negatívami nepočíta (leave-one-out)
+        // už sú; [exclude] = id tváre, ktorá sa medzi prototypmi aj negatívami nepočíta (leave-one-out);
+        // [takenAt] = dátum nasnímania kandidáta (vekové váhy, 0 = neznámy)
         fun rank(
             v: FloatArray,
             banned: Set<Long>? = null,
             blocked: Set<Long>? = null,
             exclude: Long = NO_FACE,
+            takenAt: Long = UNKNOWN_DATE,
         ): Ranking? {
             if (v.size != m.dim) return null
             val n = withinDelta(fillShortlist(v, banned, blocked))
@@ -104,7 +113,7 @@ class KnnModel private constructor(
             var second = Float.NEGATIVE_INFINITY
             for (s in 0 until n) {
                 val p = shortlist[s]
-                val score = score(v, p, exclude)
+                val score = score(v, p, exclude, takenAt)
                 if (score == Float.NEGATIVE_INFINITY) continue
                 if (score > best) {
                     secondIdx = bestIdx
@@ -160,14 +169,16 @@ class KnnModel private constructor(
             }
         }
 
-        // kNN skóre tváre [v] pre osobu s indexom [p] (vrátane penalizácie za odmietnuté tváre)
-        fun score(v: FloatArray, p: Int, exclude: Long = NO_FACE): Float {
+        // kNN skóre tváre [v] pre osobu s indexom [p] (vrátane penalizácie za odmietnuté tváre);
+        // [takenAt] = dátum nasnímania kandidáta (E1 vekové váhy, 0 = neznámy)
+        fun score(v: FloatArray, p: Int, exclude: Long = NO_FACE, takenAt: Long = UNKNOWN_DATE): Float {
             if (v.size != m.dim) return Float.NEGATIVE_INFINITY
             val from = m.protoStart[p]
             val n = m.protoStart[p + 1] - from
             if (n == 0) return Float.NEGATIVE_INFINITY
             ensure(n)
             var maxPos = Float.NEGATIVE_INFINITY
+            var maxAge = 0f
             for (j in 0 until n) {
                 val g = from + j
                 if (m.protoFace[g] == exclude && exclude != NO_FACE) {
@@ -177,9 +188,13 @@ class KnnModel private constructor(
                 }
                 val s = dot(v, m.protos, g * m.dim, m.dim)
                 sims[j] = s
-                weights[j] = m.protoWeight[g]
+                val age = ageWeight(takenAt, m.protoTaken[g])
+                weights[j] = m.protoWeight[g] * age
+                if (age > maxAge) maxAge = age
                 if (s > maxPos) maxPos = s
             }
+            // vekové váhy relatívne k časovo najbližšiemu prototypu: keď sú všetky ďaleko, nemení sa nič
+            if (maxAge > 0f && maxAge < 1f) for (j in 0 until n) weights[j] /= maxAge
             val knn = weightedTopK(n)
             if (knn == Float.NEGATIVE_INFINITY) return knn
             return knn - negativePenalty(v, p, maxPos, exclude)
@@ -269,6 +284,21 @@ class KnnModel private constructor(
         const val NO_FACE = Long.MIN_VALUE
         const val NO_PERSON = Long.MIN_VALUE
 
+        // E1 — vekové prototypy (deti): polčas váhy podľa rozdielu dátumov nasnímania kandidáta a prototypu.
+        // Tvár dieťaťa sa za ~2 roky zmení tak, že staršie fotky sú slabším svedkom; dospelý sa mení pomaly
+        // a na jeho skóre to má malý vplyv (váhy sú relatívne k najbližšiemu prototypu a K susedov sa naplní
+        // aj zo vzdialenejších). Minimum, aby ani 10-ročný rozdiel prototyp úplne nevyradil.
+        const val AGE_HALF_LIFE_MS = 2L * 365 * 24 * 60 * 60 * 1000 + 12L * 60 * 60 * 1000 // 2 roky (365,25 dňa)
+        const val AGE_MIN_WEIGHT = 0.25f
+        const val UNKNOWN_DATE = 0L
+
+        // váha prototypu podľa časovej blízkosti (1 = rovnaký deň alebo dátum chýba)
+        fun ageWeight(candidateTakenAt: Long, protoTakenAt: Long): Float {
+            if (candidateTakenAt <= UNKNOWN_DATE || protoTakenAt <= UNKNOWN_DATE) return 1f
+            val diff = abs(candidateTakenAt - protoTakenAt).toDouble()
+            return maxOf(AGE_MIN_WEIGHT, 0.5.pow(diff / AGE_HALF_LIFE_MS).toFloat())
+        }
+
         private const val EPS = 1e-4f
 
         // najviac výberov do rozpočtu K (pri veľmi malých rodinných váhach)
@@ -331,6 +361,7 @@ class KnnModel private constructor(
         val protos = ArrayList<FloatArray>()
         val weights = ArrayList<Float>()
         val protoFaces = ArrayList<Long>()
+        val protoTaken = ArrayList<Long>()
         val negStart = arrayListOf(0)
         val negs = ArrayList<FloatArray>()
         val negFaces = ArrayList<Long>()
@@ -354,12 +385,12 @@ class KnnModel private constructor(
             assignable.add(ownCount > 0)
             single.add(ownCount == 1)
             centroids.add(centroid)
-            own.forEach { addProto(it.vec, 1f, it.faceId) }
-            ownAnchors.forEach { addProto(it, 1f, NO_FACE) }
+            own.forEach { addProto(it.vec, 1f, it.faceId, it.takenAt) }
+            ownAnchors.forEach { addProto(it, 1f, NO_FACE, UNKNOWN_DATE) }
             // rodinné len s kladnou váhou (familyWeight je 0, ak osoba nemá vlastné — vtedy plná FAMILY_WEIGHT,
             // aby osoba len z prepojenia mala návrhy aj súpera v rozostupe; automaticky sa jej nezaradí nič)
             val famW = if (ownCount == 0) PersonGrouper.FAMILY_WEIGHT else fw
-            if (famW > 0f) family.forEach { addProto(it.vec, famW, it.faceId) }
+            if (famW > 0f) family.forEach { addProto(it.vec, famW, it.faceId, it.takenAt) }
             protoStart.add(protos.size)
             p.negatives.filter { it.vec.size == dim }
                 .sortedByDescending { PersonGrouper.cosine(it.vec, centroid) }
@@ -371,10 +402,11 @@ class KnnModel private constructor(
             negStart.add(negs.size)
         }
 
-        private fun addProto(v: FloatArray, w: Float, faceId: Long) {
+        private fun addProto(v: FloatArray, w: Float, faceId: Long, takenAt: Long) {
             protos.add(v)
             weights.add(w)
             protoFaces.add(faceId)
+            protoTaken.add(takenAt)
         }
 
         fun build(): KnnModel? {
@@ -382,7 +414,8 @@ class KnnModel private constructor(
             return KnnModel(
                 ids.toLongArray(), assignable.toBooleanArray(), single.toBooleanArray(),
                 flatten(centroids), protoStart.toIntArray(), flatten(protos), weights.toFloatArray(),
-                protoFaces.toLongArray(), negStart.toIntArray(), flatten(negs), negFaces.toLongArray(), dim,
+                protoFaces.toLongArray(), protoTaken.toLongArray(), negStart.toIntArray(), flatten(negs),
+                negFaces.toLongArray(), dim,
             )
         }
 

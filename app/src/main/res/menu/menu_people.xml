@@ -29,4 +29,8 @@
         android:id="@+id/manage_groups"
         android:title="@string/c2_manage_groups"
         app:showAsAction="never" />
+    <item
+        android:id="@+id/undo_merge"
+        android:title="@string/te_undo_merge_title"
+        app:showAsAction="never" />
 </menu>

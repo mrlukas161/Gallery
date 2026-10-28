@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.Intent
 import android.database.SQLException
 import android.os.Bundle
+import android.text.format.DateUtils
 import android.util.TypedValue
 import android.widget.LinearLayout
 import android.widget.ScrollView
@@ -32,9 +33,12 @@ import org.fossify.gallery.adapters.PeopleAdapter
 import org.fossify.gallery.databinding.ActivityPeopleBinding
 import org.fossify.gallery.dialogs.DecideFacesDialog
 import org.fossify.gallery.dialogs.FamilyProposalsDialog
+import org.fossify.gallery.faces.AssignmentSource
 import org.fossify.gallery.faces.ExtrasDatabase
 import org.fossify.gallery.faces.FaceVisibility
 import org.fossify.gallery.faces.GroupMemberEntity
+import org.fossify.gallery.faces.MergeLogEntity
+import org.fossify.gallery.faces.MergeUndo
 import org.fossify.gallery.faces.PeopleDatabase
 import org.fossify.gallery.faces.PeopleIndex
 import org.fossify.gallery.faces.Person
@@ -45,6 +49,7 @@ import org.fossify.gallery.family.FamilyProposals
 import org.fossify.gallery.family.FamilyRecorder
 import org.fossify.gallery.helpers.FaceAccuracy
 import org.fossify.gallery.helpers.GridZoom
+import org.fossify.gallery.helpers.PersonMerges
 
 class PeopleActivity : SimpleActivity() {
     private val binding by viewBinding(ActivityPeopleBinding::inflate)
@@ -101,6 +106,11 @@ class PeopleActivity : SimpleActivity() {
 
                 R.id.manage_groups -> {
                     showGroupManager()
+                    true
+                }
+
+                R.id.undo_merge -> {
+                    showUndoMerge()
                     true
                 }
 
@@ -320,7 +330,10 @@ class PeopleActivity : SimpleActivity() {
             val dao = PeopleDatabase.getInstance(this).PeopleDao()
             // nová osoba + priradenie všetkých tvárí v jednej transakcii
             val faceIds = person.faces.mapNotNull { it.id }
-            val personId = dao.createPersonWithFaces(name, faceIds, System.currentTimeMillis())
+            // pomenovaná skupina návrhov = potvrdený návrh (E2)
+            val personId = dao.createPersonWithFaces(
+                name, faceIds, System.currentTimeMillis(), AssignmentSource.ACCEPTED_SUGGESTION, emptyMap(),
+            )
             FamilyRecorder.personCreated(this, personId, faceIds)
             runOnUiThread {
                 toast(R.string.person_saved)
@@ -376,27 +389,83 @@ class PeopleActivity : SimpleActivity() {
         ) {
             val fromIds = from.mapNotNull { it.id }
             ensureBackgroundThread {
-                val ok = try {
-                    // tváre, negatívne pravidlá aj vzory všetkých zlúčených osôb naraz v jednej transakcii
-                    PeopleDatabase.getInstance(this).PeopleDao().mergeManyInto(fromIds, target.id)
-                    true
-                } catch (e: Throwable) {
-                    false
-                }
-                if (ok) {
-                    FamilyRecorder.personsMerged(this, fromIds, target.id)
-                    try {
-                        val extras = ExtrasDatabase.getInstance(this).ExtrasDao()
-                        fromIds.forEach { extras.moveMemberships(it, target.id) }
-                    } catch (e: Throwable) {
-                        // skupiny sú vedľajšie — zlúčenie osôb už prebehlo
-                    }
-                }
+                // tváre, negatívne pravidlá aj vzory všetkých zlúčených osôb naraz v jednej transakcii
+                // + záznam na vrátenie (E2) a presun skupín
+                val ok = PersonMerges.merge(this, fromIds, target.id)
+                if (ok) FamilyRecorder.personsMerged(this, fromIds, target.id)
                 runOnUiThread {
                     if (ok) afterAction() else toast(R.string.c2_operation_failed)
                 }
             }
         }
+    }
+
+    // E2 — „Vrátiť zlúčenie“: posledné zlúčenia z merge_log, výber a potvrdenie (ConfirmationDialog)
+    private fun showUndoMerge() {
+        ensureBackgroundThread {
+            val merges = PersonMerges.recent(this)
+            val names = try {
+                PeopleDatabase.getInstance(this).PeopleDao().getPersons().associate { it.id to it.name }
+            } catch (ignored: SQLException) {
+                emptyMap()
+            }
+            runOnUiThread {
+                if (isDestroyed || isFinishing) return@runOnUiThread
+                if (merges.isEmpty()) {
+                    toast(R.string.te_undo_merge_none)
+                    return@runOnUiThread
+                }
+                val labels = merges.map { m ->
+                    getString(
+                        R.string.te_undo_merge_item,
+                        m.fromName ?: "#${m.fromPersonId}",
+                        names[m.toPersonId] ?: "#${m.toPersonId}",
+                        DateUtils.formatDateTime(
+                            this, m.createdAt, DateUtils.FORMAT_SHOW_DATE or DateUtils.FORMAT_SHOW_TIME,
+                        ),
+                    )
+                }
+                showOptionsDialog(getString(R.string.te_undo_merge_title), labels) { index ->
+                    confirmUndoMerge(merges[index], labels[index])
+                }
+            }
+        }
+    }
+
+    private fun confirmUndoMerge(merge: MergeLogEntity, label: String) {
+        ConfirmationDialog(
+            this,
+            message = getString(R.string.te_undo_merge_confirm, label),
+            positive = org.fossify.commons.R.string.ok,
+            negative = org.fossify.commons.R.string.cancel,
+            dialogTitle = getString(R.string.te_undo_merge_title),
+        ) {
+            ensureBackgroundThread {
+                val result = PersonMerges.undo(this, merge.id)
+                runOnUiThread {
+                    if (isDestroyed || isFinishing) return@runOnUiThread
+                    toast(undoMessage(result))
+                    afterAction()
+                }
+            }
+        }
+    }
+
+    private fun undoMessage(result: PersonMerges.UndoResult): String = when (result) {
+        is PersonMerges.UndoResult.Done -> if (result.skipped > 0) {
+            getString(R.string.te_undo_merge_done_skipped, result.personName ?: "", result.skipped)
+        } else {
+            getString(R.string.te_undo_merge_done, result.personName ?: "")
+        }
+
+        is PersonMerges.UndoResult.Refused -> getString(
+            when (result.reason) {
+                MergeUndo.Blocked.TARGET_MISSING -> R.string.te_undo_merge_target_missing
+                else -> R.string.te_undo_merge_not_possible
+            }
+        )
+
+        PersonMerges.UndoResult.Failed -> getString(R.string.c2_operation_failed)
     }
 
     private fun deletePersons(persons: List<Person>) {
