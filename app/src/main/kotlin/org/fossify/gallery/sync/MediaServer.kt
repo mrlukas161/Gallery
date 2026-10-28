@@ -2,12 +2,15 @@ package org.fossify.gallery.sync
 
 import android.content.ContentResolver
 import android.content.Context
+import android.content.SharedPreferences
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.Matrix
 import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.os.StatFs
 import android.provider.MediaStore
+import androidx.exifinterface.media.ExifInterface
 import org.json.JSONArray
 import org.json.JSONObject
 import fi.iki.elonen.NanoHTTPD
@@ -20,7 +23,12 @@ import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.InputStream
 import java.net.URLDecoder
+import org.fossify.commons.extensions.getSharedPrefs
+import org.fossify.commons.helpers.ensureBackgroundThread
+import org.fossify.gallery.extensions.config
 import org.fossify.gallery.faces.IndexScope
+import org.fossify.gallery.helpers.EXCLUDED_FOLDERS
+import org.fossify.gallery.helpers.INCLUDED_FOLDERS
 
 // Telefónny LAN media server (NanoHTTPD). Sprístupní LEN MediaStore Images+Videos, adresované cez
 // nepriehľadné MediaStore _ID (žiadne cesty od klienta -> ../ traversal je nemožný). Chránené PIN tokenom.
@@ -35,7 +43,7 @@ class MediaServer(
     companion object {
         const val DEFAULT_PORT = 8089
         const val SERVER_NAME = "Galéria+"
-        const val SERVER_VERSION = "1"
+        const val SERVER_VERSION = "2"
         private const val SAVE_SUBDIR = "Galéria"
 
         // po toľkých RÔZNYCH zlých tokenoch sa server zamkne (šanca uhádnuť 6-miestny PIN ~ 20 : 900 000)
@@ -45,7 +53,17 @@ class MediaServer(
         private const val MAX_UPLOAD_BYTES = 4L * 1024 * 1024 * 1024
         private const val FREE_SPACE_RESERVE = 200L * 1024 * 1024
         private const val FREE_SPACE_CHECK_EVERY = 64L * 1024 * 1024
+
+        // strop na počet fotiek v jednej požiadavke na zmazanie (PC posiela dávky po desiatkach)
+        private const val MAX_DELETE_IDS = 1000
+
+        // strop na telo /api/delete (1000 id sa zmestí s rezervou) — parseBody inak načíta celé telo do pamäte
+        private const val MAX_DELETE_BODY_BYTES = 64L * 1024
     }
+
+    // jedno mazanie naraz: NanoHTTPD obsluhuje každé spojenie vo vlastnom vlákne a dve súbežné
+    // požiadavky s rovnakým id by kopírovali do toho istého súboru v Koši
+    private val deleteLock = Any()
 
     data class Item(
         val id: Long,
@@ -63,6 +81,13 @@ class MediaServer(
     @Volatile
     private var index: Map<Long, Item> = emptyMap()
 
+    // generácia zoznamu: PC sa pýta /api/ping každé 2 s a pri zmene si vypýta nové položky
+    @Volatile
+    private var generation = 0L
+
+    @Volatile
+    private var newestMtime = 0L
+
     // Ochrana PIN-u pred hádaním na LAN: rátajú sa RÔZNE zlé tokeny (otvorená stará karta v PC
     // prehliadači posiela stále ten istý starý token a server by inak zbytočne zamkla); požiadavky
     // úplne bez tokenu (favicon…) nie sú hádanie. Po zamknutí sa odmietne všetko a služba server
@@ -76,9 +101,39 @@ class MediaServer(
 
     fun itemCount(): Int = index.size
 
+    // volá HttpSyncService po zmene v MediaStore (nová / zmazaná fotka) — mimo hlavného vlákna
+    fun refreshIndex() = rebuildIndex()
+
+    // Zamknutie/odomknutie priečinka PIN-om a vylúčené/zahrnuté priečinky MediaStore nezmenia, takže
+    // ContentObserver služby index neprepočíta a PC by videl fotky práve zamknutého priečinka.
+    // SharedPreferences drží listener len slabo -> silná referencia v poli (inak by ho GC zrušil).
+    private val prefsListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+        // key == null = prefs sa vyčistili (clear) -> radšej prepočítať
+        if (key == null || IndexDiff.isScopeKey(key)) {
+            ensureBackgroundThread {
+                try {
+                    rebuildIndex()
+                } catch (ignored: Throwable) {
+                }
+            }
+        }
+    }
+
     override fun start(timeout: Int, daemon: Boolean) {
-        rebuildIndex()
-        super.start(timeout, daemon)
+        // najprv listener, potom index: zmena nastavení počas prvého prepočtu sa tak nestratí
+        appContext.getSharedPrefs().registerOnSharedPreferenceChangeListener(prefsListener)
+        try {
+            rebuildIndex()
+            super.start(timeout, daemon)
+        } catch (e: Throwable) {
+            appContext.getSharedPrefs().unregisterOnSharedPreferenceChangeListener(prefsListener)
+            throw e
+        }
+    }
+
+    override fun stop() {
+        appContext.getSharedPrefs().unregisterOnSharedPreferenceChangeListener(prefsListener)
+        super.stop()
     }
 
     override fun serve(session: IHTTPSession): Response {
@@ -92,10 +147,11 @@ class MediaServer(
             }
             when (session.uri) {
                 "/api/ping" -> handlePing()
-                "/api/list" -> handleList()
+                "/api/list" -> handleList(session)
                 "/api/file" -> handleFile(session)
                 "/api/thumb" -> handleThumb(session)
                 "/api/upload" -> handleUpload(session)
+                "/api/delete" -> handleDelete(session)
                 "/api/groups" -> handleGroups()
                 "/api/state" -> handleState()
                 "/api/mark" -> handleMark(session)
@@ -142,12 +198,17 @@ class MediaServer(
             .put("name", SERVER_NAME)
             .put("version", SERVER_VERSION)
             .put("count", index.size)
+            .put("gen", generation)
+            .put("newest", newestMtime)
+            .put("allFiles", PcDeleter.canDelete())
+            .put("recycleBin", appContext.config.useRecycleBin)
         return json(Status.OK, o.toString())
     }
 
-    private fun handleList(): Response {
+    private fun handleList(session: IHTTPSession): Response {
+        val since = session.parameters["since"]?.firstOrNull()?.toLongOrNull()
         val arr = JSONArray()
-        for (it in index.values) {
+        for (it in IndexDiff.since(index.values, since) { i -> i.mtime }) {
             arr.put(
                 JSONObject()
                     .put("id", it.id)
@@ -238,6 +299,45 @@ class MediaServer(
         } ?: return json(Status.INTERNAL_ERROR, """{"error":"save failed"}""")
         rebuildIndex()
         return json(Status.OK, JSONObject().put("saved", saved.first).put("uri", saved.second).toString())
+    }
+
+    // mazanie z PC porovnávača priamo v mobile (do Koša podľa nastavenia) — len po potvrdení na PC
+    private fun handleDelete(session: IHTTPSession): Response {
+        if (session.method != Method.POST) return json(Status.METHOD_NOT_ALLOWED, """{"error":"use POST"}""")
+        // veľkosť tela over PRED parseBody (ten číta celé telo bez limitu); telo ostáva neprečítané,
+        // preto spojenie zavrieť (Connection: close) — inak by zvyšok tela skazil ďalšiu požiadavku na keep-alive
+        when (IndexDiff.deleteBodyReject(session.headers["content-length"], MAX_DELETE_BODY_BYTES)) {
+            411 -> return json(Status.LENGTH_REQUIRED, """{"error":"missing Content-Length"}""").also { it.closeConnection(true) }
+            413 -> return json(Status.PAYLOAD_TOO_LARGE, """{"error":"body too large"}""").also { it.closeConnection(true) }
+        }
+        // telo prečítať vždy, aj pri 409: neprečítané by na keep-alive spojení skazilo ďalšiu požiadavku (400)
+        val files = HashMap<String, String>()
+        session.parseBody(files)
+        if (!PcDeleter.canDelete()) return json(Status.CONFLICT, """{"error":"no_all_files_access"}""")
+        val body = files["postData"].orEmpty()
+        // Throwable: hlboko vnorený JSON hodí StackOverflowError, ktorý by inak zhodil vlákno servera aj appku
+        val arr = try {
+            JSONObject(body).getJSONArray("ids")
+        } catch (e: Throwable) {
+            return json(Status.BAD_REQUEST, """{"error":"bad body"}""")
+        }
+        if (arr.length() > MAX_DELETE_IDS) return json(Status.BAD_REQUEST, """{"error":"too many ids"}""")
+        // jedno mazanie naraz (rovnaké id v dvoch súbežných požiadavkách)
+        synchronized(deleteLock) {
+            val failed = JSONObject()
+            val items = ArrayList<Item>()
+            // duplicitné id by sa mazalo dvakrát (druhýkrát by skončilo ako „missing“ vo failed)
+            for (id in IndexDiff.uniqueIds((0 until arr.length()).map { arr.optLong(it, -1L) })) {
+                val item = index[id]
+                if (item == null) failed.put(id.toString(), "unknown id") else items.add(item)
+            }
+            val r = PcDeleter.delete(appContext, items)
+            r.failed.forEach { (id, msg) -> failed.put(id.toString(), msg) }
+            val gonePaths = items.filter { it.id in r.deleted }.map { it.path }
+            if (gonePaths.isNotEmpty()) SyncStore.removeMarked(syncPrefs, gonePaths)
+            rebuildIndex()
+            return json(Status.OK, JSONObject().put("deleted", JSONArray(r.deleted)).put("failed", failed).put("recycleBin", r.toRecycleBin).toString())
+        }
     }
 
     // ---------- SYNC MANAŽÉR: skupiny, značky na zmazanie, evidencia stiahnutých ----------
@@ -354,9 +454,35 @@ class MediaServer(
                 inPreferredConfig = Bitmap.Config.ARGB_8888
             }
             val bmp = resolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, opts) } ?: return null
-            scaleToMax(bmp, maxPx)
+            // najprv zmenši (lacnejšie), potom otoč podľa EXIF — BitmapFactory orientáciu ignoruje
+            // a zvislé fotky by prišli do PC otočené na bok
+            applyExifOrientation(scaleToMax(bmp, maxPx), uri)
         } catch (e: Throwable) {
             null
+        }
+    }
+
+    // EXIF orientácia (1–8) z uri; pri akejkoľvek chybe čítania 1 = bez otočenia
+    private fun readExifOrientation(uri: Uri): Int = try {
+        resolver.openInputStream(uri)?.use {
+            ExifInterface(it).getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL)
+        } ?: ExifInterface.ORIENTATION_NORMAL
+    } catch (e: Throwable) {
+        ExifInterface.ORIENTATION_NORMAL
+    }
+
+    private fun applyExifOrientation(bmp: Bitmap, uri: Uri): Bitmap {
+        val t = ExifOrient.of(readExifOrientation(uri))
+        if (t.degrees == 0 && !t.mirror) return bmp
+        return try {
+            val m = Matrix()
+            m.setRotate(t.degrees.toFloat())
+            if (t.mirror) m.postScale(-1f, 1f)
+            val out = Bitmap.createBitmap(bmp, 0, 0, bmp.width, bmp.height, m, true)
+            if (out !== bmp) bmp.recycle()
+            out
+        } catch (e: Throwable) {
+            bmp // pri nedostatku pamäte radšej neotočený náhľad než žiadny
         }
     }
 
@@ -395,16 +521,23 @@ class MediaServer(
         return r
     }
 
+    @Synchronized
     private fun rebuildIndex() {
         val map = LinkedHashMap<Long, Item>()
         // zamknuté a vylúčené priečinky PC nevidí (rozhodnutie Lukáša 20.10.2026)
         val scope = IndexScope(appContext)
-        collect(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, false, map, scope)
-        collect(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, true, map, scope)
+        // provider dočasne nedostupný (query vrátilo null) -> ponechať starý index a generáciu,
+        // inak by PC uvidel prázdnu knižnicu a ponúkol všetko ako nové
+        if (!collect(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, false, map, scope)) return
+        if (!collect(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, true, map, scope)) return
+        val old = index
         index = map
+        newestMtime = map.values.maxOfOrNull { it.mtime } ?: 0L
+        if (IndexDiff.changed(old.mapValues { it.value.mtime to it.value.size }, map.mapValues { it.value.mtime to it.value.size })) generation++
     }
 
-    private fun collect(base: Uri, isVideo: Boolean, into: MutableMap<Long, Item>, scope: IndexScope) {
+    // true = dotaz prebehol (aj prázdny výsledok), false = provider nevrátil kurzor
+    private fun collect(base: Uri, isVideo: Boolean, into: MutableMap<Long, Item>, scope: IndexScope): Boolean {
         val proj = arrayOf(
             MediaStore.MediaColumns._ID,
             MediaStore.MediaColumns.DISPLAY_NAME,
@@ -415,7 +548,8 @@ class MediaServer(
             MediaStore.MediaColumns.MIME_TYPE,
             MediaStore.MediaColumns.DATA,
         )
-        resolver.query(base, proj, null, null, "${MediaStore.MediaColumns.DATE_MODIFIED} DESC")?.use { c ->
+        val cursor = resolver.query(base, proj, null, null, "${MediaStore.MediaColumns.DATE_MODIFIED} DESC") ?: return false
+        cursor.use { c ->
             val iId = c.getColumnIndexOrThrow(MediaStore.MediaColumns._ID)
             val iNm = c.getColumnIndexOrThrow(MediaStore.MediaColumns.DISPLAY_NAME)
             val iSz = c.getColumnIndexOrThrow(MediaStore.MediaColumns.SIZE)
@@ -443,6 +577,7 @@ class MediaServer(
                 )
             }
         }
+        return true
     }
 
     private fun json(status: Status, body: String): Response {
@@ -529,4 +664,54 @@ class MediaServer(
         name: String, mime: String, sizeHint: Long,
         writer: (java.io.OutputStream) -> Unit,
     ): Pair<String, String>? = saveMediaScoped(appContext, name, mime, SAVE_SUBDIR, writer)
+}
+
+// EXIF orientácia (1–8) -> (uhol v smere hodín, potom zrkadlenie vodorovne). Čistá logika, testovateľná na JVM.
+// Poradie „najprv otoč, potom zrkadli" je rovnaké ako v Glide (TransformationUtils), teda ako zobrazenie
+// v appke: 5 (transpose) = otoč 90° + zrkadli, 7 (transverse) = otoč 270° + zrkadli.
+object ExifOrient {
+    data class T(val degrees: Int, val mirror: Boolean)
+
+    fun of(orientation: Int): T = when (orientation) {
+        ExifInterface.ORIENTATION_FLIP_HORIZONTAL -> T(0, true)
+        ExifInterface.ORIENTATION_ROTATE_180 -> T(180, false)
+        ExifInterface.ORIENTATION_FLIP_VERTICAL -> T(180, true)
+        ExifInterface.ORIENTATION_TRANSPOSE -> T(90, true)
+        ExifInterface.ORIENTATION_ROTATE_90 -> T(90, false)
+        ExifInterface.ORIENTATION_TRANSVERSE -> T(270, true)
+        ExifInterface.ORIENTATION_ROTATE_270 -> T(270, false)
+        else -> T(0, false) // 1 = bez otočenia, 0 a neznáme hodnoty tiež
+    }
+}
+
+// čistá logika živého zoznamu (bez Androidu -> testovateľná)
+object IndexDiff {
+    // kľúč = id, hodnota = (mtime, size); zmena = pribudla/ubudla/zmenila sa fotka
+    fun changed(old: Map<Long, Pair<Long, Long>>, new: Map<Long, Pair<Long, Long>>): Boolean =
+        old.size != new.size || new.any { (id, v) -> old[id] != v }
+
+    fun <T> since(items: Collection<T>, since: Long?, mtime: (T) -> Long): List<T> =
+        if (since == null) items.toList() else items.filter { mtime(it) >= since }
+
+    // duplicity preč, poradie zachovať
+    fun uniqueIds(ids: List<Long>): List<Long> = LinkedHashSet(ids).toList()
+
+    // rozhodnutie o tele /api/delete podľa hlavičky Content-Length: null = v poriadku (telo sa smie čítať),
+    // 411 = dĺžka chýba / je neplatná, 413 = telo je väčšie než strop
+    fun deleteBodyReject(contentLength: String?, max: Long): Int? {
+        val len = contentLength?.trim()?.toLongOrNull()
+        return when {
+            len == null || len < 0 -> 411
+            len > max -> 413
+            else -> null
+        }
+    }
+
+    // stačí voľné miesto na kópiu súboru + rezervu? free < 0 = nezistené -> nebrániť
+    fun hasRoomForCopy(free: Long, size: Long, reserve: Long): Boolean = free < 0 || free >= size.coerceAtLeast(0) + reserve
+
+    // kľúče nastavení, po ktorých sa zmení rozsah indexu (IndexScope): vylúčené/zahrnuté priečinky a
+    // ochrana priečinka PIN-om/heslom (commons BaseConfig: protected_folder_hash_<cesta>, protected_folder_type_<cesta>)
+    fun isScopeKey(key: String): Boolean =
+        key == EXCLUDED_FOLDERS || key == INCLUDED_FOLDERS || key.startsWith("protected_folder_", ignoreCase = true)
 }

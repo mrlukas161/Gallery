@@ -1361,6 +1361,8 @@ class SettingsActivity : SimpleActivity() {
             if (isDestroyed || isFinishing) return
             refreshIndexOverview()
             pollFaceV2Summary()
+            // server sa mohol sám zastaviť (zámok po zlých PIN-och) -> text „Beží“ nenechať zastaraný
+            updatePcServerSummary()
             binding.settingsIndexOverviewSummary.postDelayed(this, 1500)
         }
     }
@@ -1751,10 +1753,11 @@ class SettingsActivity : SimpleActivity() {
         if (isDestroyed) return
         val error = org.fossify.gallery.services.HttpSyncService.lastError
         binding.settingsPcServerSummary.text = when {
-            org.fossify.gallery.services.HttpSyncService.isRunning -> getString(
-                R.string.pc_server_running_at,
-                org.fossify.gallery.services.HttpSyncService.shareUrl() ?: "?",
-            )
+            org.fossify.gallery.services.HttpSyncService.isRunning -> {
+                val link = org.fossify.gallery.services.HttpSyncService.shareUrl()
+                // bez Wi-Fi adresa nie je, server ide len cez USB kábel
+                if (link != null) getString(R.string.pc_server_running_at, link) else getString(R.string.porovnavac_server_len_kabel_beziaci)
+            }
             // server sa naposledy nespustil (obsadený port, bez WiFi…) — dôvod nechať viditeľný
             error != null -> getString(R.string.a3_pc_server_error_summary, error)
             else -> getString(R.string.pc_server_tap_to_start)
