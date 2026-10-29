@@ -11,6 +11,7 @@ import android.content.IntentFilter
 import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
+import android.app.PendingIntent
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import org.fossify.gallery.R
@@ -23,6 +24,7 @@ import org.fossify.gallery.faces.PhashIndexer
 import org.fossify.gallery.faces.QrIndexer
 import org.fossify.gallery.extensions.config
 import org.fossify.gallery.helpers.IndexPerf
+import org.fossify.gallery.helpers.IndexProgress
 import org.fossify.gallery.helpers.MemoryPressure
 import org.fossify.gallery.helpers.PendingCounter
 import org.fossify.gallery.helpers.ProcessingPolicy
@@ -44,6 +46,10 @@ class IndexingService : Service() {
 
     // úlohy, ktoré táto služba práve spustila (pri časovom limite systému sa zastavia práve tie)
     private val launched: MutableSet<String> = ConcurrentHashMap.newKeySet()
+
+    // štruktúrovaný priebeh úloh pre notifikáciu (počty, percentá, odhad času); kľúč = názov úlohy
+    private val progressState = ConcurrentHashMap<String, IndexProgress>()
+    private val progressPhase = ConcurrentHashMap<String, String>()
 
     // po finish() už neposielať notifikáciu priebehu — oneskorený callback indexera by inak
     // vyvesil „trvalú" notifikáciu, ktorú už nikto nezruší
@@ -92,6 +98,13 @@ class IndexingService : Service() {
         stopped = false
         ensureChannel()
         startForegroundCompat(buildInitial())
+        if (intent?.getStringExtra(EXTRA_TASK) == TASK_STOP) {
+            // tlačidlo Zastaviť v notifikácii: zastav všetko, čo beží; nič nové sa nespustí
+            val running = launched.toList()
+            running.forEach { stopTask(it) }
+            if (running.isEmpty()) finish()
+            return START_NOT_STICKY
+        }
         when (val task = intent?.getStringExtra(EXTRA_TASK)) {
             null, TASK_AUTO -> {
                 // výber funkcií (autoTasks) aj pravidlá spracovania (applyPolicy) bežia mimo hlavného
@@ -346,6 +359,8 @@ class IndexingService : Service() {
         // opäť, fail() ju nastaví nanovo; iné úlohy ju nechávajú viditeľnú
         if (task == lastErrorTask) clearLastError()
         launched.add(task)
+        progressState[task] = IndexProgress(taskName(task))
+        refreshNotification()
         val done = {
             launched.remove(task)
             if (auto) autoRunning.remove(task)
@@ -378,7 +393,7 @@ class IndexingService : Service() {
         FaceIndexer.index(
             applicationContext, notify = false,
             onWaiting = { waiting("faces", R.string.lk_task_faces) },
-            onProgress = { d, t -> prog("faces", getString(R.string.q1_prog_faces, d, t)) },
+            onProgress = { d, t -> progN("faces", d, t) },
             onDone = { _, _ -> clearProg("faces"); next() },
             onError = { fail("faces", it); next() },
         )
@@ -390,7 +405,7 @@ class IndexingService : Service() {
         }
         GeoIndexer.index(
             applicationContext,
-            onProgress = { d, t -> prog("geo", getString(R.string.q1_prog_geo, d, t)) },
+            onProgress = { d, t -> progN("geo", d, t) },
             onDone = { _, _ -> clearProg("geo"); next() },
             onError = { fail("geo", it); next() },
         )
@@ -402,7 +417,7 @@ class IndexingService : Service() {
         }
         QrIndexer.index(
             applicationContext, notify = false,
-            onProgress = { d, t -> prog("qr", getString(R.string.q1_prog_qr, d, t)) },
+            onProgress = { d, t -> progN("qr", d, t) },
             onDone = { _, _ -> clearProg("qr"); next() },
             onError = { fail("qr", it); next() },
         )
@@ -415,7 +430,7 @@ class IndexingService : Service() {
         OcrIndexer.index(
             applicationContext, notify = false,
             onWaiting = { waiting("ocr", R.string.lk_task_ocr) },
-            onProgress = { d, t -> prog("ocr", getString(R.string.q1_prog_ocr, d, t)) },
+            onProgress = { d, t -> progN("ocr", d, t) },
             onDone = { _, _ -> clearProg("ocr"); next() },
             onError = { fail("ocr", it); next() },
         )
@@ -427,7 +442,7 @@ class IndexingService : Service() {
         }
         PhashIndexer.index(
             applicationContext, notify = false,
-            onProgress = { d, t -> prog("phash", getString(R.string.q1_prog_phash, d, t)) },
+            onProgress = { d, t -> progN("phash", d, t) },
             onDone = { _ -> clearProg("phash"); next() },
             onError = { fail("phash", it); next() },
         )
@@ -440,7 +455,7 @@ class IndexingService : Service() {
         ClipIndexer.index(
             applicationContext, notify = false,
             onWaiting = { waiting("clip", R.string.lk_task_clip) },
-            onProgress = { phase, d, t -> prog("clip", "$phase $d/$t") },
+            onProgress = { phase, d, t -> progN("clip", d, t, phase) },
             onDone = { _ -> ClipSearch.invalidate(); clearProg("clip"); next() },
             onError = { fail("clip", it); next() },
         )
@@ -452,7 +467,7 @@ class IndexingService : Service() {
         }
         org.fossify.gallery.clip.ClipMlModels.download(
             applicationContext,
-            onProgress = { phase, d, t -> prog("clipml", getString(R.string.q1_prog_clip_ml, phase, d, t)) },
+            onProgress = { phase, d, t -> progN("clipml", d, t, phase) },
             onDone = { org.fossify.gallery.clip.ClipSearch.releaseMl(); clearProg("clipml"); next() },
             onError = { fail("clipml", it); next() },
         )
@@ -467,7 +482,7 @@ class IndexingService : Service() {
         org.fossify.gallery.faces.RefreshFaces.run(
             applicationContext,
             onWaiting = { waiting("reembed", R.string.lk_task_reembed) },
-            onProgress = { d, t -> prog("reembed", getString(R.string.q1_prog_reembed, d, t)) },
+            onProgress = { d, t -> progN("reembed", d, t) },
             onDone = { _, _ -> clearProg("reembed"); next() },
             onError = { fail("reembed", it); next() },
         )
@@ -482,7 +497,7 @@ class IndexingService : Service() {
         org.fossify.gallery.faces.FaceReembedV2.run(
             applicationContext,
             onWaiting = { waiting("facev2", R.string.lk_task_face_v2) },
-            onProgress = { d, t -> prog("facev2", getString(R.string.tb_prog_face_v2, d, t)) },
+            onProgress = { d, t -> progN("facev2", d, t) },
             onDone = { switched ->
                 clearProg("facev2")
                 // nedokončené (prerušenie, nepripojená karta) → počká na ďalšie nabíjanie
@@ -539,7 +554,52 @@ class IndexingService : Service() {
 
     // ťažká úloha čaká na miesto (HeavyGate) — v notifikácii aj v Nastaveniach je vidno, že nestojí
     private fun waiting(key: String, nameRes: Int) {
+        progressState.getOrPut(key) { IndexProgress(getString(nameRes)) }.markWaiting()
         prog(key, getString(R.string.lk_prog_waiting, getString(nameRes)))
+    }
+
+    // priebeh s počtami (notifikácia ukáže percentá, pruh a odhad času); phase = napr. fáza sťahovania CLIP
+    private fun progN(key: String, done: Int, total: Int, phase: String? = null) {
+        progressState.getOrPut(key) { IndexProgress(taskName(key)) }.update(done, total)
+        if (phase != null) progressPhase[key] = phase else progressPhase.remove(key)
+        prog(key, describe(key))
+    }
+
+    private fun taskName(key: String): String = getString(
+        when (key) {
+            TASK_FACES -> R.string.lk_task_faces
+            TASK_GEO -> R.string.nt_task_geo
+            TASK_QR -> R.string.nt_task_qr
+            TASK_OCR -> R.string.lk_task_ocr
+            TASK_PHASH -> R.string.nt_task_phash
+            TASK_CLIP -> R.string.lk_task_clip
+            TASK_CLIP_ML -> R.string.nt_task_clip_ml
+            TASK_REEMBED -> R.string.lk_task_reembed
+            TASK_FACE_V2 -> R.string.lk_task_face_v2
+            else -> R.string.indexing_running
+        },
+    )
+
+    // „Tváre: 120 z 3 400 (3 %) · zostáva ~25 min“ / „Tváre: pripravujem…“ / „Tváre: čaká…“
+    private fun describe(key: String): String {
+        val p = progressState[key] ?: return progressMap[key] ?: ""
+        val name = progressPhase[key]?.let { "${p.name} – $it" } ?: p.name
+        return when {
+            p.waiting -> getString(R.string.lk_prog_waiting, name)
+            !p.started -> getString(R.string.nt_preparing, name)
+            else -> {
+                val eta = p.remainingMs()?.let {
+                    IndexProgress.formatEta(
+                        it,
+                        getString(R.string.nt_eta_less_minute),
+                        { m -> getString(R.string.nt_eta_minutes, m) },
+                        { h, m -> getString(R.string.nt_eta_hours, h, m) },
+                    )
+                }
+                val base = getString(R.string.nt_progress, name, p.done, p.total, p.percent)
+                if (eta == null) base else getString(R.string.nt_with_eta, base, eta)
+            }
+        }
     }
 
     private fun prog(key: String, text: String) {
@@ -551,26 +611,58 @@ class IndexingService : Service() {
     private fun clearProg(key: String) {
         liveProgress = (progressMap - key).values.joinToString(" · ")
         progressMap.remove(key)
+        progressState.remove(key)
+        progressPhase.remove(key)
         refreshNotification()
     }
 
     private fun refreshNotification() {
         if (stopped) return
         try {
-            val lines = progressMap.values.toList()
-            val big = if (lines.isEmpty()) getString(R.string.indexing_running) else lines.joinToString("\n")
-            val n = NotificationCompat.Builder(this, CHANNEL_ID)
-                .setSmallIcon(android.R.drawable.stat_notify_sync)
-                .setContentTitle(getString(R.string.app_name_brand))
-                .setContentText(lines.firstOrNull() ?: getString(R.string.indexing_running))
-                .setStyle(NotificationCompat.BigTextStyle().bigText(big))
-                .setOngoing(true)
-                .setOnlyAlertOnce(true)
-                .build()
-            getSystemService(NotificationManager::class.java)?.notify(NOTIF_ID, n)
+            getSystemService(NotificationManager::class.java)?.notify(NOTIF_ID, buildProgressNotification())
         } catch (ignored: Throwable) {
         }
     }
+
+    // Notifikácia ukáže, ČO sa práve spracúva, koľko ostáva (pruh + percentá + odhad času), ďalšie
+    // úlohy v rozbalenom texte; ťuk otvorí appku, tlačidlo Zastaviť spracovanie zastaví.
+    private fun buildProgressNotification(): Notification {
+        val keys = launched.toList().ifEmpty { progressState.keys.toList() }
+        val lines = keys.map { describe(it).ifEmpty { taskName(it) } }
+        val big = lines.joinToString("\n").ifEmpty { getString(R.string.indexing_running) }
+        // hlavná úloha: tá, ktorá naozaj beží a má počty (nie čakajúca)
+        val main = keys.mapNotNull { k -> progressState[k]?.takeIf { it.started && !it.waiting } }.firstOrNull()
+        val title = if (keys.size > 1) {
+            getString(R.string.nt_title_many, keys.size)
+        } else {
+            getString(R.string.nt_title)
+        }
+        val b = NotificationCompat.Builder(this, CHANNEL_ID)
+            .setSmallIcon(android.R.drawable.stat_notify_sync)
+            .setContentTitle(title)
+            .setContentText(lines.firstOrNull() ?: getString(R.string.indexing_running))
+            .setStyle(NotificationCompat.BigTextStyle().bigText(big))
+            .setOngoing(true)
+            .setOnlyAlertOnce(true)
+            .setContentIntent(openAppIntent())
+            .addAction(0, getString(R.string.nt_stop), stopIntent())
+        if (main != null) b.setProgress(main.total, main.done, false) else b.setProgress(0, 0, true)
+        return b.build()
+    }
+
+    private fun openAppIntent(): PendingIntent? {
+        val launch = packageManager.getLaunchIntentForPackage(packageName) ?: return null
+        launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED)
+        val flags = PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        return PendingIntent.getActivity(this, 0, launch, flags)
+    }
+
+    private fun stopIntent(): PendingIntent = PendingIntent.getService(
+        this,
+        1,
+        Intent(this, IndexingService::class.java).putExtra(EXTRA_TASK, TASK_STOP),
+        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+    )
 
     private fun buildInitial(): Notification =
         NotificationCompat.Builder(this, CHANNEL_ID)
@@ -579,6 +671,7 @@ class IndexingService : Service() {
             .setContentText(getString(R.string.indexing_running))
             .setOngoing(true)
             .setOnlyAlertOnce(true)
+            .setContentIntent(openAppIntent())
             .build()
 
     // Android 15+: služba typu dataSync smie bežať ~6 h za 24 h. Po vyčerpaní systém zavolá
@@ -640,6 +733,8 @@ class IndexingService : Service() {
         autoRunning.clear()
         memoryLow = false
         progressMap.clear()
+        progressState.clear()
+        progressPhase.clear()
         stopForegroundCompat()
         stopSelf()
     }
@@ -713,6 +808,7 @@ class IndexingService : Service() {
         const val TASK_CLIP_ML = "clipml"
         const val TASK_REEMBED = "reembed"
         const val TASK_FACE_V2 = "facev2"
+        const val TASK_STOP = "stop"
         private const val CHANNEL_ID = "indexing_service"
         private const val NOTIF_ID = 49240
 

@@ -12,6 +12,7 @@ import org.fossify.commons.dialogs.*
 import org.fossify.commons.extensions.*
 import org.fossify.commons.helpers.*
 import org.fossify.commons.models.RadioItem
+import org.fossify.gallery.BuildConfig
 import org.fossify.gallery.R
 import org.fossify.gallery.databinding.ActivitySettingsBinding
 import org.fossify.gallery.dialogs.*
@@ -831,6 +832,8 @@ class SettingsActivity : SimpleActivity() {
     }
 
     private fun setupCheckForUpdates() {
+        // nainštalovaná verzia je vidno vždy, aj pred kontrolou
+        binding.settingsCheckUpdatesSummary.text = getString(R.string.nt_installed_version, BuildConfig.VERSION_NAME)
         binding.settingsCheckUpdatesHolder.setOnClickListener {
             binding.settingsCheckUpdatesSummary.text = getString(R.string.checking_updates)
             AppUpdater.checkForUpdate(
@@ -844,9 +847,15 @@ class SettingsActivity : SimpleActivity() {
             ) { update ->
                 if (!isDestroyed) {
                     if (update == null) {
-                        binding.settingsCheckUpdatesSummary.text = getString(R.string.up_to_date)
+                        binding.settingsCheckUpdatesSummary.text =
+                            getString(R.string.nt_up_to_date_version, BuildConfig.VERSION_NAME)
                     } else {
-                        binding.settingsCheckUpdatesSummary.text = getString(R.string.update_available_short, update.versionName)
+                        binding.settingsCheckUpdatesSummary.text =
+                            getString(
+                                R.string.nt_update_available_version,
+                                BuildConfig.VERSION_NAME,
+                                update.versionName,
+                            )
                         ConfirmationDialog(
                             this,
                             getString(R.string.update_available_msg, update.versionName),
