@@ -4,22 +4,43 @@ import android.content.Context
 import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
-import org.fossify.gallery.safety.SafeOpenHelperFactory
+import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
+import org.fossify.gallery.safety.SafeOpenHelperFactory
 
 // Samostatná databáza pre tváre (faces.db) — úplne oddelená od gallery.db, aby žiadna
 // zmena/chyba schémy tvárí nemohla zasiahnuť cache fotiek v hlavnej galérii.
 // ⛔ ŽIADNY fallbackToDestructiveMigration: id tvárí sú odkazované z people.db (face_assignments,
 // cannot_links) a extras.db (ignored_faces) — zmazanie faces.db = stratené menovky, a nové
 // autoincrement id by sa navyše prilepili na cudzie tváre. Pri zmene entít zvýš `version`
-// A pridaj Migration, pozri PeopleDatabase.
+// A pridaj Migration (vzor MIGRATION_2_3) a migračný test (app/src/androidTest).
 @Database(entities = [FaceEntity::class, IndexedPhotoEntity::class], version = FacesDatabase.SCHEMA_VERSION)
 abstract class FacesDatabase : RoomDatabase() {
     abstract fun FaceDao(): FaceDao
 
     companion object {
         // verzia schémy (= @Database.version); DbVersionGuard podľa nej spozná DB z novšej appky
-        const val SCHEMA_VERSION = 2
+        const val SCHEMA_VERSION = 3
+
+        // E1 (v2 → v3): len nové stĺpce (nullable alebo s predvolenou hodnotou). Žiadny riadok sa nemení
+        // ani nemaže, id tvárí ostávajú. Hodnoty starých tvárí doplní lenivo FaceMetaBackfill (pri nabíjaní),
+        // lebo migrácia nevie čítať EXIF ani súbory fotiek. Testy: androidTest FacesMigrationTest.
+        val MIGRATION_2_3 = object : Migration(2, SCHEMA_VERSION) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                MIGRATION_2_3_SQL.forEach { db.execSQL(it) }
+            }
+        }
+
+        val MIGRATION_2_3_SQL = listOf(
+            "ALTER TABLE `faces` ADD COLUMN `quality` REAL",
+            "ALTER TABLE `faces` ADD COLUMN `yaw` REAL",
+            "ALTER TABLE `faces` ADD COLUMN `pitch` REAL",
+            "ALTER TABLE `faces` ADD COLUMN `blur` REAL",
+            "ALTER TABLE `faces` ADD COLUMN `align_method` INTEGER",
+            "ALTER TABLE `faces` ADD COLUMN `box_space` INTEGER NOT NULL DEFAULT 0",
+            "ALTER TABLE `faces` ADD COLUMN `embed_version` INTEGER",
+            "ALTER TABLE `faces` ADD COLUMN `taken_at` INTEGER",
+        )
 
         private var db: FacesDatabase? = null
 
@@ -30,6 +51,7 @@ abstract class FacesDatabase : RoomDatabase() {
                         db = Room.databaseBuilder(context.applicationContext, FacesDatabase::class.java, "faces.db")
                             // A1: poškodený súbor sa premenuje, nezmaže (inak by SQLite vytvoril prázdnu DB)
                             .openHelperFactory(SafeOpenHelperFactory())
+                            .addMigrations(MIGRATION_2_3)
                             .build()
                     }
                 }

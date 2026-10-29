@@ -3,6 +3,7 @@ package org.fossify.gallery.family
 import android.content.Context
 import android.graphics.BitmapFactory
 import androidx.exifinterface.media.ExifInterface
+import org.fossify.gallery.faces.FaceBoxSpace
 import org.fossify.gallery.faces.FaceDao
 import org.fossify.gallery.faces.FaceEmbedder
 import org.fossify.gallery.faces.FaceEntity
@@ -43,8 +44,12 @@ class FamilyFaces(
     fun uprightBox(face: FaceEntity): RelBox? {
         val g = geometryOf(face.mediaFullPath) ?: return null
         val stored = storedBox(face)
+        // E1: na fotke 5/7 s neznámym priestorom sa odtlačkom neoveruje — overenie dekóduje už opravenou
+        // (v2) cestou, ale taký rámček je v1 alebo surový; uložené overenie by potom znamenalo niečo iné ako
+        // staré. Rozhodne geometria/dátum, kým rámček nepreklopí FaceMetaBackfill (box_space = 2).
+        val verify = !(FaceBoxSpace.isTransposed(g.transform) && !FaceBoxSpace.isKnown(face.boxSpace))
         val space = FaceSpaceRules.resolve(stored, g.rawWidth, g.rawHeight, g.transform, cachedSpace(face)) {
-            verifyNow(face, g)
+            if (verify) verifyNow(face, g) else null
         }
         return FaceSpaceRules.relBox(stored, g.rawWidth, g.rawHeight, g.transform, space)
     }
@@ -100,7 +105,7 @@ class FamilyFaces(
 }
 
 internal fun storedBox(face: FaceEntity) =
-    StoredBox(face.bboxLeft, face.bboxTop, face.bboxRight, face.bboxBottom, face.detectedAt)
+    StoredBox(face.bboxLeft, face.bboxTop, face.bboxRight, face.bboxBottom, face.detectedAt, face.boxSpace)
 
 // Rozmery súboru z hlavičky (bez dekódovania pixelov) a EXIF transformácia, ktorú aplikuje UprightDecoder.
 // Spoločné pre FamilyFaces (F3) a BundleBuilder (F4). null = súbor sa nedá prečítať.

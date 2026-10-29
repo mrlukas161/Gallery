@@ -237,10 +237,11 @@ object RefreshFaces {
             for ((di, d) in detected.withIndex()) {
                 // len spárovaná tvár bez odtlačku
                 val id = old.getOrNull(match[di])?.takeIf { it.embedding == null }?.id ?: continue
-                val e = FaceAligner.embedDetected(bmp, d, models.landmarker(), models.embedder(), detector, full)
-                if (e != null) {
+                val emb = FaceAligner.embedDetectedEmb(bmp, d, models.landmarker(), models.embedder(), detector, full)
+                if (emb != null) {
                     dao.updateFaceBox(id, d.left, d.top, d.right, d.bottom, d.score)
-                    dao.updateEmbedding(id, e)
+                    dao.updateEmbedding(id, FaceEmbedder.toBytes(emb.vec), FaceEmbedVersion.PIPELINE_VERSION)
+                    storeQuality(dao, id, FaceStore.metaOf(d, emb, res.sample))
                     repaired++
                 }
             }
@@ -276,22 +277,33 @@ object RefreshFaces {
         var nextIndex = (old.maxOfOrNull { it.faceIndex } ?: -1) + 1
 
         for ((di, d) in detected.withIndex()) {
-            val emb = FaceAligner.embedDetected(bmp, d, landmarker, embedder, detector, target.full)
+            val e = FaceAligner.embedDetectedEmb(bmp, d, landmarker, embedder, detector, target.full)
+            val emb = e?.let { FaceEmbedder.toBytes(it.vec) }
+            val meta = FaceStore.metaOf(d, e, res.sample)
             val oi = match[di]
             if (oi >= 0) {
                 // rovnaká tvár ako predtým -> UPDATE na mieste (id, a teda aj menovka, ostáva)
                 val id = old[oi].id ?: continue
-                if (updateMatched(dao, id, d, emb, target.staging)) updated++
+                if (updateMatched(dao, id, d, emb, target.staging)) {
+                    storeQuality(dao, id, meta)
+                    updated++
+                }
             } else {
                 val index = nextIndex++
+                val vector = if (target.staging != null) null else emb
                 toInsert.add(
                     FaceEntity(
                         id = null, mediaFullPath = path,
                         mediaStoreId = old.firstOrNull()?.mediaStoreId ?: 0L,
                         faceIndex = index,
                         bboxLeft = d.left, bboxTop = d.top, bboxRight = d.right, bboxBottom = d.bottom,
-                        score = d.score, embedding = if (target.staging != null) null else emb,
+                        score = d.score, embedding = vector,
                         detectedAt = System.currentTimeMillis(),
+                        quality = meta.quality, yaw = meta.yaw, pitch = meta.pitch, blur = meta.sharpness,
+                        alignMethod = meta.method, boxSpace = FaceBoxSpace.UPRIGHT_V2,
+                        embedVersion = if (vector != null) FaceEmbedVersion.PIPELINE_VERSION else null,
+                        // dátum fotky z existujúcich tvárí (dopĺňanie E1 ho doplní, ak chýba)
+                        takenAt = old.firstNotNullOfOrNull { it.takenAt },
                     )
                 )
                 if (emb != null) newVectors[index] = emb
@@ -310,11 +322,25 @@ object RefreshFaces {
     ): Boolean = try {
         dao.updateFaceBox(id, d.left, d.top, d.right, d.bottom, d.score)
         if (emb != null) {
-            if (staging != null) staging.putDone(listOf(Triple(id, emb, null))) else dao.updateEmbedding(id, emb)
+            if (staging != null) {
+                staging.putDone(listOf(Triple(id, emb, null)))
+            } else {
+                dao.updateEmbedding(id, emb, FaceEmbedVersion.PIPELINE_VERSION)
+            }
         }
         true
     } catch (ignored: Throwable) {
         false
+    }
+
+    // E1: kvalita tváre z práve spočítaného výrezu (pri prepracovaní a oprave na mieste)
+    private fun storeQuality(dao: FaceDao, id: Long, m: FaceStore.Meta) {
+        if (m.quality == null) return
+        try {
+            dao.updateQuality(id, m.quality, m.yaw, m.pitch, m.sharpness, m.method)
+        } catch (ignored: Throwable) {
+            // kvalitu doplní FaceMetaBackfill
+        }
     }
 
     // nové tváre; pri prepočte na v2 bez odtlačku a ich v2 vektor do stagingu (podľa poradia na fotke)
@@ -341,8 +367,10 @@ object RefreshFaces {
         }
     }
 
-    // Spáruje staré záznamy fotky s novými detekciami (IoU, pažravo). Staré rámčeky môžu byť
-    // v DVOCH priestoroch a DB to nerozlišuje (zmena schémy by pri fallbacku zmazala faces.db):
+    // Spáruje staré záznamy fotky s novými detekciami (IoU, pažravo). E1: rámček so známym priestorom
+    // (box_space 1/2) sa porovná len v upright priestore (v1 na fotke s EXIF 5/7 prevedený na v2 otočením
+    // o 180°); hádanie nižšie ostáva len pre box_space = 0 (staré riadky, spätná kompatibilita).
+    // Staré rámčeky bez box_space môžu byť v DVOCH priestoroch:
     //  - upright = všetko indexované od 0.47 (FaceIndexer dekóduje cez UprightDecoder) a všetko,
     //    čo toto prepracovanie už raz aktualizovalo,
     //  - surový neotočený priestor = indexované pred 0.47 (BitmapFactory ignoroval EXIF).
@@ -357,17 +385,32 @@ object RefreshFaces {
         uprightW: Int,
         uprightH: Int,
     ): IntArray {
-        val asIs = greedyMatch(old.map { intArrayOf(it.bboxLeft, it.bboxTop, it.bboxRight, it.bboxBottom) }, detected)
-        if (res.rotationDegrees == 0 && !res.mirrored) return asIs.pairs
+        val transposed = FaceBoxSpace.isTransposed(res.rotationDegrees, res.mirrored)
+        val known = old.map { FaceBoxSpace.isKnown(it.boxSpace) }
+        // upright hypotéza: všetko, čo nie je v2, vzniklo starým dekodérom (v2 rámčeky majú vždy box_space = 2)
+        val uprightBoxes = old.map {
+            val space = if (it.boxSpace == FaceBoxSpace.UPRIGHT_V2) it.boxSpace else FaceBoxSpace.UPRIGHT_V1
+            FaceBoxSpace.toV2(
+                intArrayOf(it.bboxLeft, it.bboxTop, it.bboxRight, it.bboxBottom), space, transposed, uprightW, uprightH,
+            )
+        }
+        val asIs = greedyMatch(uprightBoxes, detected)
+        if ((res.rotationDegrees == 0 && !res.mirrored) || known.all { it }) return asIs.pairs
         // rozmery neotočenej bitmapy v rovnakom zmenšení (otočenie o 90/270 vymení šírku a výšku)
         val swap = res.rotationDegrees == 90 || res.rotationDegrees == 270
         val rawW = if (swap) uprightH else uprightW
         val rawH = if (swap) uprightW else uprightH
         val mapped = greedyMatch(
-            old.map {
-                UprightDecoder.mapBox(
-                    it.bboxLeft, it.bboxTop, it.bboxRight, it.bboxBottom, rawW, rawH, res.rotationDegrees, res.mirrored,
-                )
+            old.mapIndexed { i, f ->
+                // známy priestor sa neprepočítava (len neznáme rámčeky môžu byť surové)
+                if (known[i]) {
+                    uprightBoxes[i]
+                } else {
+                    UprightDecoder.mapBox(
+                        f.bboxLeft, f.bboxTop, f.bboxRight, f.bboxBottom, rawW, rawH, res.rotationDegrees,
+                        res.mirrored,
+                    )
+                }
             },
             detected,
         )

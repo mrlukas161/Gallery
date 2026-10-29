@@ -27,6 +27,7 @@ import org.fossify.gallery.adapters.FaceTagAdapter
 import org.fossify.gallery.databinding.ActivityFaceTaggingBinding
 import org.fossify.gallery.dialogs.ChangeSortingDialog
 import org.fossify.gallery.extensions.config
+import org.fossify.gallery.faces.AssignmentSource
 import org.fossify.gallery.faces.ExtrasDatabase
 import org.fossify.gallery.faces.FaceEmbedder
 import org.fossify.gallery.faces.FaceEntity
@@ -36,6 +37,7 @@ import org.fossify.gallery.faces.IgnoredFaceEntity
 import org.fossify.gallery.faces.FaceSorter
 import org.fossify.gallery.faces.FaceVisibility
 import org.fossify.gallery.faces.FacesDatabase
+import org.fossify.gallery.faces.KnnModel
 import org.fossify.gallery.faces.PeopleDatabase
 import org.fossify.gallery.faces.PeopleIndex
 import org.fossify.gallery.faces.PersonGrouper
@@ -369,7 +371,8 @@ class FaceTaggingActivity : SimpleActivity() {
             val page = facesDao.getEmbeddedFacesPage(afterId, CANDIDATE_PAGE)
             for (f in page) {
                 val b = candidateVector(f, excluded) ?: continue
-                val score = ranker.score(FaceEmbedder.toFloats(b), index)
+                val takenAt = f.takenAt ?: KnnModel.UNKNOWN_DATE
+                val score = ranker.score(FaceEmbedder.toFloats(b), index, takenAt = takenAt)
                 if (score > Float.NEGATIVE_INFINITY) scored.add(f.copy(embedding = null) to score)
             }
             afterId = page.lastOrNull()?.id ?: afterId
@@ -401,7 +404,11 @@ class FaceTaggingActivity : SimpleActivity() {
         ensureBackgroundThread {
             // všetky potvrdené tváre naraz v jednej transakcii; tvár, ktorú automatika dala inej osobe,
             // dostane „nie je tá osoba“ (C8)
-            FaceDecisions.move(this, ids, personId)
+            // E2: potvrdený návrh; istota = skóre návrhu (kNN)
+            val wanted = ids.toHashSet()
+            val scores = allCandidates.mapNotNull { (f, score) -> f.id?.takeIf { it in wanted }?.let { it to score } }
+                .toMap()
+            FaceDecisions.move(this, ids, personId, source = AssignmentSource.ACCEPTED_SUGGESTION, confidence = scores)
             runOnUiThread {
                 toast(R.string.person_saved)
                 load() // prepočítaj návrhy z nového vzoru = real-time učenie

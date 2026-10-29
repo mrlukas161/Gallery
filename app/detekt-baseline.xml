@@ -1565,5 +1565,36 @@
     <ID>WildcardImport:ViewPagerFragment.kt$import org.fossify.gallery.helpers.*</ID>
     <ID>WildcardImport:WidgetConfigureActivity.kt$import org.fossify.commons.extensions.*</ID>
     <ID>WildcardImport:WidgetConfigureActivity.kt$import org.fossify.gallery.extensions.*</ID>
+    <ID>CyclomaticComplexMethod:HttpSyncService.kt$HttpSyncService$override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int</ID>
+    <ID>CyclomaticComplexMethod:MediaServer.kt$MediaServer$private fun collect(base: Uri, isVideo: Boolean, into: MutableMap&lt;Long, Item&gt;, scope: IndexScope): Boolean</ID>
+    <ID>CyclomaticComplexMethod:PcDeleter.kt$PcDeleter$fun delete(context: Context, items: List&lt;MediaServer.Item&gt;): Result</ID>
+    <ID>LargeClass:IndexingService.kt$IndexingService : Service</ID>
+    <ID>LoopWithTooManyJumpStatements:PcDeleter.kt$PcDeleter$for</ID>
+    <ID>MagicNumber:MediaServer.kt$ExifOrient$180</ID>
+    <ID>MagicNumber:MediaServer.kt$ExifOrient$270</ID>
+    <ID>MagicNumber:MediaServer.kt$ExifOrient$90</ID>
+    <ID>MagicNumber:MediaServer.kt$IndexDiff$411</ID>
+    <ID>MagicNumber:MediaServer.kt$IndexDiff$413</ID>
+    <ID>MagicNumber:MediaServer.kt$MediaServer$411</ID>
+    <ID>MagicNumber:MediaServer.kt$MediaServer$413</ID>
+    <ID>MagicNumber:PcDeleter.kt$PcDeleter$120</ID>
+    <ID>MaxLineLength:ExifOrientConsistencyTest.kt$ExifOrientConsistencyTest$assertBox("EXIF 5", RelBox(0.2f, 0.1f, 0.6f, 0.3f), src.transformed(t5.degrees, false).transformed(0, t5.mirror))</ID>
+    <ID>MaxLineLength:ExifOrientConsistencyTest.kt$ExifOrientConsistencyTest$assertBox("EXIF 7", RelBox(0.4f, 0.7f, 0.8f, 0.9f), src.transformed(t7.degrees, false).transformed(0, t7.mirror))</ID>
+    <ID>MaxLineLength:MediaServer.kt$IndexDiff$// ochrana priečinka PIN-om/heslom (commons BaseConfig: protected_folder_hash_&lt;cesta&gt;, protected_folder_type_&lt;cesta&gt;)</ID>
+    <ID>MaxLineLength:MediaServer.kt$IndexDiff$fun</ID>
+    <ID>MaxLineLength:MediaServer.kt$MediaServer$411 -&gt; return json(Status.LENGTH_REQUIRED, """{"error":"missing Content-Length"}""").also { it.closeConnection(true) }</ID>
+    <ID>MaxLineLength:MediaServer.kt$MediaServer$413 -&gt; return json(Status.PAYLOAD_TOO_LARGE, """{"error":"body too large"}""").also { it.closeConnection(true) }</ID>
+    <ID>MaxLineLength:MediaServer.kt$MediaServer$if (IndexDiff.changed(old.mapValues { it.value.mtime to it.value.size }, map.mapValues { it.value.mtime to it.value.size })) generation++</ID>
+    <ID>MaxLineLength:MediaServer.kt$MediaServer$return json(Status.OK, JSONObject().put("deleted", JSONArray(r.deleted)).put("failed", failed).put("recycleBin", r.toRecycleBin).toString())</ID>
+    <ID>MaxLineLength:MediaServer.kt$MediaServer$val cursor = resolver.query(base, proj, null, null, "${MediaStore.MediaColumns.DATE_MODIFIED} DESC") ?: return false</ID>
+    <ID>MaxLineLength:PcDeleter.kt$PcDeleter$Medium(null, item.name, item.path, parent, file.lastModified(), item.taken, file.length(), type, 0, false, 0L, item.id)</ID>
+    <ID>MaxLineLength:PcDeleter.kt$PcDeleter$private</ID>
+    <ID>MaxLineLength:PcDeleter.kt$PcDeleter$val known = knownByParent.getOrPut(parent) { context.mediaDB.getMediaFromPath(parent).mapTo(HashSet()) { it.path } }</ID>
+    <ID>MaxLineLength:SettingsActivity.kt$SettingsActivity$if (link != null) getString(R.string.pc_server_running_at, link) else getString(R.string.porovnavac_server_len_kabel_beziaci)</ID>
+    <ID>NestedBlockDepth:PcDeleter.kt$PcDeleter$fun delete(context: Context, items: List&lt;MediaServer.Item&gt;): Result</ID>
+    <ID>ReturnCount:MediaServer.kt$MediaServer$private fun handleDelete(session: IHTTPSession): Response</ID>
+    <ID>SwallowedException:PcDeleter.kt$PcDeleter$e: Throwable</ID>
+    <ID>TooGenericExceptionCaught:PcDeleter.kt$PcDeleter$e: Throwable</ID>
+    <ID>TooManyFunctions:HttpSyncService.kt$HttpSyncService : Service</ID>
   </CurrentIssues>
 </SmellBaseline>

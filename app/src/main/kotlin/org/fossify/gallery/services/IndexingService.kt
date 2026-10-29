@@ -145,6 +145,10 @@ class IndexingService : Service() {
         val list = arrayListOf(TASK_FACES, TASK_GEO, TASK_QR)
         // jednorazový prepočet odtlačkov tvárí na v2 (len pri nabíjaní, ProcessingPolicy) — pred tvárami
         if (org.fossify.gallery.faces.FaceEmbedVersion.isPending(this)) list.add(0, TASK_FACE_V2)
+        // E1: dopĺňanie údajov starých tvárí (kvalita, priestor rámčeka, dátum) — len pri nabíjaní, po tvárach
+        if (org.fossify.gallery.faces.FaceMetaBackfill.isPending(this)) {
+            list.add(list.indexOf(TASK_FACES) + 1, TASK_FACE_META)
+        }
         if (autoOcrEnabled() || hasData { org.fossify.gallery.faces.OcrDatabase.getInstance(this).OcrDao().count() }) {
             list.add(TASK_OCR)
         }
@@ -341,6 +345,7 @@ class IndexingService : Service() {
         TASK_CLIP_ML -> org.fossify.gallery.clip.ClipMlModels.isRunning
         TASK_REEMBED -> org.fossify.gallery.faces.RefreshFaces.isRunning
         TASK_FACE_V2 -> org.fossify.gallery.faces.FaceReembedV2.isRunning
+        TASK_FACE_META -> org.fossify.gallery.faces.FaceMetaBackfill.isRunning
         else -> false
     }
 
@@ -380,6 +385,7 @@ class IndexingService : Service() {
             TASK_CLIP_ML -> runClipMl(done)
             TASK_REEMBED -> runReembed(done)
             TASK_FACE_V2 -> runFaceV2(done)
+            TASK_FACE_META -> runFaceMeta(done)
             else -> done()
         }
     }
@@ -390,8 +396,10 @@ class IndexingService : Service() {
         if (FaceIndexer.isRunning) {
             next(); return
         }
+        // E3: malé tváre v dlaždiciach len pri nabíjaní alebo v Plnom profile
+        val multiScale = ProcessingPolicy.multiScale(currentProfile(), IndexPerf.battery(this).charging)
         FaceIndexer.index(
-            applicationContext, notify = false,
+            applicationContext, notify = false, multiScale = multiScale,
             onWaiting = { waiting("faces", R.string.lk_task_faces) },
             onProgress = { d, t -> progN("faces", d, t) },
             onDone = { _, _ -> clearProg("faces"); next() },
@@ -508,6 +516,24 @@ class IndexingService : Service() {
         )
     }
 
+    // E1: dopĺňanie údajov starých tvárí (FaceMetaBackfill) — nedokončené počká na ďalšie nabíjanie
+    private fun runFaceMeta(next: () -> Unit) {
+        if (org.fossify.gallery.faces.FaceMetaBackfill.isRunning) {
+            next(); return
+        }
+        org.fossify.gallery.faces.FaceMetaBackfill.run(
+            applicationContext,
+            onWaiting = { waiting("facemeta", R.string.te_task_face_meta) },
+            onProgress = { d, t -> progN("facemeta", d, t) },
+            onDone = { finished ->
+                clearProg("facemeta")
+                if (!finished) deferred = true
+                next()
+            },
+            onError = { fail("facemeta", it); next() },
+        )
+    }
+
     // funkcia je „používaná", ak už má v indexe nejaké záznamy
     private inline fun hasData(block: () -> Int): Boolean = try {
         block() > 0
@@ -576,6 +602,7 @@ class IndexingService : Service() {
             TASK_CLIP_ML -> R.string.nt_task_clip_ml
             TASK_REEMBED -> R.string.lk_task_reembed
             TASK_FACE_V2 -> R.string.lk_task_face_v2
+            TASK_FACE_META -> R.string.te_task_face_meta
             else -> R.string.indexing_running
         },
     )
@@ -698,6 +725,7 @@ class IndexingService : Service() {
             TASK_CLIP_ML -> org.fossify.gallery.clip.ClipMlModels.stop()
             TASK_REEMBED -> org.fossify.gallery.faces.RefreshFaces.stop()
             TASK_FACE_V2 -> org.fossify.gallery.faces.FaceReembedV2.stop()
+            TASK_FACE_META -> org.fossify.gallery.faces.FaceMetaBackfill.stop()
         }
     }
 
@@ -809,6 +837,7 @@ class IndexingService : Service() {
         const val TASK_REEMBED = "reembed"
         const val TASK_FACE_V2 = "facev2"
         const val TASK_STOP = "stop"
+        const val TASK_FACE_META = "facemeta"
         private const val CHANNEL_ID = "indexing_service"
         private const val NOTIF_ID = 49240
 
@@ -816,7 +845,7 @@ class IndexingService : Service() {
         private var autoStarted = false
 
         // ťažké úlohy (veľké modely) — idú za sebou cez HeavyGate; pri nedostatku pamäte sa odložia
-        private val HEAVY_TASKS = setOf(TASK_FACES, TASK_OCR, TASK_CLIP, TASK_REEMBED, TASK_FACE_V2)
+        private val HEAVY_TASKS = setOf(TASK_FACES, TASK_OCR, TASK_CLIP, TASK_REEMBED, TASK_FACE_V2, TASK_FACE_META)
 
         private fun kindOf(task: String): ProcessingPolicy.Indexer = when (task) {
             TASK_FACES -> ProcessingPolicy.Indexer.FACES
@@ -826,6 +855,7 @@ class IndexingService : Service() {
             TASK_PHASH -> ProcessingPolicy.Indexer.PHASH
             TASK_CLIP -> ProcessingPolicy.Indexer.CLIP
             TASK_FACE_V2 -> ProcessingPolicy.Indexer.FACE_V2
+            TASK_FACE_META -> ProcessingPolicy.Indexer.FACE_META
             else -> ProcessingPolicy.Indexer.OTHER
         }
 

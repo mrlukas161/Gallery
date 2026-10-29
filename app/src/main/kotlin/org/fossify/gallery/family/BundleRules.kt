@@ -1,5 +1,6 @@
 package org.fossify.gallery.family
 
+import org.fossify.gallery.faces.FaceBoxSpace
 import java.text.ParseException
 import java.text.SimpleDateFormat
 import java.util.Locale
@@ -33,8 +34,16 @@ data class TakePlan(
 }
 
 // Rámček tváre tak, ako je vo faces.db (priestor bitmapy z UprightDecoder.decode(path, 1024) alebo, pri
-// starých záznamoch na otočených fotkách, surový neotočený priestor), s časom detekcie.
-data class StoredBox(val left: Int, val top: Int, val right: Int, val bottom: Int, val detectedAt: Long)
+// starých záznamoch na otočených fotkách, surový neotočený priestor), s časom detekcie a E1 box_space
+// (FaceBoxSpace: 0 neznámy, 1 upright v1, 2 upright v2). Pri známom priestore sa nehádajú dve hypotézy.
+data class StoredBox(
+    val left: Int,
+    val top: Int,
+    val right: Int,
+    val bottom: Int,
+    val detectedAt: Long,
+    val boxSpace: Int = FaceBoxSpace.UNKNOWN,
+)
 
 // Rozhodovanie F4 (BundleBuilder, BundleReceiver, FamilyInbox). Čistá logika bez Androidu (BundleRulesTest).
 object BundleRules {

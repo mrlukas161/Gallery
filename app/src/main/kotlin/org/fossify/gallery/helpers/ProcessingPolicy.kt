@@ -11,12 +11,13 @@ package org.fossify.gallery.helpers
 // - Ľahký profil alebo zapnutá voľba: pri batérii pod LOW_BATTERY_PCT % (bez nabíjania) sa automatické
 //   spracovanie zastaví.
 // - Ručné spustenie (ťuk používateľa) rešpektuje len výber indexerov podľa profilu.
-// - Jednorazový prepočet odtlačkov tvárí na v2 (FACE_V2) beží automaticky VŽDY len pri nabíjaní
-//   (v každom profile — patrí k tváram), ručne kedykoľvek.
+// - Jednorazový prepočet odtlačkov tvárí na v2 (FACE_V2) a dopĺňanie údajov tvárí (FACE_META, E1) bežia
+//   automaticky VŽDY len pri nabíjaní (v každom profile — patria k tváram), ručne kedykoľvek.
+// - E3: detekcia malých tvárí v dlaždiciach (multiScale) len pri nabíjaní alebo v Plnom profile.
 object ProcessingPolicy {
     enum class Profile { FULL, LIGHT }
 
-    enum class Indexer { FACES, GEO, QR, OCR, PHASH, CLIP, OTHER, FACE_V2 }
+    enum class Indexer { FACES, GEO, QR, OCR, PHASH, CLIP, OTHER, FACE_V2, FACE_META }
 
     enum class Trigger { AUTO, MANUAL }
 
@@ -34,6 +35,9 @@ object ProcessingPolicy {
 
     private val LIGHT_INDEXERS = setOf(Indexer.FACES, Indexer.GEO)
 
+    // jednorazové prepočty tvárí — automaticky len pri nabíjaní
+    private val CHARGING_ONLY = setOf(Indexer.FACE_V2, Indexer.FACE_META)
+
     fun profileOf(stored: Int): Profile = if (stored == PROFILE_LIGHT) Profile.LIGHT else Profile.FULL
 
     // batteryPct: 0–100 alebo UNKNOWN; batchSize: počet čakajúcich fotiek pre daný indexer alebo
@@ -47,7 +51,7 @@ object ProcessingPolicy {
         indexerKind: Indexer,
         trigger: Trigger = Trigger.AUTO,
     ): Decision = when {
-        indexerKind == Indexer.FACE_V2 ->
+        indexerKind in CHARGING_ONLY ->
             if (trigger == Trigger.MANUAL || charging) Decision.RUN else Decision.WAIT_FOR_CHARGING
         profile == Profile.LIGHT && indexerKind !in LIGHT_INDEXERS -> Decision.SKIP_PROFILE
         trigger == Trigger.MANUAL || charging -> Decision.RUN
@@ -66,7 +70,11 @@ object ProcessingPolicy {
     fun needsWatching(profile: Profile, newOnlyFirst: Boolean): Boolean =
         profile == Profile.LIGHT || newOnlyFirst
 
-    // … pre konkrétnu úlohu: prepočet na v2 sa po odpojení nabíjačky zastaví vždy
+    // … pre konkrétnu úlohu: prepočet na v2 a dopĺňanie údajov tvárí sa po odpojení nabíjačky zastavia vždy
     fun needsWatching(profile: Profile, newOnlyFirst: Boolean, indexerKind: Indexer): Boolean =
-        indexerKind == Indexer.FACE_V2 || needsWatching(profile, newOnlyFirst)
+        indexerKind in CHARGING_ONLY || needsWatching(profile, newOnlyFirst)
+
+    // E3: detekcia vo viacerých mierkach a dlaždiciach (~5 detekcií a väčšie dekódovanie na fotku) — len pri
+    // nabíjaní alebo v Plnom profile; v Ľahkom profile na batérii nie
+    fun multiScale(profile: Profile, charging: Boolean): Boolean = charging || profile == Profile.FULL
 }

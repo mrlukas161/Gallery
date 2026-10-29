@@ -5,10 +5,14 @@ import android.provider.MediaStore
 import org.fossify.commons.extensions.isImageFast
 import org.fossify.gallery.clip.ClipDatabase
 import org.fossify.gallery.clip.ClipEntity
+import org.fossify.gallery.faces.AssignmentSource
 import org.fossify.gallery.faces.ExtrasDatabase
 import org.fossify.gallery.faces.FaceAssignmentEntity
+import org.fossify.gallery.faces.FaceBoxSpace
+import org.fossify.gallery.faces.FaceEmbedVersion
 import org.fossify.gallery.faces.FaceEmbedder
 import org.fossify.gallery.faces.FaceEntity
+import org.fossify.gallery.faces.FaceTakenAt
 import org.fossify.gallery.faces.FacesDatabase
 import org.fossify.gallery.faces.GeoDatabase
 import org.fossify.gallery.faces.GeoEntity
@@ -96,7 +100,8 @@ class BundleApplier(context: Context) {
     }
 
     private fun write(w: BundleNames.Write, now: Long, origin: Origin) {
-        val entity = FaceAssignmentEntity(w.faceId, w.personId, w.manual, now)
+        // E2: priradenie z balíka prepojeného telefónu
+        val entity = FaceAssignmentEntity(w.faceId, w.personId, w.manual, now, AssignmentSource.FAMILY)
         PeopleDatabase.getInstance(app).PeopleDao().upsertAssignment(entity)
         val device = origin.deviceId ?: return
         FamilyDatabase.getInstance(app).remoteAssignmentDao()
@@ -128,8 +133,13 @@ class BundleApplier(context: Context) {
             if (!FacesDatabase.ensureIdsAboveReferences(app)) return false
             val size = UprightDecoder.uprightSize(path, FaceMatch.DECODE_MAX_SIZE) ?: return false
             val storeId = mediaStoreId ?: mediaStoreIdFor(path) ?: 0L
+            // E1: rámčeky sú v upright v2 priestore tejto kópie (box_space = 2), odtlačky vo verzii uloženej
+            // tu (balík sa prijíma len pri rovnakom MODEL_ID), kvalitu doplní FaceMetaBackfill
+            val takenAt = guarded { FaceTakenAt.of(app, path, storeId) }
+            val embedVersion = FaceEmbedVersion.storedVersion()
             val entities = faces.mapIndexed { i, f ->
                 val box = BundleRules.absoluteBox(f.box, size[0], size[1])
+                val embedding = f.embeddingB64?.let { FamilyBytes.unb64(it) }
                 FaceEntity(
                     id = null,
                     mediaFullPath = path,
@@ -140,8 +150,11 @@ class BundleApplier(context: Context) {
                     bboxRight = box[2],
                     bboxBottom = box[3],
                     score = f.score,
-                    embedding = f.embeddingB64?.let { FamilyBytes.unb64(it) },
+                    embedding = embedding,
                     detectedAt = now,
+                    boxSpace = FaceBoxSpace.UPRIGHT_V2,
+                    embedVersion = if (embedding != null) embedVersion else null,
+                    takenAt = takenAt,
                 )
             }
             // ABORT pri kolízii (indexer medzitým našiel tváre sám) → výnimka, nič sa nezapíše

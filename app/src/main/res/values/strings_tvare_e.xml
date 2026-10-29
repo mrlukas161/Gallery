@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Stringy balíka E (faces.db v3: kvalita, priestor rámčeka, dátum; people.db v3: pôvod priradení, vrátenie zlúčenia) -->
+<resources>
+    <!-- spracovanie knižnice — dopĺňanie údajov tvárí pri nabíjaní -->
+    <string name="te_task_face_meta">Údaje tvárí</string>
+    <string name="te_prog_face_meta">Dopĺňanie údajov tvárí: %1$d / %2$d</string>
+
+    <!-- Ľudia — „Vrátiť zlúčenie“ -->
+    <string name="te_undo_merge_title">Vrátiť zlúčenie</string>
+    <string name="te_undo_merge_item">„%1$s“ → „%2$s“ (%3$s)</string>
+    <string name="te_undo_merge_none">Nie je čo vrátiť – žiadne zlúčenie osôb</string>
+    <string name="te_undo_merge_confirm">Vrátiť zlúčenie %1$s? Osoba sa vráti aj s tvárami, ktoré odvtedy nikto nepreradil.</string>
+    <string name="te_undo_merge_done">Zlúčenie vrátené – osoba „%1$s“ je späť</string>
+    <string name="te_undo_merge_done_skipped">Zlúčenie vrátené – osoba „%1$s“ je späť, %2$d tvárí ostalo, kam si ich medzitým zaradil</string>
+    <string name="te_undo_merge_target_missing">Zlúčenie sa nedá vrátiť – osoba, do ktorej sa zlučovalo, už neexistuje</string>
+    <string name="te_undo_merge_not_possible">Zlúčenie sa nedá vrátiť</string>
+</resources>

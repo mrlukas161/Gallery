@@ -73,8 +73,11 @@ object FaceRotation {
         forgetCaches(app, path)
         val db = FacesDatabase.getInstance(app)
         val dao = db.FaceDao()
-        val detectedAt = dao.getFacesForPath(path).map { it.detectedAt }
-        when (val decision = FaceBoxRotation.decide(before, snapshot(path), degrees, pixelsRewritten, detectedAt)) {
+        val faces = dao.getFacesForPath(path)
+        val detectedAt = faces.map { it.detectedAt }
+        val spaces = faces.map { it.boxSpace }
+        val decision = FaceBoxRotation.decide(before, snapshot(path), degrees, pixelsRewritten, detectedAt, spaces)
+        when (decision) {
             FaceBoxRotation.Decision.Unchanged -> Unit
             FaceBoxRotation.Decision.Refresh -> FaceRefreshQueue.add(app, path)
             is FaceBoxRotation.Decision.Rotate -> db.runInTransaction(

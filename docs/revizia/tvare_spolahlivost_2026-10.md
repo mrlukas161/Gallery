@@ -91,6 +91,7 @@ Analýzu robili 4 nezávislí analytici nad vetvou `rodina-0.66`: detekcia a odt
   - `taken_at` pre deti (vekové prototypy).
 - E2 people.db v2→3: `source` a `confidence` priradení (audit, späť), záznam zlúčení na vrátenie.
 - E3 Detekcia vo viacerých mierkach a dlaždiciach pre malé tváre v skupinách (s bránou kvality z E1).
+- **Stav (vetva `tvare-E`, 25.10.2026):** implementované. faces.db v3 a people.db v3 cez `Migration(2,3)` (len `ADD COLUMN`/`CREATE TABLE`), migračné testy `app/src/androidTest` (MigrationTestHelper, emulátor). Staré tváre dopĺňa `FaceMetaBackfill` pri nabíjaní (úloha `facemeta`); prah brány kvality `FaceQuality.QUALITY_GATE` treba overiť na skutočnej knižnici.
 
 ## Odporúčané poradie
 **A** (ochrana dát) → **C1–C5** (rýchle opravy zaraďovania) → **B** (odtlačky v2, po rozhodnutí o Picase) → **D** (pred testom 0.66 na dvoch telefónoch) → **C6–C11** → **E**.

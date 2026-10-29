@@ -2,6 +2,7 @@ package org.fossify.gallery.helpers
 
 import android.content.Context
 import androidx.annotation.WorkerThread
+import org.fossify.gallery.faces.AssignmentSource
 import org.fossify.gallery.faces.CannotLinkEntity
 import org.fossify.gallery.faces.PeopleDatabase
 import org.fossify.gallery.faces.PeopleIndex
@@ -17,14 +18,22 @@ import org.fossify.gallery.family.FamilyRecorder
 object FaceDecisions {
     // Priradí tváre osobe [targetId]; tváre, ktoré doteraz patrili inej osobe, dostanú cannot-link na ňu.
     // [knownFrom] = osoba, z ktorej karty sa presúva (všetky tváre výberu jej patria, aj automaticky).
+    // E2: [source] = pôvod priradenia (AssignmentSource), [confidence] = skóre tvárí (návrhy), ak je známe.
     @WorkerThread
-    fun move(context: Context, faceIds: List<Long>, targetId: Long, knownFrom: Long? = null) {
+    fun move(
+        context: Context,
+        faceIds: List<Long>,
+        targetId: Long,
+        knownFrom: Long? = null,
+        source: String = AssignmentSource.MANUAL,
+        confidence: Map<Long, Float> = emptyMap(),
+    ) {
         if (faceIds.isEmpty()) return
         val previous = previousOwners(context, faceIds, targetId, knownFrom)
         val db = PeopleDatabase.getInstance(context)
         db.runInTransaction {
             val dao = db.PeopleDao()
-            dao.assignFaces(faceIds, targetId, System.currentTimeMillis())
+            dao.assignFaces(faceIds, targetId, System.currentTimeMillis(), source, confidence)
             previous.forEach { (pid, ids) -> ids.forEach { dao.insertCannotLink(CannotLinkEntity(it, pid)) } }
         }
         FamilyRecorder.facesAssigned(context, faceIds, targetId)
@@ -33,12 +42,18 @@ object FaceDecisions {
 
     // Nová osoba s tvárami; tváre, ktoré patrili inej osobe, dostanú cannot-link na ňu. Vráti id osoby.
     @WorkerThread
-    fun moveToNewPerson(context: Context, faceIds: List<Long>, name: String, knownFrom: Long? = null): Long {
+    fun moveToNewPerson(
+        context: Context,
+        faceIds: List<Long>,
+        name: String,
+        knownFrom: Long? = null,
+        source: String = AssignmentSource.MANUAL,
+    ): Long {
         val previous = previousOwners(context, faceIds, null, knownFrom)
         val db = PeopleDatabase.getInstance(context)
         val newId = db.runInTransaction<Long> {
             val dao = db.PeopleDao()
-            val id = dao.createPersonWithFaces(name, faceIds, System.currentTimeMillis())
+            val id = dao.createPersonWithFaces(name, faceIds, System.currentTimeMillis(), source, emptyMap())
             previous.forEach { (pid, ids) -> ids.forEach { dao.insertCannotLink(CannotLinkEntity(it, pid)) } }
             id
         }
@@ -54,7 +69,9 @@ object FaceDecisions {
         val rejected = others.filter { it != chosen }
         db.runInTransaction {
             val dao = db.PeopleDao()
-            if (chosen != null) dao.assignFaces(listOf(faceId), chosen, System.currentTimeMillis())
+            if (chosen != null) {
+                dao.assignFaces(listOf(faceId), chosen, System.currentTimeMillis(), AssignmentSource.MANUAL, emptyMap())
+            }
             rejected.forEach { dao.rejectFacesForPerson(listOf(faceId), it) }
         }
         if (chosen != null) FamilyRecorder.facesAssigned(context, listOf(faceId), chosen)

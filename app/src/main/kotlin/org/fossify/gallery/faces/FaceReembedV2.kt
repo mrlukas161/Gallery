@@ -249,7 +249,7 @@ object FaceReembedV2 {
         val facesDb = FacesDatabase.getInstance(context)
         val dao = facesDb.FaceDao()
         facesDb.runInTransaction {
-            for ((id, v) in vectors) dao.updateEmbedding(id, v)
+            for ((id, v) in vectors) dao.updateEmbedding(id, v, FaceEmbedVersion.PIPELINE_VERSION)
             // ostatné tváre s (v1) odtlačkom: neprepočítateľné alebo pribudnuté medzičasom → bez odtlačku
             // (v1 sa zálohuje), aby sa v1 s v2 nikdy neporovnávali; denná oprava im v2 doplní
             val sql = facesDb.openHelper.writableDatabase
@@ -262,7 +262,7 @@ object FaceReembedV2 {
             }
             for ((id, v1) in stale) {
                 staging.backupV1(id, v1)
-                sql.execSQL("UPDATE faces SET embedding = NULL WHERE id = ?", arrayOf<Any>(id))
+                sql.execSQL("UPDATE faces SET embedding = NULL, embed_version = NULL WHERE id = ?", arrayOf<Any>(id))
             }
         }
         // v1 vzory (Picasa aj rodinné) sa odložia: záporné person_id, nič sa nemaže; potvrdené

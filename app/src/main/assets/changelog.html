@@ -51,7 +51,7 @@
 </div>
 
 <div class="ver">
-  <h2><span class="v">0.66.0</span> <span class="d">rodinné prepojenie — dva telefóny, jedny Ľudia</span></h2>
+  <h2><span class="v">0.66.1</span> <span class="d">rodinné prepojenie — dva telefóny, jedny Ľudia · server pre PC porovnávač · spoľahlivejšie tváre</span></h2>
   <ul>
     <li><span class="tag t-new">NOVÉ</span> <b>Prepojiť telefón</b> (Nastavenia) — spárovanie QR kódom, spojenie len cez domácu Wi-Fi alebo hotspot, šifrované, bez internetu a cloudu.</li>
     <li><span class="tag t-new">NOVÉ</span> <b>Ľudia sa zdieľajú sami</b> — osoby, mená, skupiny a odtlačky tvárí. Rozpory (iné meno, zlúčenie, zmazanie) prídu ako návrhy v Ľuďoch, nič sa neprepíše ani nezmaže samo.</li>
@@ -59,13 +59,21 @@
     <li><span class="tag t-new">NOVÉ</span> <b>Profil spracovania Plný / Ľahký</b> a voľba „Nové fotky hneď, zvyšok pri nabíjaní“. Pod 20 % batérie sa automatické spracovanie zastaví.</li>
     <li><span class="tag t-new">NOVÉ</span> <b>Zálohovať a obnoviť osoby</b> — súbor .galeria-family; obnova len dopĺňa, rozpory ponúkne ako návrhy.</li>
     <li><span class="tag t-new">NOVÉ</span> <b>Spoľahlivejšie rozpoznávanie tvárí</b> — presnejšie odtlačky (správne zarovnanie, správna tvár v skupine, plné rozlíšenie), porovnanie s najbližšími potvrdenými tvárami, rozostup od druhej osoby (súrodenci), jedna osoba raz na fotke. Jednorazový prepočet beží pri nabíjaní; vzory z Picasy treba potom znova naimportovať.</li>
+    <li><span class="tag t-new">NOVÉ</span> <b>Kvalita tváre a malé tváre v skupinách</b> — appka si pamätá, ako dobre je tvár vidieť (veľkosť, ostrosť, natočenie hlavy). Slabé tváre (profil, rozmazané, veľmi malé) nevstupujú do vzorov osoby ani do automatického zaraďovania; v návrhoch sa ukážu a ručne ich potvrdiť môžeš vždy. Hľadanie vo viacerých mierkach a po dlaždiciach nájde aj malé tváre vo veľkých skupinových fotkách. Údaje starších tvárí sa dopĺňajú pri nabíjaní.</li>
+    <li><span class="tag t-new">NOVÉ</span> <b>Ľudia → „Vrátiť zlúčenie“</b> — zlúčenie dvoch osôb sa dá vrátiť aj s tvárami, ktoré odvtedy nikto nepreradil. Pri každom priradení tváre sa eviduje pôvod (ručne, potvrdený návrh, automaticky, z prepojeného telefónu, obnova), aby sa dalo dohľadať, prečo tam tvár je.</li>
+    <li><span class="tag t-fix">OPRAVA</span> <b>Tváre na fotkách s EXIF orientáciou 5 a 7</b> (preklopené podľa uhlopriečky) mali rámčeky o 180° inde než zobrazenie; opravené a staré rámčeky sa preklopia pri nabíjaní. Dátum snímky tváre sa berie z úložiska fotiek alebo z EXIF, nie zo zmeny súboru (kopírovanie by deti „zostarilo“ naraz).</li>
     <li><span class="tag t-new">NOVÉ</span> <b>Fronta „Potvrď“</b> na karte osoby, <b>„Pomôž mi rozhodnúť“</b> (Ján, alebo Peter?) a <b>odhad presnosti</b> v Nastaveniach. Appka sa učí aj z odmietnutí.</li>
     <li><span class="tag t-fix">ÚPRAVA</span> <b>Mená sa nestratia</b> — poškodená databáza sa nezmaže, automatická týždenná záloha osôb do Documents/Galeria+/zalohy, presunutá či premenovaná fotka si nájde svoje tváre, otočenie neposunie rámčeky.</li>
     <li><span class="tag t-new">NOVÉ</span> <b>Notifikácia spracovania ukazuje priebeh</b> — čo sa práve robí (tváre, text, poloha…), koľko z koľkých, percentá, pruh a odhad zostávajúceho času. Ťuk otvorí appku, tlačidlo Zastaviť spracovanie zastaví.</li>
     <li><span class="tag t-fix">ÚPRAVA</span> <b>Menej pamäte a batérie</b> — modely sa načítajú len keď je čo spracovať, ťažké úlohy idú za sebou, hľadanie predmetov po 2 min uvoľní pamäť.</li>
     <li><span class="tag t-fix">ÚPRAVA</span> Kontrola aktualizácií vždy ukáže nainštalovanú verziu.</li>
     <li><span class="tag t-fix">ÚPRAVA</span> Telefóny sa stretnú samy pri otvorení appky a pri nabíjaní na Wi-Fi (okno do 1 h); nič nebeží trvalo na pozadí.</li>
+    <li><span class="tag t-new">NOVÉ</span> <b>Nové fotky vidí PC hneď</b> — server sleduje zmeny v knižnici a PC si pýta len pribudnuté položky.</li>
+    <li><span class="tag t-new">NOVÉ</span> <b>PC porovnávač môže mazať priamo v mobile</b> — do Koša podľa nastavenia (vypnutý Kôš = natrvalo); vyžaduje <i>Prístup ku všetkým súborom</i>.</li>
+    <li><span class="tag t-new">NOVÉ</span> <b>Server beží aj bez Wi-Fi</b> — spojenie s PC cez USB kábel, notifikácia ukáže „len USB káblom".</li>
+    <li><span class="tag t-fix">ÚPRAVA</span> <b>Náhľady v PC porovnávači</b> sú správne otočené podľa EXIF (zvislé fotky neprídu na bok).</li>
   </ul>
+  <div class="test">🔎 <b>Vyskúšaj:</b> zapni server pre PC, odfoť fotku a over, že sa objaví v PC porovnávači; zmaž ju z PC a nájdi ju v Koši Galérie+; zapni server s vypnutým Wi-Fi a pripoj USB kábel; v Ľuďoch skús zlúčiť dve osoby a potom zlúčenie vrátiť.</div>
 </div>
 
 <div class="ver">

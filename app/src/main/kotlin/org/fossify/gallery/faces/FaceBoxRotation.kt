@@ -38,12 +38,15 @@ object FaceBoxRotation {
     //  - pixelsRewritten = true: pixely sa otočili a zapísali nanovo (PNG/WebP…), EXIF sa nezachová.
     // faceDetectedAt = detected_at všetkých tvárí fotky. after = skutočný stav súboru po otočení
     // (overenie, že výsledok je naozaj čisté otočenie; null = nečitateľný → prepracovať).
+    // E1: faceBoxSpaces = box_space tých istých tvárí (v rovnakom poradí); tvár so známym priestorom je upright
+    // aj pri starom detected_at.
     fun decide(
         before: State?,
         after: State?,
         degrees: Int,
         pixelsRewritten: Boolean,
         faceDetectedAt: List<Long>,
+        faceBoxSpaces: List<Int> = emptyList(),
     ): Decision {
         if (faceDetectedAt.isEmpty()) return Decision.Unchanged
         if (before == null || after == null) return Decision.Refresh
@@ -52,7 +55,7 @@ object FaceBoxRotation {
             turn == null -> Decision.Refresh
             turn == 0 -> Decision.Unchanged
             // staré rámčeky (pred 0.47) na fotke s EXIF otočením môžu byť v surovom priestore
-            !isNormal(before.exifOrientation) && faceDetectedAt.any { it < UPRIGHT_SINCE_MS } -> Decision.Refresh
+            !isNormal(before.exifOrientation) && mayBeRaw(faceDetectedAt, faceBoxSpaces) -> Decision.Refresh
             !sizeMatches(before, after, turn) -> Decision.Refresh
             else -> Decision.Rotate(turn, before.width, before.height)
         }
@@ -75,6 +78,11 @@ object FaceBoxRotation {
         }
         return actual?.takeIf { it == wanted }
     }
+
+    private fun mayBeRaw(detectedAt: List<Long>, spaces: List<Int>): Boolean =
+        detectedAt.indices.any { i ->
+            detectedAt[i] < UPRIGHT_SINCE_MS && !FaceBoxSpace.isKnown(spaces.getOrElse(i) { FaceBoxSpace.UNKNOWN })
+        }
 
     private fun sizeMatches(before: State, after: State, turn: Int): Boolean {
         val expected = rotatedSize(before.width, before.height, turn)

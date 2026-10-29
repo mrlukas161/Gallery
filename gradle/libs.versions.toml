@@ -16,6 +16,9 @@ androidx-documentfile = "1.1.0"
 exif = "1.0.1"
 #Room
 room = "2.8.4"
+#AndroidX test
+androidxTestRunner = "1.6.2"
+androidxTestExtJunit = "1.2.1"
 #Faces (MediaPipe face detection)
 mediapipeTasksVision = "0.10.35"
 tensorflowLite = "2.17.0"
@@ -59,6 +62,10 @@ exif = { module = "it.sephiroth.android.exif:library", version.ref = "exif" }
 androidx-room-runtime = { module = "androidx.room:room-runtime", version.ref = "room" }
 androidx-room-ktx = { module = "androidx.room:room-ktx", version.ref = "room" }
 androidx-room-compiler = { module = "androidx.room:room-compiler", version.ref = "room" }
+androidx-room-testing = { module = "androidx.room:room-testing", version.ref = "room" }
+#AndroidX test (len migračné testy Room na emulátore)
+androidx-test-runner = { module = "androidx.test:runner", version.ref = "androidxTestRunner" }
+androidx-test-ext-junit = { module = "androidx.test.ext:junit", version.ref = "androidxTestExtJunit" }
 #Faces
 mediapipe-tasks-vision = { module = "com.google.mediapipe:tasks-vision", version.ref = "mediapipeTasksVision" }
 tensorflow-lite = { module = "org.tensorflow:tensorflow-lite", version.ref = "tensorflowLite" }

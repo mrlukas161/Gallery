@@ -1,0 +1,269 @@
+{
+  "formatVersion": 1,
+  "database": {
+    "version": 3,
+    "identityHash": "ddc27ee5059d32e4a28e9a1e5e101520",
+    "entities": [
+      {
+        "tableName": "persons",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `name` TEXT, `created_at` INTEGER NOT NULL)",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "name",
+            "columnName": "name",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "createdAt",
+            "columnName": "created_at",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        }
+      },
+      {
+        "tableName": "face_assignments",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`face_id` INTEGER NOT NULL, `person_id` INTEGER NOT NULL, `is_manual` INTEGER NOT NULL, `updated_at` INTEGER NOT NULL, `source` TEXT, `confidence` REAL, PRIMARY KEY(`face_id`))",
+        "fields": [
+          {
+            "fieldPath": "faceId",
+            "columnName": "face_id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "personId",
+            "columnName": "person_id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "isManual",
+            "columnName": "is_manual",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "updatedAt",
+            "columnName": "updated_at",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "source",
+            "columnName": "source",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "confidence",
+            "columnName": "confidence",
+            "affinity": "REAL"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "face_id"
+          ]
+        }
+      },
+      {
+        "tableName": "cannot_links",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`face_id` INTEGER NOT NULL, `person_id` INTEGER NOT NULL, PRIMARY KEY(`face_id`, `person_id`))",
+        "fields": [
+          {
+            "fieldPath": "faceId",
+            "columnName": "face_id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "personId",
+            "columnName": "person_id",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "face_id",
+            "person_id"
+          ]
+        }
+      },
+      {
+        "tableName": "anchor_embeddings",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `person_id` INTEGER NOT NULL, `embedding` BLOB NOT NULL, `source` TEXT NOT NULL, `created_at` INTEGER NOT NULL)",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "personId",
+            "columnName": "person_id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "embedding",
+            "columnName": "embedding",
+            "affinity": "BLOB",
+            "notNull": true
+          },
+          {
+            "fieldPath": "source",
+            "columnName": "source",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAt",
+            "columnName": "created_at",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_anchor_embeddings_person_id",
+            "unique": false,
+            "columnNames": [
+              "person_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_anchor_embeddings_person_id` ON `${TABLE_NAME}` (`person_id`)"
+          }
+        ]
+      },
+      {
+        "tableName": "import_manifests",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`manifest_hash` TEXT NOT NULL, `imported_at` INTEGER NOT NULL, `person_count` INTEGER NOT NULL, PRIMARY KEY(`manifest_hash`))",
+        "fields": [
+          {
+            "fieldPath": "manifestHash",
+            "columnName": "manifest_hash",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "importedAt",
+            "columnName": "imported_at",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "personCount",
+            "columnName": "person_count",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "manifest_hash"
+          ]
+        }
+      },
+      {
+        "tableName": "merge_log",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `from_person_id` INTEGER NOT NULL, `to_person_id` INTEGER NOT NULL, `face_ids` TEXT NOT NULL, `cannot_links` TEXT NOT NULL, `created_at` INTEGER NOT NULL, `from_name` TEXT, `from_created_at` INTEGER, `anchor_ids` TEXT, `group_ids` TEXT, `undone_at` INTEGER)",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "fromPersonId",
+            "columnName": "from_person_id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "toPersonId",
+            "columnName": "to_person_id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "faceIds",
+            "columnName": "face_ids",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "cannotLinks",
+            "columnName": "cannot_links",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAt",
+            "columnName": "created_at",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "fromName",
+            "columnName": "from_name",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "fromCreatedAt",
+            "columnName": "from_created_at",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "anchorIds",
+            "columnName": "anchor_ids",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "groupIds",
+            "columnName": "group_ids",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "undoneAt",
+            "columnName": "undone_at",
+            "affinity": "INTEGER"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        }
+      }
+    ],
+    "setupQueries": [
+      "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'ddc27ee5059d32e4a28e9a1e5e101520')"
+    ]
+  }
+}
