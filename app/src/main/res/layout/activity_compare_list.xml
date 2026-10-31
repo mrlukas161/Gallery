@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <androidx.coordinatorlayout.widget.CoordinatorLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
     android:id="@+id/compare_list_coordinator"
     android:layout_width="match_parent"
     android:layout_height="match_parent">
@@ -18,31 +19,67 @@
             app:title="@string/compare_title"
             app:titleTextAppearance="@style/AppTheme.ActionBar.TitleTextStyle" />
 
-        <!-- záložky namiesto skrytého prepínača v menu — prepínanie bez vracania sa;
-             pozadie preberajú od MyAppBarLayout, farby textu a indikátora nastaví CompareListActivity z témy -->
+        <!-- záložky Série / Presné kópie / Podobné (s počtom skupín); pozadie preberajú od MyAppBarLayout,
+             farby textu a indikátora nastaví CompareListActivity z témy -->
         <com.google.android.material.tabs.TabLayout
             android:id="@+id/compare_list_tabs"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:background="@android:color/transparent" />
+            android:background="@android:color/transparent"
+            app:tabMode="fixed" />
 
     </org.fossify.commons.views.MyAppBarLayout>
 
+    <!-- počet stĺpcov dopočíta CompareListActivity podľa šírky (na šírku viac) -->
     <org.fossify.commons.views.MyRecyclerView
         android:id="@+id/compare_list_grid"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:clipToPadding="false"
         android:padding="2dp"
-        app:layout_behavior="@string/appbar_scrolling_view_behavior" />
+        app:layoutManager="androidx.recyclerview.widget.GridLayoutManager"
+        app:layout_behavior="@string/appbar_scrolling_view_behavior"
+        app:spanCount="3" />
 
     <org.fossify.commons.views.MyTextView
         android:id="@+id/compare_list_placeholder"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_gravity="center"
+        android:gravity="center_horizontal"
         android:padding="24dp"
         android:visibility="gone"
-        android:text="@string/compare_none" />
+        tools:text="@string/pb_none_bursts" />
+
+    <!-- načítanie skupín (prvé otvorenie; z pamäte sa ukážu hneď a indikátor sa vôbec neobjaví) -->
+    <com.google.android.material.progressindicator.CircularProgressIndicator
+        android:id="@+id/compare_list_progress"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center"
+        android:indeterminate="true"
+        android:visibility="gone"
+        app:hideAnimationBehavior="inward"
+        app:showAnimationBehavior="outward"
+        app:showDelay="300"
+        tools:visibility="visible" />
+
+    <!-- „Ďalšia skupina ›“ po návrate z porovnávača; spodný okraj pod navigačným pruhom pridá setupEdgeToEdge -->
+    <FrameLayout
+        android:id="@+id/compare_list_bottom"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom|end">
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/compare_list_next"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_margin="@dimen/activity_margin"
+            android:text="@string/pb_next_group"
+            android:visibility="gone"
+            tools:visibility="visible" />
+
+    </FrameLayout>
 
 </androidx.coordinatorlayout.widget.CoordinatorLayout>

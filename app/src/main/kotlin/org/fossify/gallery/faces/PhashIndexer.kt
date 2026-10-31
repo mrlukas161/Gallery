@@ -17,6 +17,10 @@ import java.io.File
 
 // Perceptuálny hash (average hash): každú fotku zmenší na PEVNÝCH 8x8, spočíta 64-bit hash (phash.db).
 // Rýchle, resumovateľné. Slúži na hľadanie podobných/duplicitných fotiek naprieč celou knižnicou.
+// Algoritmus sa NEMENÍ (napr. na dHash): ten istý hash posiela rodinné prepojenie medzi telefónmi
+// (PhotoBundle.phash, FuzzyMatch) a zapisuje cudzí hash do phash_index — iný algoritmus by rozbil zhodu
+// medzi verziami a zmiešal dva druhy hashov v jednom indexe. Slabiny average hashu (tmavé fotky,
+// snímky obrazovky) rieši PhashGrouper pravidlami pri zoskupovaní.
 object PhashIndexer {
     @Volatile
     var isRunning = false

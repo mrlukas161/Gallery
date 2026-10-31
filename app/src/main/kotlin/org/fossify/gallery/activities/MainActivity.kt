@@ -45,7 +45,6 @@ import org.fossify.commons.extensions.getProperPrimaryColor
 import org.fossify.commons.extensions.updateTextColors
 import org.fossify.commons.extensions.getProperSize
 import org.fossify.commons.extensions.getProperTextColor
-import org.fossify.commons.extensions.formatSize
 import org.fossify.commons.extensions.getStorageDirectories
 import org.fossify.commons.extensions.getTimeFormat
 import org.fossify.commons.extensions.handleHiddenFolderPasswordProtection
@@ -805,18 +804,13 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
 
                 // výsledok si odložíme aj pre kartu Podobné na stránke Preskúmať
                 mLastHomeStats = stats
-                binding.pageHome.homeCleanupSummary.text = when {
-                    !stats.hasPhashIndex -> getString(R.string.home_cleanup_no_index)
-                    stats.duplicates == 0 -> getString(R.string.home_cleanup_none)
-                    else -> getString(
-                        R.string.home_cleanup_summary,
-                        stats.bursts, stats.duplicates, stats.wastedBytes.formatSize(),
-                    )
-                }
+                // čísla = počty skupín v záložkách zoznamu (bez skrytých, len v rozsahu IndexScope)
+                binding.pageHome.homeCleanupSummary.text = HomeStats.summary(this, stats)
 
                 binding.pageHome.homeCleanup.setOnClickListener {
                     if (stats.hasPhashIndex) {
-                        startActivity(Intent(this, CompareListActivity::class.java))
+                        // záložka s najviac skupinami
+                        startActivity(CompareListActivity.intent(this, stats.preferredTab))
                     } else {
                         // bez indexu niet čo porovnávať — najprv ho dáme spočítať
                         org.fossify.gallery.services.IndexingService.start(

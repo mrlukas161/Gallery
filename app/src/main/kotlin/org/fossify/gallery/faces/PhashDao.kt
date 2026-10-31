@@ -26,4 +26,8 @@ interface PhashDao {
 
     @Query("SELECT COUNT(*) FROM phash_index")
     fun count(): Int
+
+    // pečiatka indexu pre cache zoznamu „Podobné a duplikáty“ (CompareRepository) spolu s count()
+    @Query("SELECT MAX(indexed_at) FROM phash_index")
+    fun maxIndexedAt(): Long?
 }
