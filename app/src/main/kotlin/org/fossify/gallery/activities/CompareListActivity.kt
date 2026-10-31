@@ -4,6 +4,8 @@ import android.content.Context
 import android.content.Intent
 import android.content.res.Configuration
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.graphics.ColorUtils
 import androidx.recyclerview.widget.GridLayoutManager
@@ -14,6 +16,7 @@ import org.fossify.commons.dialogs.RadioGroupDialog
 import org.fossify.commons.extensions.beGone
 import org.fossify.commons.extensions.beVisible
 import org.fossify.commons.extensions.beVisibleIf
+import org.fossify.commons.extensions.formatSize
 import org.fossify.commons.extensions.getContrastColor
 import org.fossify.commons.extensions.getProperPrimaryColor
 import org.fossify.commons.extensions.getProperTextColor
@@ -24,10 +27,12 @@ import org.fossify.commons.helpers.ensureBackgroundThread
 import org.fossify.commons.models.RadioItem
 import org.fossify.gallery.R
 import org.fossify.gallery.adapters.CompareGroupsAdapter
+import org.fossify.gallery.compare.CompareBulkKeep
 import org.fossify.gallery.databinding.ActivityCompareListBinding
 import org.fossify.gallery.helpers.CompareGroup
 import org.fossify.gallery.helpers.CompareGroups
 import org.fossify.gallery.helpers.CompareHiddenStore
+import org.fossify.gallery.helpers.CompareKind
 import org.fossify.gallery.helpers.CompareRepository
 import org.fossify.gallery.helpers.HiddenGroups
 import org.fossify.gallery.helpers.PathTransfer
@@ -40,8 +45,10 @@ import org.fossify.gallery.helpers.PathTransfer
 // a návrat z porovnávača len overí, či sa niečo zmenilo. Výsledok staršieho načítania sa zahodí (generácia).
 // Otočenie telefónu obrazovku neruší (configChanges v manifeste); záložka, poradie a pozícia sa aj tak
 // ukladajú do onSaveInstanceState pre ostatné prípady (zmena témy, systém uvoľnil appku z pamäte).
-@Suppress("TooManyFunctions") // jedna obrazovka: záložky, menu, výber, návrat z porovnávača
-class CompareListActivity : SimpleActivity(), CompareGroupsAdapter.Listener {
+// porovnavac-W2: hromadné „Ponechať najlepšiu v označených skupinách“ (výberový režim) a „Upratať presné
+// kópie“ (menu) cez CompareBulkKeep; po zmazaní lišta „Späť“ (obnova celej dávky z Koša) a obnova zoznamu.
+@Suppress("TooManyFunctions") // jedna obrazovka: záložky, menu, výber, návrat z porovnávača, hromadné mazanie
+class CompareListActivity : SimpleActivity(), CompareGroupsAdapter.Listener, CompareBulkKeep.Listener {
     private val binding by viewBinding(ActivityCompareListBinding::inflate)
 
     private var tab = CompareGroups.TAB_BURSTS
@@ -58,6 +65,14 @@ class CompareListActivity : SimpleActivity(), CompareGroupsAdapter.Listener {
     private var returningFromCompare = false
     private var lastOpenedPaths: List<String> = emptyList()
     private var openNextImmediately = false
+
+    // hromadné mazanie: posledná dávka v Koši (na „Späť“) a cesty, ktoré treba pri načítaní overiť na disku
+    private lateinit var bulk: CompareBulkKeep
+    private var lastBulk: List<String> = emptyList()
+    private var bulkGone: List<String> = emptyList()
+    private val handler = Handler(Looper.getMainLooper())
+    private val undoTimeout = Runnable { hideUndo() }
+    private val reloadAfterRestore = Runnable { if (!isDestroyed) load() }
 
     private val adapter: CompareGroupsAdapter?
         get() = binding.compareListGrid.adapter as? CompareGroupsAdapter
@@ -88,11 +103,19 @@ class CompareListActivity : SimpleActivity(), CompareGroupsAdapter.Listener {
         // jednotne s ostatnými obrazovkami: obsah nezasahuje pod stavový/navigačný pruh, lišta sa pri scrolle prefarbí
         setupEdgeToEdge(
             padTopSystem = listOf(binding.compareListAppbar),
-            padBottomSystem = listOf(binding.compareListGrid, binding.compareListBottom),
+            padBottomSystem = listOf(binding.compareListGrid, binding.compareListBottom, binding.compareListUndoRow),
         )
         setupMaterialScrollListener(binding.compareListGrid, binding.compareListAppbar)
         setupTabs()
         binding.compareListNext.setOnClickListener { openNextGroup() }
+        bulk = CompareBulkKeep(this, this)
+        binding.compareListUndo.setOnClickListener { undoBulk() }
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        handler.removeCallbacksAndMessages(null)
+        if (::bulk.isInitialized) bulk.stop()
     }
 
     override fun onResume() {
@@ -170,6 +193,7 @@ class CompareListActivity : SimpleActivity(), CompareGroupsAdapter.Listener {
                 }
 
                 R.id.compare_unhide_all -> confirmUnhideAll()
+                R.id.compare_clean_exact -> cleanExact()
                 else -> return@setOnMenuItemClickListener false
             }
             true
@@ -180,7 +204,21 @@ class CompareListActivity : SimpleActivity(), CompareGroupsAdapter.Listener {
         val menu = binding.compareListToolbar.menu
         menu.findItem(R.id.compare_show_hidden)?.isChecked = showHidden
         menu.findItem(R.id.compare_unhide_all)?.isVisible = !hidden.isEmpty
+        // „Upratať presné kópie (N skupín, X MB)“ — len keď nejaké (neskryté) sú
+        val exact = visibleExact()
+        menu.findItem(R.id.compare_clean_exact)?.apply {
+            isVisible = exact.isNotEmpty()
+            if (exact.isNotEmpty()) {
+                val sizes = snapshot?.sizes.orEmpty()
+                val bytes = CompareGroups.reclaimableTotal(exact) { sizes[it] ?: 0L }
+                val groups = resources.getQuantityString(R.plurals.pw_groups, exact.size, exact.size)
+                title = getString(R.string.pw_menu_clean_exact, groups, bytes.formatSize())
+            }
+        }
     }
+
+    private fun visibleExact(): List<CompareGroup> =
+        snapshot?.groups.orEmpty().filter { it.kind == CompareKind.EXACT && !hidden.isHidden(it.paths) }
 
     // Načíta skupiny na pozadí. Z pamäte (CompareRepository) je to rýchle; indikátor sa ukáže len vtedy,
     // keď ešte nie je čo zobraziť. Platí len výsledok POSLEDNÉHO načítania.
@@ -190,8 +228,9 @@ class CompareListActivity : SimpleActivity(), CompareGroupsAdapter.Listener {
             binding.compareListPlaceholder.beGone()
             binding.compareListProgress.show()
         }
-        // po porovnaní: zmazaná fotka (Kôš) sa v MediaStore nemusí prejaviť hneď — overiť otvorenú skupinu
-        val opened = if (returningFromCompare) lastOpenedPaths else emptyList()
+        // po porovnaní / hromadnom mazaní: zmazaná fotka (Kôš) sa v MediaStore nemusí prejaviť hneď — overiť
+        val opened = (if (returningFromCompare) lastOpenedPaths else emptyList()) + bulkGone
+        bulkGone = emptyList()
         ensureBackgroundThread {
             val result = try {
                 CompareRepository.invalidateIfMissing(opened)
@@ -355,6 +394,58 @@ class CompareListActivity : SimpleActivity(), CompareGroupsAdapter.Listener {
         onListChanged(scrollToTop = false)
     }
 
+    // --- hromadné „Ponechať najlepšiu“ a „Upratať presné kópie“ ---
+
+    override fun onKeepBest(groups: List<CompareGroup>) {
+        val snap = snapshot ?: return
+        if (groups.isEmpty()) return
+        bulk.keepBest(groups, snap.groups, snap.sizes)
+    }
+
+    private fun cleanExact() {
+        val snap = snapshot ?: return
+        bulk.cleanExact(visibleExact(), snap.groups, snap.sizes)
+    }
+
+    override fun onBulkTrashed(gone: List<String>, toBin: Boolean, bytes: Long) {
+        if (gone.isEmpty()) return
+        val photos = resources.getQuantityString(R.plurals.pw_photos, gone.size, gone.size)
+        if (toBin) {
+            lastBulk = gone
+            hideNextButton()
+            binding.compareListUndoText.text = getString(R.string.pw_done_bin, photos, bytes.formatSize())
+            binding.compareListUndoRow.beVisible()
+            handler.removeCallbacks(undoTimeout)
+            handler.postDelayed(undoTimeout, UNDO_MS)
+        } else {
+            toast(getString(R.string.pw_done_permanent, photos, bytes.formatSize()))
+        }
+        adapter?.finishActMode()
+        bulkGone = gone
+        load()
+    }
+
+    // „Späť“: celá posledná dávka z Koša na pôvodné miesta
+    private fun undoBulk() {
+        val items = lastBulk
+        hideUndo()
+        if (items.isNotEmpty()) bulk.restore(items)
+    }
+
+    override fun onBulkRestored(restored: List<String>) {
+        toast(getString(R.string.pa_restored, restored.size))
+        load()
+        // vrátené súbory MediaStore naskenuje až o chvíľu — potom ešte raz (CompareRepository spozná zmenu)
+        handler.removeCallbacks(reloadAfterRestore)
+        handler.postDelayed(reloadAfterRestore, RESCAN_RELOAD_MS)
+    }
+
+    private fun hideUndo() {
+        handler.removeCallbacks(undoTimeout)
+        lastBulk = emptyList()
+        binding.compareListUndoRow.beGone()
+    }
+
     override fun hideActionTitle(): Int =
         if (tab == CompareGroups.TAB_BURSTS) R.string.pb_action_keep_all else R.string.pb_action_not_duplicates
 
@@ -386,6 +477,8 @@ class CompareListActivity : SimpleActivity(), CompareGroupsAdapter.Listener {
         private const val TAB_UNSELECTED_ALPHA = 179 // ~70 %
         private const val MAX_QUEUE = 200
         private const val MAX_SAVED_QUEUE_CHARS = 50_000
+        private const val UNDO_MS = 10_000L
+        private const val RESCAN_RELOAD_MS = 3_000L
 
         private val TAB_TITLES = intArrayOf(R.string.pb_tab_bursts, R.string.pb_tab_exact, R.string.pb_tab_similar)
         private val PLACEHOLDERS = intArrayOf(R.string.pb_none_bursts, R.string.pb_none_exact, R.string.pb_none_similar)

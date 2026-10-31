@@ -1,0 +1,85 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Hromadné „Ponechať najlepšiu“ a „Upratať presné kópie“ v zozname „Podobné a duplikáty“ (CompareBulkKeep) -->
+<resources>
+    <!-- výberový režim a menu zoznamu -->
+    <string name="pw_action_keep_best">Ponechať najlepšiu v označených skupinách</string>
+    <!-- %1$s = „3 skupiny“, %2$s = veľkosť -->
+    <string name="pw_menu_clean_exact">Upratať presné kópie (%1$s, %2$s)</string>
+    <plurals name="pw_groups">
+        <item quantity="one">%d skupina</item>
+        <item quantity="few">%d skupiny</item>
+        <item quantity="many">%d skupín</item>
+        <item quantity="other">%d skupín</item>
+    </plurals>
+
+    <!-- priebeh vyhodnocovania -->
+    <string name="pw_keep_best_title">Ponechať najlepšiu</string>
+    <string name="pw_clean_exact_title">Upratať presné kópie</string>
+    <string name="pw_progress_group">Vyhodnocujem skupinu %1$d / %2$d…</string>
+    <string name="pw_progress_photos">Fotky: %1$d / %2$d</string>
+    <string name="pw_progress_waiting">Čakám, kým spracovanie knižnice uvoľní model tvárí. Ak to potrvá dlhšie, pokračujem bez tvárí.</string>
+    <string name="pw_progress_prepare">Pripravujem prehľad…</string>
+    <string name="pw_cancelled">Vyhodnocovanie je zrušené – nič sa nezmazalo</string>
+    <string name="pw_busy">Upratovanie už beží</string>
+
+    <!-- prehľad pred potvrdením: „Do Koša pôjde 87 fotiek z 23 skupín (412 MB, …)“ -->
+    <plurals name="pw_to_bin">
+        <item quantity="one">Do Koša pôjde %d fotka</item>
+        <item quantity="few">Do Koša pôjdu %d fotky</item>
+        <item quantity="many">Do Koša pôjde %d fotiek</item>
+        <item quantity="other">Do Koša pôjde %d fotiek</item>
+    </plurals>
+    <plurals name="pw_to_delete">
+        <item quantity="one">Natrvalo sa vymaže %d fotka</item>
+        <item quantity="few">Natrvalo sa vymažú %d fotky</item>
+        <item quantity="many">Natrvalo sa vymaže %d fotiek</item>
+        <item quantity="other">Natrvalo sa vymaže %d fotiek</item>
+    </plurals>
+    <plurals name="pw_from_groups">
+        <item quantity="one">z %d skupiny</item>
+        <item quantity="few">z %d skupín</item>
+        <item quantity="many">z %d skupín</item>
+        <item quantity="other">z %d skupín</item>
+    </plurals>
+    <!-- %1$s = „Do Koša pôjde 87 fotiek“, %2$s = „z 23 skupín“, %3$s = veľkosť -->
+    <string name="pw_summary_bin">%1$s %2$s (%3$s, miesto sa uvoľní po vysypaní Koša).</string>
+    <string name="pw_summary_permanent">%1$s %2$s (%3$s). Kôš je vypnutý – fotky sa už nebudú dať vrátiť.</string>
+    <plurals name="pw_skipped_uncertain">
+        <item quantity="one">%d skupina preskočená – neistá.</item>
+        <item quantity="few">%d skupiny preskočené – neisté.</item>
+        <item quantity="many">%d skupín preskočených – neistých.</item>
+        <item quantity="other">%d skupín preskočených – neistých.</item>
+    </plurals>
+    <plurals name="pw_skipped_unread">
+        <item quantity="one">%d skupina preskočená – fotky sa nedali prečítať.</item>
+        <item quantity="few">%d skupiny preskočené – fotky sa nedali prečítať.</item>
+        <item quantity="many">%d skupín preskočených – fotky sa nedali prečítať.</item>
+        <item quantity="other">%d skupín preskočených – fotky sa nedali prečítať.</item>
+    </plurals>
+    <plurals name="pw_over_limit">
+        <item quantity="one">%d skupina sa nezmestila do jedného kola – spusti akciu znova.</item>
+        <item quantity="few">%d skupiny sa nezmestili do jedného kola – spusti akciu znova.</item>
+        <item quantity="many">%d skupín sa nezmestilo do jedného kola – spusti akciu znova.</item>
+        <item quantity="other">%d skupín sa nezmestilo do jedného kola – spusti akciu znova.</item>
+    </plurals>
+    <plurals name="pw_spared">
+        <item quantity="one">%d fotka ostane navyše, aby iná skupina neprišla o všetky fotky.</item>
+        <item quantity="few">%d fotky ostanú navyše, aby iná skupina neprišla o všetky fotky.</item>
+        <item quantity="many">%d fotiek ostane navyše, aby iná skupina neprišla o všetky fotky.</item>
+        <item quantity="other">%d fotiek ostane navyše, aby iná skupina neprišla o všetky fotky.</item>
+    </plurals>
+    <string name="pw_no_faces">Tváre sa tentoraz nehodnotili (model tvárí bol obsadený alebo nie je k dispozícii), preto sa vyžadoval väčší rozdiel medzi fotkami.</string>
+    <string name="pw_exact_rule">Z presných kópií ostane fotka s vyšším rozlíšením, potom tá z Fotoaparátu, potom staršia.</string>
+    <string name="pw_nothing">Nie je čo zmazať.</string>
+
+    <!-- po zmazaní (lišta so „Späť“) -->
+    <plurals name="pw_photos">
+        <item quantity="one">%d fotka</item>
+        <item quantity="few">%d fotky</item>
+        <item quantity="many">%d fotiek</item>
+        <item quantity="other">%d fotiek</item>
+    </plurals>
+    <!-- %1$s = „87 fotiek“, %2$s = veľkosť -->
+    <string name="pw_done_bin">V Koši: %1$s · %2$s sa uvoľní po vysypaní Koša</string>
+    <string name="pw_done_permanent">Vymazané natrvalo: %1$s · %2$s</string>
+</resources>

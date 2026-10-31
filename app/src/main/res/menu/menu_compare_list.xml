@@ -7,6 +7,12 @@
         android:icon="@drawable/ic_sort_vector"
         android:title="@string/pb_sort"
         app:showAsAction="ifRoom" />
+    <!-- porovnavac-W2: titulok „Upratať presné kópie (N skupín, X MB)“ dopĺňa CompareListActivity -->
+    <item
+        android:id="@+id/compare_clean_exact"
+        android:title="@string/pw_clean_exact_title"
+        android:visible="false"
+        app:showAsAction="never" />
     <item
         android:id="@+id/compare_show_hidden"
         android:checkable="true"

@@ -78,7 +78,9 @@
   .ov{position:fixed;inset:0;z-index:50;background:rgba(6,7,10,.98);display:none;flex-direction:column}
   .ov.on{display:flex}
   .ov:focus{outline:none}
-  #cmp{z-index:60} #viewer{z-index:70} #marked,#bin{z-index:65} #help{z-index:90} #login{z-index:95} #ask{z-index:96}
+  #cmp{z-index:60} #viewer{z-index:70} #marked,#bin{z-index:65} #help{z-index:90} #login{z-index:95} #ask{z-index:96} #work{z-index:97}
+  .card .wbar{height:6px;background:var(--chip);border-radius:3px;overflow:hidden;margin:.6rem 0}
+  .card .wbar i{display:block;height:100%;background:var(--accent);width:0;transition:width .3s}
   .bar{display:flex;gap:.45rem;align-items:center;padding:.45rem .7rem;border-bottom:1px solid var(--line);flex-wrap:wrap}
   .bar .t{flex:1 1 auto;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--mut)}
   .bar .t b{color:var(--fg);font-weight:600}
@@ -135,6 +137,11 @@
   .sthumb.marked .del{display:flex}
   .sthumb.shown{outline-color:#fff}
   .sthumb .kp{position:absolute;right:3px;bottom:2px;color:var(--warn);font-size:.9rem;text-shadow:0 0 3px #000}
+  /* kvalita z mobilu (POST /api/quality) */
+  .qline{font-size:.8rem;color:var(--fg);padding:.3rem .7rem;border-bottom:1px solid var(--line);background:var(--bg2)}
+  .qline .warnt{color:var(--warn)}
+  .pane .pf .qs{color:var(--fg)}
+  .tag.star{color:var(--warn);border-color:var(--warn)}
 
   /* groups */
   .tools{display:flex;gap:.5rem;align-items:center;flex-wrap:wrap;padding:.4rem .7rem;border-bottom:1px solid var(--line)}
@@ -257,6 +264,7 @@
   <div class="bar">
     <button id="gClose" aria-label="Zavrieť (Esc)">✕</button>
     <span class="t" id="gTitle"><b>Podobné a duplikáty</b> — rovnaké skupiny ako v mobile. Enter = porovnať, N = ďalšia nespracovaná.</span>
+    <button id="gBulk" title="K — označí na zmazanie všetko okrem najlepšej v zobrazených skupinách (návrh, Ctrl+Z vráti)">★ Ponechať najlepšiu…</button>
     <button id="gNext" title="N">Ďalšia nespracovaná ›</button>
     <button id="gReload" aria-label="Obnoviť skupiny">↻</button>
   </div>
@@ -297,6 +305,7 @@
     <label class="inl"><input type="checkbox" id="cLink" checked> Spoločné priblíženie (V)</label>
     <button id="cFit" title="F">Prispôsobiť všetky</button>
     <button id="cExif" aria-pressed="true" title="I">EXIF</button>
+    <button id="cEval" title="Q — mobil vyhodnotí ostrosť, expozíciu a tváre a ukáže ★ so zdôvodnením">★ Vyhodnotiť skupinu</button>
     <span id="cGroupBtns">
       <button id="cPrev" title="P" aria-label="Predošlá skupina (P)">‹</button>
       <button id="cSkip" title="S">Preskočiť</button>
@@ -305,6 +314,7 @@
     </span>
   </div>
   <div class="progress" id="cProg" aria-live="polite"><span class="pbar"><i></i></span><span class="txt"></span></div>
+  <div class="qline" id="cQual" aria-live="polite" hidden></div>
   <div class="cmpwrap" data-n="2" id="cWrap"></div>
   <div id="strip" role="list" aria-label="Fotky skupiny"></div>
 </div>
@@ -339,6 +349,16 @@
     <h2 id="askT">Potvrdenie</h2>
     <p id="askM"></p>
     <div class="btns"><button class="warn" id="askOk">OK</button><button id="askNo">Zrušiť</button></div>
+  </div></div>
+</div>
+
+<!-- dlhšia práca v mobile (vyhodnotenie kvality) s priebehom a Zrušiť -->
+<div class="ov" id="work" role="dialog" aria-modal="true" aria-labelledby="wT" aria-describedby="wM" tabindex="-1">
+  <div class="center"><div class="card">
+    <h2 id="wT">Pracujem</h2>
+    <p id="wM" aria-live="polite"></p>
+    <div class="wbar" id="wBar"><i></i></div>
+    <div class="btns"><button id="wNo">Zrušiť</button></div>
   </div></div>
 </div>
 
@@ -403,6 +423,7 @@
         <tr><td><kbd>↑</kbd><kbd>↓</kbd></td><td>pohyb po skupinách</td></tr>
         <tr><td><kbd>Enter</kbd></td><td>porovnať skupinu</td></tr>
         <tr><td><kbd>N</kbd></td><td>ďalšia nespracovaná skupina</td></tr>
+        <tr><td><kbd>K</kbd></td><td>★ ponechať najlepšiu vo všetkých zobrazených skupinách (návrh)</td></tr>
         <tr><td><kbd>Esc</kbd></td><td>späť do mriežky</td></tr>
       </table>
     </section>
@@ -420,6 +441,7 @@
         <tr><td><kbd>+</kbd> / <kbd>-</kbd></td><td>priblížiť / oddialiť</td></tr>
         <tr><td><kbd>V</kbd></td><td>spoločné priblíženie zap/vyp</td></tr>
         <tr><td><kbd>I</kbd></td><td>EXIF pod panelmi zap/vyp</td></tr>
+        <tr><td><kbd>Q</kbd></td><td>★ vyhodnotiť skupinu v mobile (ostrosť, oči…)</td></tr>
         <tr><td><kbd>Enter</kbd></td><td>✓ skupina hotová → ďalšia nespracovaná</td></tr>
         <tr><td><kbd>S</kbd></td><td>preskočiť skupinu → ďalšia</td></tr>
         <tr><td><kbd>N</kbd> / <kbd>P</kbd></td><td>ďalšia nespracovaná / predošlá skupina</td></tr>
@@ -656,6 +678,98 @@ var GCore = (function () {
     return out;
   }
 
+  // ---- kvalita (POST /api/quality) a hromadné „Ponechať najlepšiu" (porovnavac-W2) ----
+  // zdôvodnenie skóre rovnako ako v mobile (CompareTexts); r = {code, value, total}
+  function mpx(tenths) { return String(Math.round(tenths) / 10).replace(".", ","); }
+  function reasonText(r) {
+    var v = r.value | 0, t = r.total | 0;
+    switch (r.code) {
+      case "sharper": return "ostrejšia o " + v + " %";
+      case "blurrier": return "menej ostrá o " + v + " %";
+      case "all_eyes_open": return v === 1 ? "1 tvár, oči otvorené" : (v >= 2 && v <= 4 ? "všetci " + v + " majú otvorené oči" : "všetkých " + v + " má otvorené oči");
+      case "eyes_closed": return v + (v >= 2 && v <= 4 ? " majú" : " má") + " zavreté oči";
+      case "more_faces": return "viac tvárí (" + v + " oproti " + t + ")";
+      case "fewer_faces": return "chýba tvár (" + v + " z " + t + ")";
+      case "better_exposure": return "lepšia expozícia";
+      case "worse_exposure": return "horšia expozícia";
+      case "smiles": return count(v, "úsmev", "úsmevy", "úsmevov");
+      case "higher_resolution": return "vyššie rozlíšenie (" + mpx(v) + " Mpx)";
+      case "lower_resolution": return "nižšie rozlíšenie (" + mpx(v) + " Mpx)";
+      case "original_folder": return "originál z priečinka Fotoaparát";
+      case "older_file": return "starší súbor – pravdepodobne originál";
+      default: return "";
+    }
+  }
+  // „★ 92 % · ostrejšia o 18 %, všetci 3 majú otvorené oči" (text zo servera má prednosť)
+  function scoreLine(s) {
+    if (!s) return "";
+    var why = s.text || (s.details || []).map(reasonText).filter(Boolean).join(", ");
+    var pct = s.percent != null ? s.percent : Math.round((s.score || 0) * 100);
+    return (s.rank === 0 ? "★ " : "") + pct + " %" + (why ? " · " + why : (s.rank === 0 ? " · najvyššie skóre" : ""));
+  }
+  // požiadavky na /api/quality v rámci limitov servera (rôzne id na požiadavku, skupín na požiadavku);
+  // skupina väčšia než maxIds sa nedá vyhodnotiť naraz -> tooBig
+  function qualityChunks(idLists, maxIds, maxGroups) {
+    var chunks = [], cur = [], seen = new Set(), tooBig = [];
+    idLists.forEach(function (ids, i) {
+      if (ids.length > maxIds) { tooBig.push(i); return; }
+      var add = ids.filter(function (id) { return !seen.has(id); }).length;
+      if (cur.length && (cur.length >= maxGroups || seen.size + add > maxIds)) { chunks.push(cur); cur = []; seen = new Set(); }
+      cur.push(i);
+      ids.forEach(function (id) { seen.add(id); });
+    });
+    if (cur.length) chunks.push(cur);
+    return { chunks: chunks, tooBig: tooBig };
+  }
+  // Plán hromadného „Ponechať najlepšiu" (rovnako ako CompareBulk v mobile): z každej rozhodnutej skupiny
+  // ostane keep, ostatné ZMERANÉ fotky sa označia; neistá skupina sa preskočí. Nikdy sa neoznačí ★ inej
+  // rozhodnutej skupiny a žiadna dotknutá skupina (aj z `all`) neostane bez neoznačenej fotky.
+  // g = {key, kind, ids, keep, uncertain, scored, keeper}; keep = null -> preskočená (uncertain = neistá,
+  // inak bez údajov); scored = id so skóre (presné kópie: všetky ids). Ponechaná označená fotka sa odznačí.
+  function bulkPlan(list, marked, all) {
+    var keeps = new Set(), del = [], delSet = new Set(), uncertain = 0, unknown = 0, decided = [];
+    list.forEach(function (g) {
+      var keep = g.keep != null && g.ids.indexOf(g.keep) >= 0 ? g.keep : null;
+      if (keep == null) { if (g.uncertain) uncertain++; else unknown++; return; }
+      keeps.add(keep);
+      decided.push(g);
+    });
+    decided.forEach(function (g) {
+      var removable = g.kind === "exact" ? g.ids : (g.scored || []);
+      removable.forEach(function (id) {
+        if (g.ids.indexOf(id) >= 0 && !keeps.has(id) && !delSet.has(id)) { delSet.add(id); del.push(id); }
+      });
+    });
+    var spared = [];
+    var isGone = function (id) { return delSet.has(id) || (marked.has(id) && !keeps.has(id)); };
+    var front = function (g) { var k = g.keep != null ? g.keep : g.keeper; return k != null && g.ids.indexOf(k) >= 0 ? k : g.ids[0]; };
+    list.concat(all || []).forEach(function (g) {
+      if (!g.ids.length || !g.ids.some(function (id) { return delSet.has(id); })) return;
+      if (g.ids.every(isGone)) {
+        var save = delSet.has(front(g)) ? front(g) : g.ids.filter(function (id) { return delSet.has(id); })[0];
+        delSet.delete(save); spared.push(save);
+      }
+    });
+    del = del.filter(function (id) { return delSet.has(id); });
+    var unmark = Array.from(keeps).concat(spared).filter(function (id) { return marked.has(id); });
+    var affected = decided.filter(function (g) { return g.ids.some(function (id) { return delSet.has(id); }); });
+    return {
+      mark: del.filter(function (id) { return !marked.has(id); }), unmark: unmark, all: del,
+      affected: affected.map(function (g) { return g.key; }), uncertain: uncertain, unknown: unknown, spared: spared
+    };
+  }
+  // „Na zmazanie sa označí 87 fotiek z 23 skupín (412 MB). 4 skupiny preskočené – neisté."
+  function bulkSummary(plan, bytes, extra) {
+    var n = plan.all.length, g = plan.affected.length, parts = [];
+    if (n) parts.push("Na zmazanie sa označí " + photos(n) + " z " + g + (g === 1 ? " skupiny" : " skupín") + " (" + fmtBytes(bytes) + ").");
+    else parts.push("Nie je čo označiť.");
+    if (plan.uncertain) parts.push(count(plan.uncertain, "skupina preskočená", "skupiny preskočené", "skupín preskočených") + " – " + plural(plan.uncertain, "neistá.", "neisté.", "neistých."));
+    if (plan.unknown) parts.push(count(plan.unknown, "skupina preskočená", "skupiny preskočené", "skupín preskočených") + " – bez údajov.");
+    if (plan.spared.length) parts.push(count(plan.spared.length, "fotka ostane", "fotky ostanú", "fotiek ostane") + " navyše, aby iná skupina neprišla o všetky fotky.");
+    if (extra) parts.push(extra);
+    return parts.join(" ");
+  }
+
   return {
     plural: plural, count: count, photos: photos, files: files, groupsTxt: groupsTxt,
     fmtBytes: fmtBytes, fmtDate: fmtDate, fmtDay: fmtDay, fmtRange: fmtRange, fmtDur: fmtDur,
@@ -666,7 +780,8 @@ var GCore = (function () {
     browserNative: browserNative, dlName: dlName,
     stateOf: stateOf, markedCount: markedCount, sortGroups: sortGroups, filterGroups: filterGroups,
     nextOpen: nextOpen, progress: progress, keepPlan: keepPlan,
-    Undo: Undo, revertMarks: revertMarks, metaRows: metaRows, metaDiff: metaDiff
+    Undo: Undo, revertMarks: revertMarks, metaRows: metaRows, metaDiff: metaDiff,
+    reasonText: reasonText, scoreLine: scoreLine, qualityChunks: qualityChunks, bulkPlan: bulkPlan, bulkSummary: bulkSummary
   };
 })();
 if (typeof module !== "undefined" && module.exports) module.exports = GCore;
@@ -725,6 +840,8 @@ if (typeof module !== "undefined" && module.exports) module.exports = GCore;
     sel: new Set(), selMode: false, cur: -1,
     groups: null, groupsGen: -2, gstates: {}, glist: [], gcur: -1
   };
+  // limity POST /api/quality (server: QualityRequest)
+  var QMAX_IDS = 300, QMAX_GROUPS = 50;
   var undo = new C.Undo(60);
   function item(id) { return S.byId.get(Number(id)); }
   function sizeOf(id) { var it = item(id); return it ? it.size : 0; }
@@ -1010,6 +1127,19 @@ if (typeof module !== "undefined" && module.exports) module.exports = GCore;
       refreshGroupViews();
     }).catch(function (e) { toast("Stav skupiny sa neuložil (" + e.message + ")"); });
   }
+  // viac skupín naraz (hromadné „Ponechať najlepšiu"); map = {key: "done"|"skip"|""}
+  function setGroupStates(map, opt) {
+    var keys = Object.keys(map);
+    if (!keys.length) return Promise.resolve();
+    var prev = {};
+    keys.forEach(function (k) { prev[k] = (S.gstates[k] || {}).s || ""; });
+    return post("/api/groupstate", { states: map }).then(function (r) {
+      S.gstates = r.states || S.gstates;
+      if (r.stateGen != null) S.stateGen = r.stateGen;
+      if (!opt || opt.undo !== false) undo.push({ groups: prev, label: "stav skupín" });
+      refreshGroupViews();
+    }).catch(function (e) { toast("Stav skupín sa neuložil (" + e.message + ")"); });
+  }
   function doUndo() {
     var e = undo.pop();
     if (!e) { toast("Nie je čo vrátiť"); return; }
@@ -1022,6 +1152,7 @@ if (typeof module !== "undefined" && module.exports) module.exports = GCore;
         jobs.push(setMarks(plan.off, false, { undo: false }));
       }
       if (p.group) jobs.push(setGroupState(p.group.key, p.group.prev, { undo: false }));
+      if (p.groups) jobs.push(setGroupStates(p.groups, { undo: false }));
     });
     Promise.all(jobs).then(function () { toast("Vrátené: " + e.label); }).catch(function () { });
   }
@@ -1426,6 +1557,7 @@ if (typeof module !== "undefined" && module.exports) module.exports = GCore;
   $("#gClose").addEventListener("click", function () { closeOv(groupsOv); });
   $("#gReload").addEventListener("click", function () { loadGroups(true); });
   $("#gNext").addEventListener("click", function () { openNextOpen(S.gcur); });
+  $("#gBulk").addEventListener("click", function () { bulkKeep(); });
   function loadGroups(force) {
     if (!force && S.groups && S.groupsGen === S.gen) { renderGroups(false); return Promise.resolve(); }
     if (!S.groups) gBody.innerHTML = '<div class="empty">Načítavam skupiny…</div>';
@@ -1475,6 +1607,7 @@ if (typeof module !== "undefined" && module.exports) module.exports = GCore;
     if (s === "done") box.appendChild(el("span", "tag ok", "✓ spracovaná"));
     if (s === "skip") box.appendChild(el("span", "tag skip", "⏭ preskočená"));
     if (m) box.appendChild(el("span", "tag del", "🗑 " + m));
+    if (g.best != null) box.appendChild(el("span", "tag star", g.uncertain ? "★ neistá" : "★ vyhodnotená"));
   }
   function renderGroups(resetScroll) {
     if (!S.groups) return;
@@ -1597,7 +1730,8 @@ if (typeof module !== "undefined" && module.exports) module.exports = GCore;
     opt = opt || {};
     var list = ids.map(Number).filter(function (id) { var it = item(id); return it && C.isImage(it.mime); });
     if (list.length < 2) { toast("Na porovnanie treba aspoň 2 fotky"); return; }
-    CM.ids = list; CM.group = opt.group || null; CM.title = opt.title || "";
+    if (CM.evalJob) CM.evalJob.cancelled = true;
+    CM.ids = list; CM.group = opt.group || null; CM.title = opt.title || ""; CM.qgroup = null; CM.evalJob = null;
     CM.n = Math.min(list.length, Number(store("glay")) || 2);
     CM.active = 0;
     CM.panes.forEach(function (P, p) { P.idx = p < CM.n ? p : -1; });
@@ -1609,11 +1743,13 @@ if (typeof module !== "undefined" && module.exports) module.exports = GCore;
     layoutPanes(true);
     buildStrip();
     paintCmpBar();
+    paintQual();
     var next = CM.ids[CM.n]; if (next) prefetch(item(next));
   }
   cmpOv.onclose = function () {
     CM.panes.forEach(function (P) { P.v.clear(); P.idx = -1; });
-    CM.ids = [];
+    if (CM.evalJob) CM.evalJob.cancelled = true;
+    CM.ids = []; CM.qgroup = null; CM.evalJob = null;
     if (groupsOv.classList.contains("on")) {
       refreshGroupViews();
       var row = gBody.querySelector('.grow[data-i="' + S.gcur + '"]');
@@ -1674,6 +1810,8 @@ if (typeof module !== "undefined" && module.exports) module.exports = GCore;
       if (!it) return;
       P.pf.textContent = "";
       P.pf.appendChild(el("div", "row", infoText(it, P.v.nw ? { w: P.v.nw, h: P.v.nh } : null)));
+      var qg = CM.group || CM.qgroup, qs = qg && qg.qscores ? qg.qscores[CM.ids[P.idx]] : null;
+      if (qs) { var qr = el("div", "row qs", C.scoreLine(qs)); qr.title = "skóre z mobilu (ostrosť, expozícia, oči, úsmev)"; P.pf.appendChild(qr); }
       var m = shown[k];
       if (!m) return;
       var row = el("div", "row ex");
@@ -1716,9 +1854,9 @@ if (typeof module !== "undefined" && module.exports) module.exports = GCore;
   }
   var PCOL = ["var(--p1)", "var(--p2)", "var(--p3)", "var(--p4)"];
   // ★ = najlepšia podľa porovnávača v mobile (ak ju už spočítal), inak fotka s najväčším rozlíšením
-  function starId() { var g = CM.group; return g ? (g.best != null ? g.best : g.keeper) : null; }
+  function starId() { var g = CM.group || CM.qgroup; return g ? (g.best != null ? g.best : g.keeper) : null; }
   function starText() {
-    var g = CM.group;
+    var g = CM.group || CM.qgroup;
     if (g && g.best != null) return "najlepšia podľa porovnávača" + (g.confidence != null ? " (náskok " + Math.round(g.confidence * 100) + " %)" : "");
     return "navrhnutá na ponechanie (najväčšie rozlíšenie)";
   }
@@ -1798,6 +1936,7 @@ if (typeof module !== "undefined" && module.exports) module.exports = GCore;
   $("#cFit").addEventListener("click", fitAll);
   function fitAll() { CM.panes.slice(0, CM.n).forEach(function (P) { P.v.rel = { cx: 0.5, cy: 0.5, z: 1 }; P.v.setRel(P.v.rel); }); }
   $("#cExif").addEventListener("click", toggleExif);
+  $("#cEval").addEventListener("click", function () { evalGroup(); });
   function toggleExif() {
     CM.exif = !CM.exif;
     store("gexif", CM.exif ? "1" : "0");
@@ -1837,6 +1976,173 @@ if (typeof module !== "undefined" && module.exports) module.exports = GCore;
       var others = CM.ids.length - 1;
       toast("Ponechaná 1, na zmazanie " + C.photos(others) + (CM.group ? " · N = ďalšia skupina" : ""), {
         action: "Vrátiť", onAction: doUndo
+      });
+    }).catch(function () { });
+  }
+
+  // ================= kvalita z mobilu (POST /api/quality) =================
+  // 200 = hotové (z cache), 202 = mobil počíta {done, total}, 429 = počíta inú požiadavku -> skúsiť o chvíľu
+  function qualityPost(body) {
+    return fetch("/api/quality", { method: "POST", credentials: "same-origin", headers: headers(true), body: JSON.stringify(body) })
+      .then(function (r) {
+        return r.json().catch(function () { return {}; }).then(function (j) {
+          if (r.status === 403 && (j.error === "forbidden" || j.error === "locked")) authLost(j.error);
+          if (r.status === 200 || r.status === 202 || r.status === 429) return { status: r.status, body: j };
+          throw new ApiError(r.status, j.error);
+        });
+      });
+  }
+  // opakuje, kým nie je výsledok; job.cancelled = prestať (server úlohu sám zruší, keď sa nikto nepýta)
+  function qualityRun(body, job, onProgress) {
+    return new Promise(function (resolve, reject) {
+      (function again() {
+        if (job.cancelled) { reject(new ApiError(0, "cancelled")); return; }
+        qualityPost(body).then(function (r) {
+          if (job.cancelled) { reject(new ApiError(0, "cancelled")); return; }
+          if (r.status === 200) { resolve(r.body); return; }
+          onProgress(r.body, r.status === 429);
+          setTimeout(again, Math.min(Math.max(r.body.retryMs || 1000, 300), 5000));
+        }).catch(reject);
+      })();
+    });
+  }
+  // výsledok do skupín požiadavky (reqGroups[index]); skóre fotky patrí skupine podľa groupKey
+  function absorbQuality(res, reqGroups) {
+    var byKey = {};
+    Object.keys(res.groups || {}).forEach(function (key) {
+      var r = res.groups[key], g = reqGroups[r.index];
+      if (!g) return;
+      byKey[key] = g;
+      g.quality = true;
+      g.best = r.best; g.confidence = r.confidence; g.uncertain = !!r.uncertain;
+      g.scored = (r.order || []).map(Number); g.qfaces = r.facesChecked; g.qscores = {};
+    });
+    Object.keys(res.scores || {}).forEach(function (id) {
+      var sc = res.scores[id], g = byKey[sc.groupKey];
+      if (g) g.qscores[Number(id)] = sc;
+    });
+  }
+  function qualProgressText(b, busy) {
+    if (busy) return "Mobil práve vyhodnocuje inú požiadavku – čakám…";
+    return "Vyhodnocujem v mobile: fotky " + (b.done || 0) + " / " + (b.total || 0) +
+      (b.waiting ? " · čakám, kým spracovanie knižnice uvoľní model tvárí" : "") + "…";
+  }
+  function showQual(text) { var q = $("#cQual"); q.textContent = text; q.hidden = !text; }
+  function paintQual() {
+    var g = CM.group || CM.qgroup;
+    if (!g || !g.quality) { if (!CM.evalJob) showQual(""); return; }
+    var q = $("#cQual"), best = item(g.best), sc = g.qscores ? g.qscores[g.best] : null;
+    q.textContent = "";
+    q.hidden = false;
+    if (!best) { q.textContent = "Nič sa nedalo vyhodnotiť (fotky sa v mobile nedali prečítať)."; return; }
+    var why = sc ? (sc.text || (sc.details || []).map(C.reasonText).filter(Boolean).join(", ")) : "";
+    q.appendChild(el("b", "", "★ najlepšia: " + best.name));
+    q.appendChild(document.createTextNode(why ? " · " + why : " · najvyššie skóre"));
+    if (g.uncertain) q.appendChild(el("span", "warnt", " · rozdiel je malý – neistá, rozhodni sám"));
+    if (g.qfaces === false) q.appendChild(el("span", "warnt", " · tváre sa nehodnotili"));
+  }
+  // „★ Vyhodnotiť skupinu" (Q): mobil spočíta skóre, ★ sa presunie na najlepšiu so zdôvodnením
+  function evalGroup() {
+    if (!cmpOv.classList.contains("on") || CM.evalJob) return;
+    var g = CM.group;
+    if (!g) { g = CM.qgroup || { key: "", kind: "similar", ids: CM.ids.slice() }; CM.qgroup = g; }
+    var ids = g.ids.filter(function (id) { return S.byId.has(id); });
+    if (ids.length < 2) { toast("Na vyhodnotenie treba aspoň 2 fotky"); return; }
+    if (ids.length > QMAX_IDS) { toast("Skupina je priveľká na vyhodnotenie naraz (najviac " + QMAX_IDS + " fotiek)"); return; }
+    var job = { cancelled: false };
+    CM.evalJob = job;
+    $("#cEval").disabled = true;
+    showQual("Vyhodnocujem v mobile…");
+    qualityRun({ ids: ids }, job, function (b, busy) { if (CM.evalJob === job) showQual(qualProgressText(b, busy)); })
+      .then(function (res) {
+        absorbQuality(res, [g]);
+        if (CM.evalJob !== job) return;
+        CM.evalJob = null;
+        buildStrip(); paintFooters(); paintQual();
+        if (groupsOv.classList.contains("on")) refreshGroupViews();
+      })
+      .catch(function (e) {
+        if (CM.evalJob === job) { CM.evalJob = null; showQual(e.code === "cancelled" ? "" : "Vyhodnotenie zlyhalo (" + e.message + ")"); }
+      })
+      .then(function () { $("#cEval").disabled = false; });
+  }
+
+  // ================= hromadné „Ponechať najlepšiu" v zobrazených skupinách =================
+  // Návrh: označí na zmazanie všetko okrem ★ v každej istej skupine (presné kópie podľa pravidla
+  // rozlíšenie / Fotoaparát / staršia), neisté preskočí; Ctrl+Z vráti. Zmazanie potom cez „Na zmazanie".
+  var workOv = $("#work");
+  function work(title, text, onCancel) {
+    var closed = false;
+    $("#wT").textContent = title; $("#wM").textContent = text; $("#wBar i").style.width = "0%";
+    workOv.onclose = function () { if (!closed) { closed = true; onCancel(); } };
+    $("#wNo").onclick = function () { closeOv(workOv); };
+    openOv(workOv);
+    $("#wNo").focus();
+    return {
+      set: function (msg, frac) {
+        $("#wM").textContent = msg;
+        $("#wBar i").style.width = Math.round(100 * Math.min(1, Math.max(0, frac || 0))) + "%";
+      },
+      close: function () { closed = true; workOv.onclose = null; closeOv(workOv); }
+    };
+  }
+  function planItem(g) {
+    var exact = g.kind === "exact";
+    return {
+      key: g.key, kind: g.kind, ids: g.ids, keeper: g.keeper,
+      keep: exact ? g.keep : (g.quality && !g.uncertain ? g.best : null),
+      uncertain: !exact && !!g.quality && !!g.uncertain,
+      scored: exact ? g.ids : (g.scored || [])
+    };
+  }
+  var bulkBusy = false;
+  function bulkKeep() {
+    if (bulkBusy || !S.groups) return;
+    var list = S.glist.slice();
+    if (!list.length) { toast("V zozname nie je žiadna skupina"); return; }
+    var need = list.filter(function (g) { return g.kind !== "exact" && !g.quality; });
+    var ch = C.qualityChunks(need.map(function (g) { return g.ids; }), QMAX_IDS, QMAX_GROUPS);
+    var job = { cancelled: false };
+    bulkBusy = true;
+    var w = need.length ? work("★ Ponechať najlepšiu", "Vyhodnocujem v mobile " + C.groupsTxt(need.length) + "…", function () { job.cancelled = true; }) : null;
+    ch.chunks.reduce(function (p, idxs, ci) {
+      return p.then(function () {
+        var req = idxs.map(function (i) { return need[i]; });
+        return qualityRun({ groups: req.map(function (g) { return g.ids; }) }, job, function (b, busy) {
+          var prefix = ch.chunks.length > 1 ? "Dávka " + (ci + 1) + " / " + ch.chunks.length + " · " : "";
+          w.set(prefix + qualProgressText(b, busy), (ci + (b.total ? (b.done || 0) / b.total : 0)) / ch.chunks.length);
+        }).then(function (res) { absorbQuality(res, req); });
+      });
+    }, Promise.resolve()).then(function () {
+      if (w) w.close();
+      bulkBusy = false;
+      var plan = C.bulkPlan(list.map(planItem), S.marked, S.groups.map(planItem));
+      var bytes = plan.all.reduce(function (sum, id) { return sum + sizeOf(id); }, 0);
+      var extra = ch.tooBig.length ? C.count(ch.tooBig.length, "skupina je priveľká", "skupiny sú priveľké", "skupín je priveľkých") + " na vyhodnotenie naraz." : "";
+      renderGroups(false);
+      if (!plan.all.length) { toast(C.bulkSummary(plan, 0, extra), { ms: 6000 }); return null; }
+      return ask("★ Ponechať najlepšiu", C.bulkSummary(plan, bytes, extra) +
+        " Je to zatiaľ len návrh – Ctrl+Z ho vráti; zmazanie potvrdíš v prehľade „Na zmazanie“.", "Označiť na zmazanie")
+        .then(function (ok) { if (ok) applyBulk(plan); });
+    }).catch(function (e) {
+      if (w) w.close();
+      bulkBusy = false;
+      toast(e.code === "cancelled" ? "Vyhodnocovanie zrušené – nič sa neoznačilo" : "Vyhodnotenie zlyhalo (" + e.message + ")");
+    });
+  }
+  function applyBulk(plan) {
+    var prevStates = {}, states = {};
+    plan.affected.forEach(function (k) { prevStates[k] = (S.gstates[k] || {}).s || ""; states[k] = "done"; });
+    Promise.all([setMarks(plan.mark, true, { undo: false }), setMarks(plan.unmark, false, { undo: false })]).then(function () {
+      var prev = {};
+      plan.mark.forEach(function (id) { prev[id] = false; });
+      plan.unmark.forEach(function (id) { prev[id] = true; });
+      return setGroupStates(states, { undo: false }).then(function () {
+        undo.push({ parts: [{ marks: prev }, { groups: prevStates }], label: "ponechanie najlepšej v " + C.groupsTxt(plan.affected.length) });
+        renderGroups(false);
+        var msg = "Na zmazanie: " + C.photos(plan.all.length) + " z " + C.groupsTxt(plan.affected.length) + " · Ctrl+Z vráti";
+        if (S.ping.allFiles) toast(msg, { action: "Zmazať do Koša teraz…", onAction: function () { openMarked(); $("#mDelete").click(); } });
+        else toast(msg, { action: "Prehľad", onAction: openMarked });
       });
     }).catch(function () { });
   }
@@ -2030,7 +2336,7 @@ if (typeof module !== "undefined" && module.exports) module.exports = GCore;
       if (S.selMode) setSelMode(false);
       return;
     }
-    if (typing || ov === loginOv || ov === $("#ask")) return;
+    if (typing || ov === loginOv || ov === $("#ask") || ov === workOv) return;
     if (e.key === "?") { e.preventDefault(); if (ov === helpOv) closeOv(helpOv); else openOv(helpOv); return; }
     if (ov === helpOv) return;
     if (ov === cmpOv) return cmpKeys(e);
@@ -2063,6 +2369,7 @@ if (typeof module !== "undefined" && module.exports) module.exports = GCore;
         if (document.activeElement && document.activeElement.classList.contains("grow")) return; // klik spraví tlačidlo samo
         e.preventDefault(); if (S.glist.length) openGroupAt(Math.max(0, S.gcur)); break;
       case "n": case "N": e.preventDefault(); openNextOpen(S.gcur); break;
+      case "k": case "K": e.preventDefault(); bulkKeep(); break;
     }
   }
   function cmpKeys(e) {
@@ -2087,6 +2394,7 @@ if (typeof module !== "undefined" && module.exports) module.exports = GCore;
       case "l": case "L": e.preventDefault(); setLayout(CM.n >= Math.min(4, CM.ids.length) ? 2 : CM.n + 1); break;
       case "v": case "V": e.preventDefault(); $("#cLink").checked = !$("#cLink").checked; CM.link = $("#cLink").checked; toast("Spoločné priblíženie: " + (CM.link ? "zapnuté" : "vypnuté")); break;
       case "i": case "I": e.preventDefault(); toggleExif(); break;
+      case "q": case "Q": e.preventDefault(); evalGroup(); break;
       case "Enter": if (CM.group) { e.preventDefault(); finishGroup("done"); } break;
       case "s": case "S": if (CM.group) { e.preventDefault(); finishGroup("skip"); } break;
       case "n": case "N": if (CM.group) { e.preventDefault(); goNextGroup(); } break;

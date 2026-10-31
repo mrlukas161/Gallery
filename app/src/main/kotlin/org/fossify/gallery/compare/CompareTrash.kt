@@ -48,6 +48,12 @@ class CompareTrash(private val activity: SimpleActivity, private val listener: L
         }
     }
 
+    // porovnavac-W2: hromadné „Ponechať najlepšiu“ zo zoznamu skupín — prehľad s počtom, veľkosťou a náhľadmi
+    // už používateľ potvrdil (CompareBulkKeep); ďalej rovnaká cesta ako z porovnávača (SAF, Kôš / natrvalo)
+    fun trashConfirmed(paths: List<String>) {
+        if (paths.isNotEmpty()) run(ArrayList(paths))
+    }
+
     private fun run(toDelete: ArrayList<String>) {
         val safPath = toDelete.firstOrNull { activity.needsStupidWritePermissions(it) } ?: toDelete.first()
         activity.handleSAFDialog(safPath) { safOk ->

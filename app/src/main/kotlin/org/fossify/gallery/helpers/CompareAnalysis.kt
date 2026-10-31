@@ -15,13 +15,19 @@ import java.io.IOException
 // treba, po získaní miesta v HeavyGate — ak ho drží spracovanie knižnice dlhšie ako FACE_WAIT_MS, beh
 // pokračuje bez tvárí (facesChecked = false). Merania sa pamätajú podľa cesty + času zmeny + veľkosti
 // (CompareCache v pamäti a malý súbor v cacheDir, nie v people/faces/extras.db).
+// porovnavac-W2: analyzeGroups = viac skupín v jednom behu (hromadné „Ponechať najlepšiu“, /api/quality),
+// cachedState = čo je už spočítané (aj fotky, ktoré sa nedajú prečítať, aby sa nepočítali dokola).
 object CompareAnalysis {
     private const val CACHE_FILE = "compare_analysis.tsv"
     private const val FACE_WAIT_MS = 2500L
     private const val ROTATED = 90
+    private const val MAX_UNREADABLE = 500
 
     private val cache = CompareCache()
     private val diskLock = Any()
+
+    // fotky, ktoré sa nedali prečítať — len v pamäti procesu
+    private val unreadable = Unreadable()
 
     @Volatile
     private var diskLoaded = false
@@ -52,19 +58,10 @@ object CompareAnalysis {
         val app = context.applicationContext
         loadDisk(app)
         val out = ArrayList<PhotoMeasure>(paths.size)
-        FaceRun(app, isCancelled, listener).use { run ->
+        FaceRun(app, isCancelled, listener, FACE_WAIT_MS).use { run ->
             for ((i, path) in paths.withIndex()) {
                 if (isCancelled()) break
-                val file = File(path)
-                val modified = file.lastModified()
-                val size = file.length()
-                val cached = cache.get(path, modified, size)
-                val reuse = cached != null && (cached.facesChecked || run.unavailable)
-                val m = if (reuse) cached else measureOne(path, modified, run)
-                if (m != null) {
-                    out.add(m)
-                    cache.put(m, size)
-                }
+                measureCached(path, run)?.let { out.add(it) }
                 onProgress(i + 1, paths.size)
                 listener?.onPartial(CompareScoring.score(out))
             }
@@ -73,16 +70,107 @@ object CompareAnalysis {
         return out
     }
 
+    // porovnavac-W2: viac skupín v jednom behu — každá fotka sa zmeria raz (aj keď je vo viacerých
+    // skupinách), model tvárí sa načíta raz a miesto v HeavyGate sa drží do konca behu (najviac
+    // faceWaitMs sa naň čaká, potom beh ide bez tvárí). Skóre sa ráta zvlášť pre každú skupinu.
+    // onGroup(hotové skupiny, všetky), onPhoto(zmerané fotky, všetky rôzne fotky). Výsledok má po zrušení
+    // menej položiek než groups (len dokončené skupiny, v poradí vstupu).
+    fun analyzeGroups(
+        context: Context,
+        groups: List<List<String>>,
+        faceWaitMs: Long,
+        onGroup: (done: Int, total: Int) -> Unit,
+        onPhoto: (done: Int, total: Int) -> Unit,
+        isCancelled: () -> Boolean,
+        listener: Listener? = null,
+    ): List<Map<String, PhotoScore>> {
+        val app = context.applicationContext
+        loadDisk(app)
+        val out = ArrayList<Map<String, PhotoScore>>(groups.size)
+        FaceRun(app, isCancelled, listener, faceWaitMs).use { run ->
+            val batch = Batch(run, groups.flatMapTo(HashSet()) { it }.size, onPhoto)
+            for ((gi, paths) in groups.withIndex()) {
+                // lenivo: zrušenie sa prejaví po aktuálnej fotke
+                val measures = paths.asSequence().takeWhile { !isCancelled() }.mapNotNull { batch.measure(it) }.toList()
+                if (isCancelled()) break
+                out.add(CompareScoring.score(measures))
+                onGroup(gi + 1, groups.size)
+            }
+        }
+        saveDisk(app)
+        return out
+    }
+
     // porovnavac-C (/api/groups pre web a PC): skóre LEN z cache, nič nové nepočíta;
-    // null = niektorá fotka skupiny ešte nie je zmeraná (alebo sa zmenila)
+    // null = niektorá fotka skupiny ešte nie je zmeraná (alebo sa zmenila). Fotky, ktoré sa nedali
+    // prečítať, sa vynechajú (porovnajú sa ostatné).
     fun cachedScores(context: Context, paths: List<String>): Map<String, PhotoScore>? {
+        val state = cachedState(context, paths)
+        return if (state.missing == 0 && state.scores.isNotEmpty()) state.scores else null
+    }
+
+    // scores = skóre zo zmeraných fotiek (bez nečitateľných), missing = koľko fotiek ešte nie je zmeraných,
+    // facesChecked = tváre sa hodnotili na všetkých zmeraných fotkách
+    class CachedState(val scores: Map<String, PhotoScore>, val missing: Int, val unreadable: List<String>) {
+        val facesChecked: Boolean get() = scores.values.all { it.facesChecked }
+    }
+
+    fun cachedState(context: Context, paths: List<String>): CachedState {
         loadDisk(context.applicationContext)
         val measures = ArrayList<PhotoMeasure>(paths.size)
+        val bad = ArrayList<String>()
+        var missing = 0
         for (path in paths) {
             val file = File(path)
-            measures.add(cache.get(path, file.lastModified(), file.length()) ?: return null)
+            val modified = file.lastModified()
+            val size = file.length()
+            val m = cache.get(path, modified, size)
+            when {
+                m != null -> measures.add(m)
+                unreadable.has(path, modified, size) -> bad.add(path)
+                else -> missing++
+            }
         }
-        return CompareScoring.score(measures)
+        return CachedState(CompareScoring.score(measures), missing, bad)
+    }
+
+    // z cache, ak sa dá (tváre už hodnotené alebo model teraz nie je k dispozícii), inak zmerať a zapamätať
+    private fun measureCached(path: String, run: FaceRun): PhotoMeasure? {
+        val file = File(path)
+        val modified = file.lastModified()
+        val size = file.length()
+        val cached = cache.get(path, modified, size)
+        val reuse = cached != null && (cached.facesChecked || run.unavailable)
+        val m = if (reuse) cached else measureOne(path, modified, run)
+        if (m != null) cache.put(m, size) else unreadable.add(path, modified, size)
+        return m
+    }
+
+    // fotky jedného behu analyzeGroups: každá sa zmeria najviac raz, aj keď je vo viacerých skupinách
+    private class Batch(private val run: FaceRun, private val total: Int, private val onPhoto: (Int, Int) -> Unit) {
+        private val memo = HashMap<String, PhotoMeasure?>()
+
+        fun measure(path: String): PhotoMeasure? {
+            if (memo.containsKey(path)) return memo[path]
+            val m = measureCached(path, run)
+            memo[path] = m
+            onPhoto(memo.size, total)
+            return m
+        }
+    }
+
+    // nečitateľné fotky (cesta|čas zmeny|veľkosť), najviac MAX_UNREADABLE
+    private class Unreadable {
+        private val keys = LinkedHashSet<String>()
+
+        @Synchronized
+        fun has(path: String, modified: Long, size: Long): Boolean = "$path|$modified|$size" in keys
+
+        @Synchronized
+        fun add(path: String, modified: Long, size: Long) {
+            keys.add("$path|$modified|$size")
+            while (keys.size > MAX_UNREADABLE) keys.remove(keys.first())
+        }
     }
 
     // čitateľné zdôvodnenie skóre („ostrejšia o 18 %, všetci 3 majú otvorené oči“)
@@ -150,6 +238,7 @@ object CompareAnalysis {
         private val context: Context,
         isCancelled: () -> Boolean,
         listener: Listener?,
+        private val waitMs: Long,
     ) : AutoCloseable {
         private var deadline = 0L
         private val slot = HeavySlot(
@@ -169,7 +258,7 @@ object CompareAnalysis {
         }
 
         private fun open(): PhotoQuality? {
-            deadline = System.currentTimeMillis() + FACE_WAIT_MS
+            deadline = System.currentTimeMillis() + waitMs
             if (!slot.ensure()) {
                 unavailable = true
                 return null

@@ -187,3 +187,112 @@ test("EXIF: formátovanie a rozdiely medzi panelmi", () => {
   assert.deepEqual(Object.keys(d).sort(), ["gps", "iso"]);
   assert.deepEqual(Object.keys(C.metaDiff([a])), []);
 });
+
+// ---- kvalita z mobilu a hromadné „Ponechať najlepšiu" (porovnavac-W2) ----
+
+test("zdôvodnenie skóre ako v mobile", () => {
+  assert.equal(C.reasonText({ code: "sharper", value: 18 }), "ostrejšia o 18 %");
+  assert.equal(C.reasonText({ code: "all_eyes_open", value: 3 }), "všetci 3 majú otvorené oči");
+  assert.equal(C.reasonText({ code: "all_eyes_open", value: 1 }), "1 tvár, oči otvorené");
+  assert.equal(C.reasonText({ code: "all_eyes_open", value: 6 }), "všetkých 6 má otvorené oči");
+  assert.equal(C.reasonText({ code: "eyes_closed", value: 2 }), "2 majú zavreté oči");
+  assert.equal(C.reasonText({ code: "fewer_faces", value: 2, total: 3 }), "chýba tvár (2 z 3)");
+  assert.equal(C.reasonText({ code: "higher_resolution", value: 122 }), "vyššie rozlíšenie (12,2 Mpx)");
+  assert.equal(C.reasonText({ code: "smiles", value: 5 }), "5 úsmevov");
+  assert.equal(C.reasonText({ code: "neznamy" }), "");
+});
+
+test("riadok skóre: text zo servera má prednosť, inak z dôvodov", () => {
+  assert.equal(C.scoreLine({ rank: 0, percent: 92, text: "ostrejšia o 18 %, všetci 3 majú otvorené oči" }),
+    "★ 92 % · ostrejšia o 18 %, všetci 3 majú otvorené oči");
+  assert.equal(C.scoreLine({ rank: 1, score: 0.714, details: [{ code: "eyes_closed", value: 1 }] }), "71 % · 1 má zavreté oči");
+  assert.equal(C.scoreLine({ rank: 0, percent: 80, details: [] }), "★ 80 % · najvyššie skóre");
+  assert.equal(C.scoreLine(null), "");
+});
+
+test("dávky pre /api/quality v rámci limitov", () => {
+  const r = C.qualityChunks([[1, 2], [2, 3], [4, 5, 6], [7, 8, 9, 10, 11]], 5, 10);
+  // [1,2]+[2,3] = 3 rôzne, +[4,5,6] by bolo 6 > 5 -> nová dávka; skupina s 5 id ide sama
+  assert.deepEqual(plain(r.chunks), [[0, 1], [2], [3]]);
+  assert.deepEqual(plain(r.tooBig), []);
+  const big = C.qualityChunks([[1, 2, 3, 4, 5, 6], [7, 8]], 5, 10);
+  assert.deepEqual(plain(big.tooBig), [0]);
+  assert.deepEqual(plain(big.chunks), [[1]]);
+  const many = C.qualityChunks([[1, 2], [3, 4], [5, 6]], 100, 2);
+  assert.deepEqual(plain(many.chunks), [[0, 1], [2]]);
+});
+
+const item = (key, kind, ids, keep, extra) => Object.assign({ key, kind, ids, keep, keeper: ids[0], uncertain: false, scored: ids }, extra || {});
+
+test("hromadné: v každej istej skupine ostane ★, neisté sa preskočia", () => {
+  const list = [
+    item("a", "burst", [1, 2, 3], 2),
+    item("b", "similar", [4, 5], null, { uncertain: true }),
+    item("c", "exact", [6, 7], 7),
+  ];
+  const p = C.bulkPlan(list, new Set(), []);
+  assert.deepEqual(plain(p.all), [1, 3, 6]);
+  assert.deepEqual(plain(p.mark), [1, 3, 6]);
+  assert.deepEqual(plain(p.affected), ["a", "c"]);
+  assert.equal(p.uncertain, 1);
+  assert.equal(p.unknown, 0);
+  assert.equal(C.bulkSummary(p, 3 * 1024 * 1024), "Na zmazanie sa označí 3 fotky z 2 skupín (3,0 MB). 1 skupina preskočená – neistá.");
+});
+
+test("hromadné: nezmeraná fotka sa neoznačí, ponechaná označená sa odznačí", () => {
+  // fotka 3 nemá skóre (nedala sa prečítať), 2 = ★ bola označená ručne
+  const p = C.bulkPlan([item("a", "similar", [1, 2, 3], 2, { scored: [1, 2] })], new Set([2]), []);
+  assert.deepEqual(plain(p.mark), [1]);
+  assert.deepEqual(plain(p.unmark), [2]);
+  // skupina bez výsledku = bez údajov
+  const q = C.bulkPlan([item("b", "burst", [4, 5], null)], new Set(), []);
+  assert.equal(q.unknown, 1);
+  assert.equal(q.all.length, 0);
+  assert.equal(C.bulkSummary(q, 0), "Nie je čo označiť. 1 skupina preskočená – bez údajov.");
+});
+
+test("hromadné: ★ jednej skupiny sa neoznačí, aj keď ju iná skupina navrhuje", () => {
+  const p = C.bulkPlan([item("s", "burst", [1, 2], 2), item("e", "exact", [2, 3], 3)], new Set(), []);
+  assert.deepEqual(plain(p.all), [1]);
+});
+
+test("hromadné: iná skupina nikdy neostane bez fotky (aj s ručnými značkami)", () => {
+  // nevybraná skupina {1, 4}: 1 ide preč zo skupiny „a“, 4 je už ručne označená
+  const all = [{ key: "x", kind: "similar", ids: [1, 4], keeper: 1 }];
+  const p = C.bulkPlan([item("a", "burst", [1, 2], 2)], new Set([4]), all);
+  assert.deepEqual(plain(p.all), []);
+  assert.deepEqual(plain(p.spared), [1]);
+  assert.equal(C.bulkSummary(p, 0), "Nie je čo označiť. 1 fotka ostane navyše, aby iná skupina neprišla o všetky fotky.");
+});
+
+test("hromadné: náhodný test invariantu", () => {
+  // mulberry32 — opakovateľné náhodné čísla
+  let seed = 20261031;
+  const rnd = (n) => {
+    seed = (seed + 0x6D2B79F5) | 0;
+    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return (((t ^ (t >>> 14)) >>> 0) % n);
+  };
+  for (let round = 0; round < 1500; round++) {
+    const n = 2 + rnd(25);
+    const pick = (k) => { const s = new Set(); while (s.size < Math.min(k, n)) s.add(1 + rnd(n)); return [...s]; };
+    const list = [], all = [];
+    for (let i = 0, g = 1 + rnd(10); i < g; i++) {
+      const ids = pick(2 + rnd(4));
+      const r = rnd(4);
+      const keep = r === 0 ? null : ids[rnd(ids.length)];
+      const scored = r === 1 ? ids.filter(() => rnd(2)) : ids;
+      list.push(item("g" + i, ["burst", "exact", "similar"][rnd(3)], ids, keep, { scored, uncertain: r === 0 && rnd(2) === 1 }));
+    }
+    for (let i = 0, g = rnd(5); i < g; i++) { const ids = pick(2 + rnd(3)); all.push({ key: "o" + i, kind: "similar", ids, keeper: ids[0] }); }
+    const marked = new Set(pick(rnd(4)));
+    const p = C.bulkPlan(list, marked, all);
+    const final = new Set([...marked, ...p.mark].filter((id) => !p.unmark.includes(id)));
+    list.forEach((g) => { if (g.keep != null) assert.ok(!final.has(g.keep), "★ " + g.keep + " označená"); });
+    list.concat(all).forEach((g) => {
+      if (g.ids.some((id) => p.all.includes(id))) assert.ok(g.ids.some((id) => !final.has(id)), "skupina " + g.key + " prišla o všetko");
+    });
+    assert.equal(new Set(p.all).size, p.all.length);
+  }
+});

@@ -203,7 +203,9 @@ object GroupBuilder {
 
     // skupina zo zoskupovania: poradie ciest (séria chronologicky, duplikáty od najlepšej), navrhnutá fotka
     // (najväčšie rozlíšenie) a — ak už porovnávač skupinu zmeral (CompareAnalysis) — najlepšia podľa kvality
-    // (best), istota (náskok skóre pred druhou, 0–1) a kódy dôvodov (Reason.code)
+    // (best), istota (náskok skóre pred druhou, 0–1) a kódy dôvodov (Reason.code).
+    // porovnavac-W2: uncertain = ★ má malý náskok (CompareBulk.verdict), keep = čo by ponechalo hromadné
+    // „Ponechať najlepšiu“ (presné kópie: pravidlo rozlíšenie/Fotoaparát/staršie, inak best, ak nie je neistá)
     data class Src(
         val kind: String,
         val paths: List<String>,
@@ -211,6 +213,8 @@ object GroupBuilder {
         val best: String? = null,
         val confidence: Double? = null,
         val reasons: List<String> = emptyList(),
+        val uncertain: Boolean? = null,
+        val keep: String? = null,
     )
 
     data class Group(
@@ -226,6 +230,8 @@ object GroupBuilder {
         val from: Long,
         val to: Long,
         val bucket: String,
+        val uncertain: Boolean? = null,
+        val keep: Long? = null,
     )
 
     // len fotky, ktoré server sprístupňuje (byPath); skupina s menej než 2 fotkami odpadne.
@@ -237,6 +243,7 @@ object GroupBuilder {
         val keeper = g.keeper?.let { byPath[it] }?.takeIf { k -> members.any { it.id == k.id } }
         val kept = keeper?.size ?: members.maxOf { it.size }
         val best = g.best?.let { byPath[it] }?.takeIf { b -> members.any { it.id == b.id } }
+        val keep = g.keep?.let { byPath[it] }?.takeIf { k -> members.any { it.id == k.id } }
         Group(
             key = key(g.paths),
             kind = g.kind,
@@ -250,6 +257,8 @@ object GroupBuilder {
             from = members.minOf { it.date },
             to = members.maxOf { it.date },
             bucket = members.groupingBy { it.bucket }.eachCount().maxByOrNull { it.value }?.key ?: "",
+            uncertain = if (best != null) g.uncertain else null,
+            keep = keep?.id,
         )
     }.sortedWith(compareByDescending<Group> { it.to }.thenBy { it.key })
 
@@ -274,6 +283,9 @@ object GroupBuilder {
                     .put("best", g.best ?: JSONObject.NULL)
                     .put("confidence", g.confidence ?: JSONObject.NULL)
                     .put("reasons", JSONArray(g.reasons))
+                    // porovnavac-W2: neistá ★ (malý náskok) a čo ponechá hromadné „Ponechať najlepšiu“
+                    .put("uncertain", g.uncertain ?: JSONObject.NULL)
+                    .put("keep", g.keep ?: JSONObject.NULL)
             )
         }
         return arr

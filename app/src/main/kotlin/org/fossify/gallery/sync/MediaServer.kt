@@ -48,7 +48,7 @@ class MediaServer(
         // čo server vie (PC program a web sa podľa toho rozhodnú, ktoré API použiť)
         val FEATURES = listOf(
             "session", "sinceGen", "etag", "range", "groupsV2", "groupState", "meta", "markBatch",
-            "syncedBatch", "deleteDryRun", "bin", "restore", "thumbMax", "dlMark",
+            "syncedBatch", "deleteDryRun", "bin", "restore", "thumbMax", "dlMark", "quality",
         )
         private const val SAVE_SUBDIR = "Galéria"
 
@@ -117,6 +117,7 @@ class MediaServer(
 
     private val marks = ServerMarks(appContext) { snap.index }
     private val cleanup = ServerCleanup(appContext, { snap.let { it.index to it.gen } }) { rebuildIndex() }
+    private val quality = ServerQuality(appContext) { snap.index }
 
     @Volatile
     private var html: String? = null
@@ -160,6 +161,7 @@ class MediaServer(
     override fun stop() {
         appContext.getSharedPrefs().unregisterOnSharedPreferenceChangeListener(prefsListener)
         media.clearCache()
+        quality.stop()
         super.stop()
     }
 
@@ -183,6 +185,7 @@ class MediaServer(
                         "/api/upload" -> handleUpload(session)
                         "/api/delete" -> cleanup.delete(session)
                         "/api/groups" -> cleanup.groups(session)
+                        "/api/quality" -> quality.handle(session)
                         "/api/groupstate" -> marks.groupState(session)
                         "/api/state" -> marks.state()
                         "/api/mark" -> marks.mark(session)
@@ -207,7 +210,7 @@ class MediaServer(
         val uri = session.uri
         val write = when (uri) {
             "/api/mark", "/api/synced", "/api/clearmarks", "/api/delete", "/api/restore", "/api/upload",
-            "/api/logout",
+            "/api/logout", "/api/quality",
             -> true
             "/api/groupstate" -> session.method != Method.GET && session.method != Method.HEAD
             else -> false

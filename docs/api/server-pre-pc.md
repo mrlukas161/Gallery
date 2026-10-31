@@ -25,12 +25,13 @@ Každý štart servera vygeneruje nový 6-miestny PIN (ukáže ho notifikácia v
 ## Bezpečnosť
 
 - **Zmeny len cez POST** (`/api/mark`, `/api/synced`, `/api/clearmarks`, `/api/delete`, `/api/restore`,
-  `/api/groupstate` pri zápise, `/api/logout`; `/api/upload` aj PUT). GET na ne vráti `405 {"error":"use POST"}`.
+  `/api/groupstate` pri zápise, `/api/logout`, `/api/quality`; `/api/upload` aj PUT). GET na ne vráti
+  `405 {"error":"use POST"}`.
 - **Origin**: ak požiadavka pošle hlavičku `Origin`, musí byť `http://<Host>` (inak `403 {"error":"bad_origin"}`).
   Rovnako `Sec-Fetch-Site` musí byť `same-origin` alebo `none`. PC program tieto hlavičky neposiela → prejde.
 - Každá odpoveď má `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`, `X-Frame-Options: DENY`,
   `Cross-Origin-Resource-Policy: same-origin`. Stránka má `Content-Security-Policy` s jednorazovým nonce.
-- **Chyby sú vždy JSON** `{"error":"<kód>"}` s HTTP stavom (400, 403, 404, 405, 409, 411, 413, 416, 500).
+- **Chyby sú vždy JSON** `{"error":"<kód>"}` s HTTP stavom (400, 403, 404, 405, 409, 411, 413, 416, 429, 500).
 - Telá JSON požiadaviek: `Content-Type: application/json; charset=utf-8` a povinná `Content-Length`
   (bez nej `411`, nad limit `413` a spojenie sa zavrie).
 - Server sprístupní **len** MediaStore obrázky a videá mimo zamknutých a vylúčených priečinkov
@@ -47,6 +48,7 @@ Každý štart servera vygeneruje nový 6-miestny PIN (ukáže ho notifikácia v
 | GET | `/api/thumb?id=` | náhľad JPEG (aj HEIC/DNG/video) |
 | GET | `/api/meta?ids=` | EXIF pre porovnávač |
 | GET | `/api/groups` | série a duplikáty (rovnaké ako v mobile) |
+| POST | `/api/quality` | skóre kvality skupiny (ostrosť, expozícia, tváre, oči) — počíta mobil |
 | GET/POST | `/api/groupstate` | stav prechádzania skupín |
 | GET | `/api/state` | značky na zmazanie a stiahnuté do PC |
 | POST | `/api/mark`, `/api/synced`, `/api/clearmarks` | značky (návrh) a evidencia stiahnutých |
@@ -61,7 +63,7 @@ Každý štart servera vygeneruje nový 6-miestny PIN (ukáže ho notifikácia v
 {"name":"Galéria+","version":"3","epoch":"q3J_x9Zk","count":10512,"gen":7,"stateGen":42,
  "newest":1730370000,"allFiles":true,"recycleBin":true,
  "features":["session","sinceGen","etag","range","groupsV2","groupState","meta","markBatch",
-             "syncedBatch","deleteDryRun","bin","restore","thumbMax","dlMark"]}
+             "syncedBatch","deleteDryRun","bin","restore","thumbMax","dlMark","quality"]}
 ```
 
 - `version` — `"3"`; podľa `features` sa rozhoduj, ktoré API použiť (staré servery pole nemajú).
@@ -153,7 +155,7 @@ prekrývať (fotka zo série môže mať aj presnú kópiu inde). Len obrázky.
 ```json
 {"gen":7,"groups":[{"key":"3f9a0c1b2d4e5f60","kind":"burst","ids":[11,12,13],"keeper":12,
   "bytes":9000000,"reclaim":6000000,"from":1730369990000,"to":1730369994000,"bucket":"Camera",
-  "best":13,"confidence":0.12,"reasons":["sharper","all_eyes_open"]}]}
+  "best":13,"confidence":0.12,"reasons":["sharper","all_eyes_open"],"uncertain":false,"keep":13}]}
 ```
 
 | Pole | Význam |
@@ -165,12 +167,64 @@ prekrývať (fotka zo série môže mať aj presnú kópiu inde). Len obrázky.
 | `bytes`, `reclaim` | súčet veľkostí; koľko sa uvoľní, keď ostane `keeper` |
 | `from`, `to` | najstarší / najnovší dátum v skupine (ms) |
 | `bucket` | najčastejší priečinok |
-| `best`, `confidence`, `reasons` | najlepšia podľa kvality (ostrosť, oči, expozícia…) z porovnávača v mobile, **len ak ju už spočítal** (server nič nepočíta); inak `null`/`[]`. `confidence` = náskok skóre pred druhou (0–1), `reasons` = kódy `Reason.code` |
+| `best`, `confidence`, `reasons` | najlepšia podľa kvality (ostrosť, oči, expozícia…) z cache porovnávača v mobile — **vždy, keď sú všetky fotky skupiny spočítané** (porovnávač v mobile, hromadné „Ponechať najlepšiu“ alebo `/api/quality`); fotky, ktoré sa nedajú prečítať, sa vynechajú. Inak `null`/`[]`. `/api/groups` sám nič nepočíta. `confidence` = náskok skóre ★ pred najlepšou z ostatných (0–1), `reasons` = kódy `Reason.code` |
+| `uncertain` | `true` = ★ je neistá: náskok pod 0,05, alebo pod 0,15, keď sa tváre nehodnotili (model bol obsadený), alebo je zmeraná len jedna fotka. `null` = ešte nespočítané. Hromadné „Ponechať najlepšiu“ takú skupinu preskočí |
+| `keep` | čo by ponechalo hromadné „Ponechať najlepšiu“: pri presných kópiách **vždy** podľa pravidla vyššie rozlíšenie → Fotoaparát/DCIM → starší súbor (bez analýzy), inak `best`, ak nie je neistá; inak `null` |
 
 Zoradené od najnovšej skupiny. Odpoveď má `ETag` (`If-None-Match` → 304).
 
 Bez `v` (pôvodný formát): `{"burst":[[id,…],…],"similar":[[id,…],…]}` z tých istých skupín
 (`similar` = presné kópie aj podobné).
+
+## `POST /api/quality`
+
+Skóre kvality pre skupinu fotiek — rovnaké ako ★ v porovnávači v mobile. Počíta **mobil** (ostrosť,
+expozícia, tváre, otvorené oči, úsmevy) cez `CompareAnalysis`; model tvárí ide cez HeavyGate (nebeží naraz
+so spracovaním knižnice — keď ho knižnica drží dlhšie ako ~10 s, dopočíta sa bez tvárí). Výsledky sa
+pamätajú (cache v mobile), takže druhý raz je odpoveď hneď a objavia sa aj v `/api/groups` (`best`).
+
+Telo (najviac **300 rôznych id** a **50 skupín** v jednej požiadavke, telo do 64 kB):
+
+- `{"ids":[11,12,13]}` — jedna skupina (skóre sa porovnáva v rámci daných fotiek),
+- `{"groups":[[11,12,13],[20,21]]}` — viac skupín v jednej úlohe (hromadné „Ponechať najlepšiu“).
+
+Odpovede:
+
+| Stav | Kedy | Telo |
+|---|---|---|
+| `200` | všetko spočítané | výsledok (nižšie) |
+| `202` | mobil práve počíta túto požiadavku | `{"state":"running","done":12,"total":40,"waiting":false,"retryMs":1000}` |
+| `429` | mobil počíta **inú** požiadavku (jedna úloha naraz) | `{"error":"busy","done":3,"total":9,"retryMs":2000}` + `Retry-After: 2` |
+| `400` | zlé telo / nad limit | `{"error":"bad ids"}` alebo `{"error":"too_many_ids","maxIds":300,"maxGroups":50}` |
+
+Pri `202`/`429` pošli **tú istú** požiadavku znova o `retryMs` (prvá požiadavka úlohu spustí, ďalšie len
+pýtajú priebeh). `done`/`total` = zmerané / všetky rôzne fotky. `waiting:true` = čaká sa, kým spracovanie
+knižnice uvoľní model tvárí. Keď sa klient ~30 s nepýta, úloha sa sama zruší; dlhšie ako 5 min nebeží nikdy.
+
+Výsledok (`200`):
+
+```json
+{"state":"done",
+ "scores":{"13":{"sharpRel":1.0,"exposure":0.82,"faces":3,"eyesOpen":3,"smiles":2,"score":0.91,"percent":91,
+                 "rank":0,"reasons":["sharper","all_eyes_open"],
+                 "details":[{"code":"sharper","value":18,"total":0},{"code":"all_eyes_open","value":3,"total":0}],
+                 "text":"ostrejšia o 18 %, všetci 3 majú otvorené oči","facesChecked":true,"groupKey":"3f9a0c1b2d4e5f60"},
+           "12":{"sharpRel":0.84,"exposure":0.8,"faces":3,"eyesOpen":2,"smiles":1,"score":0.72,"percent":72,"rank":1,
+                 "reasons":["eyes_closed","blurrier"],"details":[…],"text":"1 má zavreté oči, menej ostrá o 16 %",
+                 "facesChecked":true,"groupKey":"3f9a0c1b2d4e5f60"}},
+ "groups":{"3f9a0c1b2d4e5f60":{"index":0,"ids":[11,12,13],"order":[13,12],"unscored":[11],"best":13,
+                               "confidence":0.19,"uncertain":false,"facesChecked":true}},
+ "unknown":[]}
+```
+
+| Pole | Význam |
+|---|---|
+| `scores.<id>` | skóre fotky v rámci jej skupiny: `rank` 0 = ★, `score`/`percent` 0–1 / %, `sharpRel` ostrosť voči najostrejšej v skupine, `exposure` 0–1, `faces`/`eyesOpen`/`smiles` (0, keď sa tváre nehodnotili), `reasons` = kódy `Reason.code`, `details` = kód s číslom (`value`: percentá, počet tvárí, desatiny Mpx; `total`: „z koľkých“), `text` = slovenské zdôvodnenie ako v mobile, `groupKey` = skupina |
+| `groups.<key>` | `key` = 16 hex znakov SHA-1 zo zoradených ciest (ako v `/api/groups`, ak pošleš celú skupinu), `index` = poradie v požiadavke, `order` = id so skóre od najlepšej, `unscored` = fotky, ktoré sa nedali prečítať (**nikdy ich nemaž automaticky**), `best`, `confidence`, `uncertain`, `facesChecked` ako v `/api/groups` |
+| `unknown` | id, ktoré server nepozná alebo nie sú fotky (videá sa nehodnotia) |
+
+Ak je to isté id vo viacerých skupinách jednej požiadavky, `scores.<id>` je z poslednej z nich — pre
+hromadné rozhodovanie používaj `groups.<key>.order` a `best`.
 
 ## `GET/POST /api/groupstate`
 
@@ -249,6 +303,13 @@ Ukladá sa do `Pictures/Galéria` resp. `Movies/Galéria`. Strop 4 GB a rezerva 
 - Nové: `/api/login`, `/api/logout`, `/api/meta`, `/api/groupstate`, `/api/bin`, `/api/restore`.
 - Chyby vždy ako JSON `{"error":…}`, kontrola `Origin` pri zmenách.
 
+## Novinky (porovnávač 0.67, vlna 2)
+
+- `POST /api/quality` (feature `quality`) — skóre kvality skupiny počíta mobil, jedna úloha naraz, `202` s priebehom.
+- `/api/groups?v=2`: nové `uncertain` a `keep`; `best`/`confidence` sú tam vždy, keď je skupina spočítaná
+  (aj po `/api/quality` alebo hromadnom „Ponechať najlepšiu“ v mobile).
+- `/api/groupstate` prijíma aj viac skupín naraz `{"states":{…}}` (bolo aj predtým, web to teraz používa).
+
 ## Úprava PC porovnávača (kód nie je v repe) — kontrolný zoznam
 
 1. Posielaj PIN v hlavičke `X-Auth-Token` (nie v adrese) a nikdy neposielaj `Origin`.
@@ -257,5 +318,8 @@ Ukladá sa do `Pictures/Galéria` resp. `Movies/Galéria`. Strop 4 GB a rezerva 
 4. Porovnanie: najprv `/api/thumb?id=…&max=2560&v=<mtime>`, originál `/api/file?id=…` až pri priblížení
    (HEIC/DNG: `/api/file?id=…&q=92&max=4096`). Zoom drž v relatívnych súradniciach (stred ako podiel, mierka voči „prispôsobiť“).
 5. Skupiny z `/api/groups?v=2`, stav cez `/api/groupstate` (zdieľaný s webom), ★ = `best ?? keeper`.
+   „Vyhodnotiť skupinu“: `POST /api/quality {"ids":[…]}`, pri `202`/`429` opakuj po `retryMs`.
+   Hromadné „Ponechať najlepšiu“: presné kópie podľa `keep`, ostatné podľa `/api/quality` (`groups[key].best`,
+   preskoč `uncertain` a nikdy neoznač `unscored` ani celú skupinu).
 6. EXIF z `/api/meta?ids=…` (po 8).
 7. Mazanie: `dryRun` → potvrdenie s `freedBytes` → `/api/delete` po 1000 → ponúkni „Vrátiť“ cez `/api/restore {"batchId"}`.

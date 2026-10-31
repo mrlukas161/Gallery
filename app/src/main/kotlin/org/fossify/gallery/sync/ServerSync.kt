@@ -7,9 +7,12 @@ import fi.iki.elonen.NanoHTTPD.Response
 import fi.iki.elonen.NanoHTTPD.Response.Status
 import org.fossify.gallery.extensions.config
 import org.fossify.gallery.helpers.CompareAnalysis
+import org.fossify.gallery.helpers.CompareBulk
 import org.fossify.gallery.helpers.CompareHiddenStore
 import org.fossify.gallery.helpers.CompareKind
 import org.fossify.gallery.helpers.CompareRepository
+import org.fossify.gallery.helpers.PhotoMeasure
+import org.fossify.gallery.helpers.PhotoScore
 import org.fossify.gallery.helpers.TYPE_VIDEOS
 import org.json.JSONArray
 import org.json.JSONObject
@@ -122,6 +125,7 @@ class ServerCleanup(
         private const val MAX_BIN_ITEMS = 3000
         private const val BIN_CACHE_MS = 15_000L
         private const val CONFIDENCE_SCALE = 100.0
+        private const val MS = 1000L
     }
 
     // jedno mazanie / obnova naraz: NanoHTTPD obsluhuje každé spojenie vo vlastnom vlákne a dve súbežné
@@ -177,7 +181,8 @@ class ServerCleanup(
         }
     }
 
-    // ?v=2: {gen, groups:[{key, kind, ids, keeper, bytes, reclaim, from, to, bucket, best, confidence}]};
+    // ?v=2: {gen, groups:[{key, kind, ids, keeper, bytes, reclaim, from, to, bucket, best, confidence,
+    // reasons, uncertain, keep}]};
     // bez v: pôvodný formát {burst:[[id]], similar:[[id]]}. Skupiny sú TIE ISTÉ ako v mobile
     // (CompareRepository; skryté cez „Ponechať všetky“ / „Nie sú to duplikáty“ sa vynechajú).
     fun groups(session: IHTTPSession): Response {
@@ -202,32 +207,50 @@ class ServerCleanup(
     private fun currentGroups(index: Map<Long, MediaServer.Item>): List<GroupBuilder.Group> {
         val snap = CompareRepository.load(appContext)
         val hidden = CompareHiddenStore.get(appContext)
+        val items = HashMap<String, MediaServer.Item>(index.size)
+        index.values.forEach { items[it.path] = it }
         val src = snap.groups.filter { !hidden.isHidden(it.paths) }.map { g ->
             val kind = when (g.kind) {
                 CompareKind.BURST -> GroupBuilder.KIND_BURST
                 CompareKind.EXACT -> GroupBuilder.KIND_EXACT
                 CompareKind.SIMILAR -> GroupBuilder.KIND_SIMILAR
             }
-            val best = bestOf(g.paths)
-            GroupBuilder.Src(kind, g.paths, g.keeper, best?.first, best?.second, best?.third.orEmpty())
+            val scores = cachedScores(g.paths)
+            val verdict = scores?.let { CompareBulk.verdict(it) }
+            val best = verdict?.best
+            // presné kópie: jednoznačné pravidlo (bez skóre), inak ★, ak nie je neistá
+            val keep = when {
+                g.kind == CompareKind.EXACT -> CompareBulk.exactKeeper(g.paths.mapNotNull { measureOf(items[it]) })
+                verdict != null && !verdict.uncertain -> best
+                else -> null
+            }
+            GroupBuilder.Src(
+                kind = kind,
+                paths = g.paths,
+                keeper = g.keeper,
+                best = best,
+                confidence = verdict?.takeIf { it.second != null }
+                    ?.let { Math.round(it.confidence.coerceIn(0.0, 1.0) * CONFIDENCE_SCALE) / CONFIDENCE_SCALE },
+                reasons = best?.let { scores[it] }?.reasons?.map { it.code }.orEmpty(),
+                uncertain = verdict?.uncertain,
+                keep = keep,
+            )
         }
         val byPath = HashMap<String, GroupBuilder.Member>(index.size)
         index.values.forEach { byPath[it.path] = GroupBuilder.Member(it.id, it.bucket, it.taken, it.size) }
         return GroupBuilder.fromPaths(src, byPath)
     }
 
-    // najlepšia fotka podľa porovnávača (len z cache CompareAnalysis — server nič nepočíta):
-    // (cesta, náskok skóre pred druhou 0–1, kódy dôvodov) alebo null
-    private fun bestOf(paths: List<String>): Triple<String, Double, List<String>>? {
-        val scores = try {
-            CompareAnalysis.cachedScores(appContext, paths)
-        } catch (ignored: Throwable) {
-            null
-        }
-        val best = scores?.entries?.firstOrNull { it.value.rank == 0 } ?: return null
-        val second = scores.values.filter { it.rank != 0 }.maxOfOrNull { it.score } ?: 0.0
-        val margin = Math.round((best.value.score - second).coerceIn(0.0, 1.0) * CONFIDENCE_SCALE) / CONFIDENCE_SCALE
-        return Triple(best.key, margin, best.value.reasons.map { it.code })
+    // skóre porovnávača LEN z cache CompareAnalysis (server tu nič nepočíta, na to je /api/quality)
+    private fun cachedScores(paths: List<String>): Map<String, PhotoScore>? = try {
+        CompareAnalysis.cachedScores(appContext, paths)
+    } catch (ignored: Throwable) {
+        null
+    }
+
+    // údaje pre pravidlo presných kópií z indexu servera (rozlíšenie, cesta, čas zmeny)
+    private fun measureOf(item: MediaServer.Item?): PhotoMeasure? = item?.let {
+        PhotoMeasure(it.path, 0.0, 0.0, width = it.w, height = it.h, modified = it.mtime * MS)
     }
 
     // Kôš Galérie+ (bez zamknutých/vylúčených priečinkov), najnovšie zmazané prvé

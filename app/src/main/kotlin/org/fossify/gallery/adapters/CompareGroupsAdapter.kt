@@ -17,8 +17,9 @@ import org.fossify.gallery.helpers.HiddenGroups
 import java.io.File
 
 // Mriežka skupín „Podobné a duplikáty“. Ťuk = otvor porovnávač, dlhé podržanie = VÝBEROVÝ REŽIM
-// (Otvoriť, Ponechať všetky / Nie sú to duplikáty = skryť, Vrátiť do zoznamu). Dlaždica: titulka = fotka,
-// ktorá by ostala, typ skupiny, počet, dátum najnovšej fotky a koľko miesta uvoľní.
+// (Ponechať najlepšiu v označených skupinách, Otvoriť, Ponechať všetky / Nie sú to duplikáty = skryť,
+// Vrátiť do zoznamu). Dlaždica: titulka = fotka, ktorá by ostala, typ skupiny, počet, dátum najnovšej fotky
+// a koľko miesta uvoľní.
 @Suppress("TooManyFunctions") // MyRecyclerViewAdapter vyžaduje 9 metód výberového režimu
 class CompareGroupsAdapter(
     activity: BaseSimpleActivity,
@@ -33,6 +34,9 @@ class CompareGroupsAdapter(
         fun onOpenSelected(groups: List<CompareGroup>)
         fun onHide(groups: List<CompareGroup>)
         fun onUnhide(groups: List<CompareGroup>)
+
+        // porovnavac-W2: hromadné „Ponechať najlepšiu“ (len neskryté skupiny)
+        fun onKeepBest(groups: List<CompareGroup>)
 
         // „Ponechať všetky“ pri sériách, „Nie sú to duplikáty“ pri duplikátoch
         fun hideActionTitle(): Int
@@ -61,6 +65,7 @@ class CompareGroupsAdapter(
 
     override fun prepareActionMode(menu: Menu) {
         val selected = getSelectedGroups()
+        menu.findItem(R.id.cab_compare_keep_best)?.isVisible = selected.any { !hidden.isHidden(it.paths) }
         menu.findItem(R.id.cab_compare_hide)?.apply {
             isVisible = selected.any { !hidden.isHidden(it.paths) }
             setTitle(listener.hideActionTitle())
@@ -78,6 +83,11 @@ class CompareGroupsAdapter(
             R.id.cab_compare_open -> {
                 finishActMode()
                 listener.onOpenSelected(selected)
+            }
+
+            R.id.cab_compare_keep_best -> {
+                finishActMode()
+                listener.onKeepBest(selected.filter { !hidden.isHidden(it.paths) })
             }
 
             R.id.cab_compare_hide -> {
