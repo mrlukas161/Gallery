@@ -73,6 +73,18 @@ object CompareAnalysis {
         return out
     }
 
+    // porovnavac-C (/api/groups pre web a PC): skóre LEN z cache, nič nové nepočíta;
+    // null = niektorá fotka skupiny ešte nie je zmeraná (alebo sa zmenila)
+    fun cachedScores(context: Context, paths: List<String>): Map<String, PhotoScore>? {
+        loadDisk(context.applicationContext)
+        val measures = ArrayList<PhotoMeasure>(paths.size)
+        for (path in paths) {
+            val file = File(path)
+            measures.add(cache.get(path, file.lastModified(), file.length()) ?: return null)
+        }
+        return CompareScoring.score(measures)
+    }
+
     // čitateľné zdôvodnenie skóre („ostrejšia o 18 %, všetci 3 majú otvorené oči“)
     fun describe(context: Context, score: PhotoScore, path: String): String = CompareTexts.reasons(context, score, path)
 

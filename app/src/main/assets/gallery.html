@@ -1708,13 +1708,20 @@ if (typeof module !== "undefined" && module.exports) module.exports = GCore;
       d.appendChild(im);
       d.appendChild(el("span", "sb"));
       d.appendChild(el("span", "del", "🗑"));
-      if (CM.group && CM.group.keeper === id) { var kp = el("span", "kp", "★"); kp.title = "Navrhnutá na ponechanie (najväčšie rozlíšenie)"; d.appendChild(kp); }
+      if (starId() === id) { var kp = el("span", "kp", "★"); kp.title = starText(); d.appendChild(kp); }
       d.addEventListener("click", function () { showInActive(i); });
       s.appendChild(d);
     });
     paintStrip();
   }
   var PCOL = ["var(--p1)", "var(--p2)", "var(--p3)", "var(--p4)"];
+  // ★ = najlepšia podľa porovnávača v mobile (ak ju už spočítal), inak fotka s najväčším rozlíšením
+  function starId() { var g = CM.group; return g ? (g.best != null ? g.best : g.keeper) : null; }
+  function starText() {
+    var g = CM.group;
+    if (g && g.best != null) return "najlepšia podľa porovnávača" + (g.confidence != null ? " (náskok " + Math.round(g.confidence * 100) + " %)" : "");
+    return "navrhnutá na ponechanie (najväčšie rozlíšenie)";
+  }
   function paintStrip() {
     $$(".sthumb", $("#strip")).forEach(function (d) {
       var i = Number(d.dataset.i), id = CM.ids[i], it = item(id), sb = $(".sb", d);
@@ -1724,7 +1731,7 @@ if (typeof module !== "undefined" && module.exports) module.exports = GCore;
       shownIn.forEach(function (k) { var b = el("i", "", String(k + 1)); b.style.background = PCOL[k]; sb.appendChild(b); });
       d.classList.toggle("shown", shownIn.length > 0);
       d.classList.toggle("marked", S.marked.has(id));
-      d.setAttribute("aria-label", (it ? it.name : "") + (CM.group && CM.group.keeper === id ? ", navrhnutá na ponechanie" : "") + (shownIn.length ? ", v paneli " + shownIn.map(function (k) { return k + 1; }).join(" a ") : "") + (S.marked.has(id) ? ", na zmazanie" : ""));
+      d.setAttribute("aria-label", (it ? it.name : "") + (starId() === id ? ", " + starText() : "") + (shownIn.length ? ", v paneli " + shownIn.map(function (k) { return k + 1; }).join(" a ") : "") + (S.marked.has(id) ? ", na zmazanie" : ""));
     });
   }
   function paintCmpBar() {

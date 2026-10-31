@@ -6,6 +6,7 @@ import fi.iki.elonen.NanoHTTPD.Method
 import fi.iki.elonen.NanoHTTPD.Response
 import fi.iki.elonen.NanoHTTPD.Response.Status
 import org.fossify.gallery.extensions.config
+import org.fossify.gallery.helpers.CompareAnalysis
 import org.fossify.gallery.helpers.CompareHiddenStore
 import org.fossify.gallery.helpers.CompareKind
 import org.fossify.gallery.helpers.CompareRepository
@@ -120,6 +121,7 @@ class ServerCleanup(
         const val MAX_BODY_BYTES = 64L * 1024
         private const val MAX_BIN_ITEMS = 3000
         private const val BIN_CACHE_MS = 15_000L
+        private const val CONFIDENCE_SCALE = 100.0
     }
 
     // jedno mazanie / obnova naraz: NanoHTTPD obsluhuje každé spojenie vo vlastnom vlákne a dve súbežné
@@ -206,11 +208,26 @@ class ServerCleanup(
                 CompareKind.EXACT -> GroupBuilder.KIND_EXACT
                 CompareKind.SIMILAR -> GroupBuilder.KIND_SIMILAR
             }
-            GroupBuilder.Src(kind, g.paths, g.keeper)
+            val best = bestOf(g.paths)
+            GroupBuilder.Src(kind, g.paths, g.keeper, best?.first, best?.second, best?.third.orEmpty())
         }
         val byPath = HashMap<String, GroupBuilder.Member>(index.size)
         index.values.forEach { byPath[it.path] = GroupBuilder.Member(it.id, it.bucket, it.taken, it.size) }
         return GroupBuilder.fromPaths(src, byPath)
+    }
+
+    // najlepšia fotka podľa porovnávača (len z cache CompareAnalysis — server nič nepočíta):
+    // (cesta, náskok skóre pred druhou 0–1, kódy dôvodov) alebo null
+    private fun bestOf(paths: List<String>): Triple<String, Double, List<String>>? {
+        val scores = try {
+            CompareAnalysis.cachedScores(appContext, paths)
+        } catch (ignored: Throwable) {
+            null
+        }
+        val best = scores?.entries?.firstOrNull { it.value.rank == 0 } ?: return null
+        val second = scores.values.filter { it.rank != 0 }.maxOfOrNull { it.score } ?: 0.0
+        val margin = Math.round((best.value.score - second).coerceIn(0.0, 1.0) * CONFIDENCE_SCALE) / CONFIDENCE_SCALE
+        return Triple(best.key, margin, best.value.reasons.map { it.code })
     }
 
     // Kôš Galérie+ (bez zamknutých/vylúčených priečinkov), najnovšie zmazané prvé

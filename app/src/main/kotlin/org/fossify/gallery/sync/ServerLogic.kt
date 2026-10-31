@@ -201,14 +201,26 @@ object GroupBuilder {
     // fotka z indexu servera; date = dátum snímania alebo náhradne zmeny súboru
     data class Member(val id: Long, val bucket: String, val date: Long, val size: Long)
 
-    // skupina zo zoskupovania: poradie ciest (séria chronologicky, duplikáty od najlepšej) a navrhnutá fotka
-    data class Src(val kind: String, val paths: List<String>, val keeper: String?)
+    // skupina zo zoskupovania: poradie ciest (séria chronologicky, duplikáty od najlepšej), navrhnutá fotka
+    // (najväčšie rozlíšenie) a — ak už porovnávač skupinu zmeral (CompareAnalysis) — najlepšia podľa kvality
+    // (best), istota (náskok skóre pred druhou, 0–1) a kódy dôvodov (Reason.code)
+    data class Src(
+        val kind: String,
+        val paths: List<String>,
+        val keeper: String?,
+        val best: String? = null,
+        val confidence: Double? = null,
+        val reasons: List<String> = emptyList(),
+    )
 
     data class Group(
         val key: String,
         val kind: String,
         val ids: List<Long>,
         val keeper: Long?,
+        val best: Long? = null,
+        val confidence: Double? = null,
+        val reasons: List<String> = emptyList(),
         val bytes: Long,
         val reclaim: Long,
         val from: Long,
@@ -224,11 +236,15 @@ object GroupBuilder {
         val bytes = members.sumOf { it.size.coerceAtLeast(0) }
         val keeper = g.keeper?.let { byPath[it] }?.takeIf { k -> members.any { it.id == k.id } }
         val kept = keeper?.size ?: members.maxOf { it.size }
+        val best = g.best?.let { byPath[it] }?.takeIf { b -> members.any { it.id == b.id } }
         Group(
             key = key(g.paths),
             kind = g.kind,
             ids = members.map { it.id },
             keeper = keeper?.id,
+            best = best?.id,
+            confidence = if (best != null) g.confidence else null,
+            reasons = if (best != null) g.reasons else emptyList(),
             bytes = bytes,
             reclaim = (bytes - kept.coerceAtLeast(0)).coerceAtLeast(0),
             from = members.minOf { it.date },
@@ -254,9 +270,10 @@ object GroupBuilder {
                     .put("from", g.from)
                     .put("to", g.to)
                     .put("bucket", g.bucket)
-                    // vlna 2 (CompareAnalysis): najlepšia fotka skupiny podľa kvality a istota odporúčania
-                    .put("best", JSONObject.NULL)
-                    .put("confidence", JSONObject.NULL)
+                    // najlepšia podľa kvality (CompareAnalysis) — len keď ju porovnávač už spočítal, inak null
+                    .put("best", g.best ?: JSONObject.NULL)
+                    .put("confidence", g.confidence ?: JSONObject.NULL)
+                    .put("reasons", JSONArray(g.reasons))
             )
         }
         return arr

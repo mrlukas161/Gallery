@@ -184,6 +184,25 @@ class ServerLogicTest {
         assertEquals(listOf(3L, 4L), gs.first().ids)
     }
 
+    @Test fun najlepsia_z_porovnavaca_len_ked_ju_server_vidi() {
+        val byPath = mapOf("/1" to m(1), "/2" to m(2))
+        val ok = GroupBuilder.Src(
+            "similar", listOf("/1", "/2"), "/1", best = "/2", confidence = 0.12, reasons = listOf("sharper"),
+        )
+        val g = GroupBuilder.fromPaths(listOf(ok), byPath).single()
+        assertEquals(2L, g.best)
+        assertEquals(0.12, g.confidence!!, 1e-9)
+        assertEquals(listOf("sharper"), g.reasons)
+        val o = GroupBuilder.toJson(listOf(g)).getJSONObject(0)
+        assertEquals(2L, o.getLong("best"))
+        assertEquals("sharper", o.getJSONArray("reasons").getString(0))
+        // najlepšia je v zamknutom priečinku -> best aj istota null
+        val hidden = GroupBuilder.Src("similar", listOf("/1", "/2", "/x"), "/1", best = "/x", confidence = 0.3)
+        val h = GroupBuilder.fromPaths(listOf(hidden), byPath).single()
+        assertNull(h.best)
+        assertNull(h.confidence)
+    }
+
     @Test fun kluc_skupiny_je_stabilny() {
         val a = GroupBuilder.key(listOf("/a/2.jpg", "/a/1.jpg"))
         val b = GroupBuilder.key(listOf("/a/1.jpg", "/a/2.jpg"))
