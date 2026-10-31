@@ -27,6 +27,8 @@ Každý štart servera vygeneruje nový 6-miestny PIN (ukáže ho notifikácia v
 - **Zmeny len cez POST** (`/api/mark`, `/api/synced`, `/api/clearmarks`, `/api/delete`, `/api/restore`,
   `/api/groupstate` pri zápise, `/api/logout`, `/api/quality`; `/api/upload` aj PUT). GET na ne vráti
   `405 {"error":"use POST"}`.
+  **Dočasne (0.67):** `/api/mark`, `/api/synced` a `/api/clearmarks` prijmú aj starší tvar GET `?id=&del=`,
+  ale len s PIN tokenom priamo v požiadavke (`X-Auth-Token` alebo `?token=`). Po prechode PC programu na POST sa to zruší.
 - **Origin**: ak požiadavka pošle hlavičku `Origin`, musí byť `http://<Host>` (inak `403 {"error":"bad_origin"}`).
   Rovnako `Sec-Fetch-Site` musí byť `same-origin` alebo `none`. PC program tieto hlavičky neposiela → prejde.
 - Každá odpoveď má `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`, `X-Frame-Options: DENY`,

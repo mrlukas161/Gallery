@@ -216,6 +216,7 @@ class MediaServer(
             else -> false
         }
         if (!write) return
+        if (RequestGuard.legacyGetAllowed(uri, session.method == Method.GET, hasPinToken(session))) return
         val methodOk = session.method == Method.POST || (uri == "/api/upload" && session.method == Method.PUT)
         val err = when {
             !methodOk -> HttpError(Status.METHOD_NOT_ALLOWED, "use POST")
@@ -235,6 +236,13 @@ class MediaServer(
         val queryTok = session.parameters["token"]?.firstOrNull()
         val tok = headerTok ?: queryTok ?: return false
         return checkPin(tok)
+    }
+
+    // PIN token priamo v požiadavke (PC program), bez započítania do ochrany pred hádaním —
+    // overenie s počítaním už prebehlo v authorized()
+    private fun hasPinToken(session: IHTTPSession): Boolean {
+        val tok = session.headers["x-auth-token"] ?: session.parameters["token"]?.firstOrNull() ?: return false
+        return constantTimeEquals(tok, pin)
     }
 
     // správny PIN = true; zlý sa zaráta do ochrany pred hádaním

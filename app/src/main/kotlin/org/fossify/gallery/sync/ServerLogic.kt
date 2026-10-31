@@ -390,6 +390,14 @@ class Sessions(
 object RequestGuard {
     const val COOKIE = "gp_sid"
 
+    // DOČASNE (0.67): starší PC porovnávač volá tieto zmeny cez GET (?id=&token=). Povolené len s PIN
+    // tokenom v požiadavke (hlavička alebo ?token=), nie s cookie prehliadača — cudzia stránka tak
+    // nič nezmení. Zrušiť, keď PC program prejde na POST (docs/api/server-pre-pc.md).
+    val LEGACY_GET = setOf("/api/mark", "/api/synced", "/api/clearmarks")
+
+    fun legacyGetAllowed(uri: String, isGet: Boolean, hasPinToken: Boolean): Boolean =
+        isGet && hasPinToken && uri in LEGACY_GET
+
     fun sameOrigin(origin: String?, host: String?, fetchSite: String?): Boolean {
         if (fetchSite != null && fetchSite != "same-origin" && fetchSite != "none") return false
         if (origin == null) return true

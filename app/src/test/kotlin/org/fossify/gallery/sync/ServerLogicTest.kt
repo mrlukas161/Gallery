@@ -365,4 +365,13 @@ class ServerLogicTest {
         while (s2.read(ByteArray(4)) > 0) Unit
         assertEquals(0, done)
     }
+
+    @Test
+    fun legacyGetOnlyWithPinTokenAndOnlyForOldEndpoints() {
+        assertTrue(RequestGuard.legacyGetAllowed("/api/mark", isGet = true, hasPinToken = true))
+        assertTrue(RequestGuard.legacyGetAllowed("/api/clearmarks", isGet = true, hasPinToken = true))
+        assertFalse(RequestGuard.legacyGetAllowed("/api/mark", isGet = true, hasPinToken = false))
+        assertFalse(RequestGuard.legacyGetAllowed("/api/delete", isGet = true, hasPinToken = true))
+        assertFalse(RequestGuard.legacyGetAllowed("/api/synced", isGet = false, hasPinToken = true))
+    }
 }
