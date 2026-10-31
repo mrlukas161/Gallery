@@ -134,57 +134,54 @@ class ServerLogicTest {
     }
 
     // ---------- skupiny ----------
-    private fun item(
-        id: Long,
-        bucket: String,
-        date: Long,
-        real: Boolean = true,
-        size: Long = 100,
-        image: Boolean = true,
-    ) =
-        GroupBuilder.In(id, "/DCIM/$bucket/$id.jpg", bucket, date, real, size, image)
+    private fun m(id: Long, bucket: String = "Camera", date: Long = id * 1000, size: Long = 100) =
+        GroupBuilder.Member(id, bucket, date, size)
 
-    @Test fun seria_len_zo_skutocneho_datumu() {
-        val items = listOf(item(1, "Camera", 1000), item(2, "Camera", 2000), item(3, "Camera", 2500, real = false))
-        assertEquals(listOf(listOf(1L, 2L)), GroupBuilder.bursts(items))
-    }
-
-    @Test fun seria_neprekroci_priecinok_ani_medzeru() {
-        val items = listOf(
-            item(1, "Camera", 1000), item(2, "Camera", 4000), item(3, "Camera", 7001),
-            item(4, "WhatsApp", 1500), item(5, "Camera", 8000, image = false),
+    @Test fun skupina_len_z_fotiek_servera() {
+        val byPath = mapOf("/a/1.jpg" to m(1), "/a/2.jpg" to m(2), "/b/3.jpg" to m(3, "B"))
+        val src = listOf(
+            GroupBuilder.Src(GroupBuilder.KIND_BURST, listOf("/a/1.jpg", "/a/2.jpg", "/zamknute/9.jpg"), "/a/2.jpg"),
+            // zo skupiny ostane jedna fotka (druhá je v zamknutom priečinku) -> preč
+            GroupBuilder.Src(GroupBuilder.KIND_EXACT, listOf("/b/3.jpg", "/zamknute/8.jpg"), "/b/3.jpg"),
         )
-        assertEquals(listOf(listOf(1L, 2L)), GroupBuilder.bursts(items))
+        val g = GroupBuilder.fromPaths(src, byPath).single()
+        assertEquals(listOf(1L, 2L), g.ids)
+        assertEquals(2L, g.keeper)
+        assertEquals(200L, g.bytes)
+        assertEquals(100L, g.reclaim)
+        assertEquals(1000L, g.from)
+        assertEquals(2000L, g.to)
+        assertEquals("Camera", g.bucket)
+        // kľúč z celej skupiny (aj s fotkou, ktorú server nevidí) = rovnaký ako v mobile
+        assertEquals(GroupBuilder.key(listOf("/zamknute/9.jpg", "/a/2.jpg", "/a/1.jpg")), g.key)
     }
 
-    @Test fun serie_a_duplikaty_sa_neprekryvaju() {
-        val items = listOf(
-            item(1, "Camera", 1000), item(2, "Camera", 2000), item(3, "Camera", 3000),
-            item(7, "Camera", 900_000), item(8, "Camera", 950_000),
-            item(20, "Old", 5, size = 300), item(21, "Old", 10, size = 50),
+    @Test fun poradie_fotiek_zo_zoskupovania_ostane() {
+        val byPath = mapOf(
+            "/a/1.jpg" to m(1, size = 10),
+            "/a/2.jpg" to m(2, size = 50),
+            "/a/3.jpg" to m(3, size = 30),
         )
-        // duplikát 3 <-> 7 spojí sériu 1-2-3 s fotkou 7; 20-21 sú samostatné duplikáty
-        val groups = GroupBuilder.build(items, listOf(listOf(3L, 7L), listOf(20L, 21L), listOf(99L, 20L)))
-        val all = groups.flatMap { it.ids }
-        assertEquals(all.size, all.toSet().size)
-        assertEquals(2, groups.size)
-        val big = groups.first { 1L in it.ids }
-        assertEquals(listOf(1L, 2L, 3L, 7L), big.ids)
-        assertEquals(GroupBuilder.KIND_DUP, big.kind)
-        val old = groups.first { 20L in it.ids }
-        assertEquals(listOf(20L, 21L), old.ids)
-        assertEquals(350L, old.bytes)
-        assertEquals(50L, old.reclaim)
-        assertEquals(5L, old.from)
-        assertEquals(10L, old.to)
-        assertEquals("Old", old.bucket)
+        val src = listOf(GroupBuilder.Src("similar", listOf("/a/2.jpg", "/a/3.jpg", "/a/1.jpg"), null))
+        val g = GroupBuilder.fromPaths(src, byPath).single()
+        assertEquals(listOf(2L, 3L, 1L), g.ids)
+        assertNull(g.keeper)
+        assertEquals(40L, g.reclaim) // bez navrhnutej fotky ostane najväčšia
     }
 
-    @Test fun seria_s_duplikatom_vo_vnutri_ostava_seriou() {
-        val items = listOf(item(1, "Camera", 1000), item(2, "Camera", 2000), item(3, "Camera", 3000))
-        val g = GroupBuilder.build(items, listOf(listOf(1L, 3L))).single()
-        assertEquals(GroupBuilder.KIND_BURST, g.kind)
-        assertEquals(listOf(1L, 2L, 3L), g.ids)
+    @Test fun skupiny_od_najnovsej() {
+        val byPath = mapOf(
+            "/1" to m(1, date = 5),
+            "/2" to m(2, date = 6),
+            "/3" to m(3, date = 90),
+            "/4" to m(4, date = 91),
+        )
+        val src = listOf(
+            GroupBuilder.Src("burst", listOf("/1", "/2"), null),
+            GroupBuilder.Src("burst", listOf("/3", "/4"), null),
+        )
+        val gs = GroupBuilder.fromPaths(src, byPath)
+        assertEquals(listOf(3L, 4L), gs.first().ids)
     }
 
     @Test fun kluc_skupiny_je_stabilny() {
@@ -197,11 +194,13 @@ class ServerLogicTest {
     }
 
     @Test fun skupiny_json_ma_best_null() {
-        val g = GroupBuilder.build(listOf(item(1, "C", 1000), item(2, "C", 2000)), emptyList())
-        val o = GroupBuilder.toJson(g).getJSONObject(0)
+        val byPath = mapOf("/1" to m(1), "/2" to m(2))
+        val src = listOf(GroupBuilder.Src("burst", listOf("/1", "/2"), "/1"))
+        val o = GroupBuilder.toJson(GroupBuilder.fromPaths(src, byPath)).getJSONObject(0)
         assertTrue(o.isNull("best"))
         assertTrue(o.isNull("confidence"))
         assertEquals("burst", o.getString("kind"))
+        assertEquals(1L, o.getLong("keeper"))
         assertEquals(2, o.getJSONArray("ids").length())
     }
 

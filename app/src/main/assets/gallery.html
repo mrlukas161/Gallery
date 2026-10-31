@@ -134,6 +134,7 @@
   .sthumb .del{position:absolute;inset:0;background:rgba(200,40,40,.45);display:none;align-items:center;justify-content:center;font-size:1.2rem}
   .sthumb.marked .del{display:flex}
   .sthumb.shown{outline-color:#fff}
+  .sthumb .kp{position:absolute;right:3px;bottom:2px;color:var(--warn);font-size:.9rem;text-shadow:0 0 3px #000}
 
   /* groups */
   .tools{display:flex;gap:.5rem;align-items:center;flex-wrap:wrap;padding:.4rem .7rem;border-bottom:1px solid var(--line)}
@@ -255,7 +256,7 @@
 <div class="ov" id="groups" role="dialog" aria-modal="true" aria-labelledby="gTitle" tabindex="-1">
   <div class="bar">
     <button id="gClose" aria-label="Zavrieť (Esc)">✕</button>
-    <span class="t" id="gTitle"><b>Podobné a duplikáty</b> — série (rýchlo po sebe) a duplikáty. Enter = porovnať, N = ďalšia nespracovaná.</span>
+    <span class="t" id="gTitle"><b>Podobné a duplikáty</b> — rovnaké skupiny ako v mobile. Enter = porovnať, N = ďalšia nespracovaná.</span>
     <button id="gNext" title="N">Ďalšia nespracovaná ›</button>
     <button id="gReload" aria-label="Obnoviť skupiny">↻</button>
   </div>
@@ -270,7 +271,8 @@
     <label class="inl">Typ <select id="gKind">
       <option value="all">všetko</option>
       <option value="burst">Série</option>
-      <option value="dup">Duplikáty</option>
+      <option value="exact">Presné kópie</option>
+      <option value="similar">Podobné</option>
     </select></label>
     <label class="inl">Priečinok <select id="gBucket"><option value="">všetky</option></select></label>
     <label class="inl">Stav <select id="gState">
@@ -1451,7 +1453,7 @@ if (typeof module !== "undefined" && module.exports) module.exports = GCore;
     GF.bucket = sel.value;
   }
   function progressText(p) {
-    return "Spracované " + p.done + " z " + C.groupsTxt(p.total).replace(/^\d+ /, "") .replace(/^/, p.total + " ") +
+    return "Spracované " + p.done + " z " + p.total + (p.total === 1 ? " skupiny" : " skupín") +
       " · označených " + p.marked + " · uvoľní " + C.fmtBytes(p.bytes);
   }
   function paintProgress(box) {
@@ -1460,8 +1462,9 @@ if (typeof module !== "undefined" && module.exports) module.exports = GCore;
     $(".txt", box).textContent = progressText(p);
     $(".pbar i", box).style.width = (p.total ? Math.round(100 * p.done / p.total) : 0) + "%";
   }
+  var KIND = { burst: "Séria", exact: "Presné kópie", similar: "Podobné" };
   function groupTitle(g) {
-    return (g.kind === "burst" ? "Séria" : "Duplikáty") + " · " + C.photos(g.ids.length);
+    return (KIND[g.kind] || "Duplikáty") + " · " + C.photos(g.ids.length);
   }
   function groupInfo(g) {
     return [C.fmtBytes(g.bytes), g.reclaim > 0 ? "uvoľníš až " + C.fmtBytes(g.reclaim) : "", C.fmtRange(g.from, g.to), g.bucket].filter(Boolean).join(" · ");
@@ -1482,7 +1485,7 @@ if (typeof module !== "undefined" && module.exports) module.exports = GCore;
     if (!S.glist.length) {
       gBody.appendChild(el("div", "empty", S.groups.length
         ? "V tomto filtri nie je žiadna skupina. Zmeň „Stav“ na „všetky“."
-        : "Žiadne série ani duplikáty. Ak si ešte nespustil index podobných fotiek v mobile (Nastavenia → Podobné a duplikáty), duplikáty tu nebudú."));
+        : "Žiadne série ani duplikáty. Ak si v mobile ešte nespustil index podobných fotiek, presné kópie a podobné tu nebudú. Skupiny skryté v mobile („Ponechať všetky“) sa tu neukazujú."));
       return;
     }
     var frag = document.createDocumentFragment();
@@ -1547,7 +1550,11 @@ if (typeof module !== "undefined" && module.exports) module.exports = GCore;
     var rows = $$(".grow", gBody);
     if (!rows.length) return;
     var i = rows.indexOf(document.activeElement);
-    i = i < 0 ? (S.gcur >= 0 ? S.gcur : (d > 0 ? -1 : rows.length)) : i;
+    if (i < 0) {
+      // bez fokusu začni od naposledy otvorenej skupiny, inak od prvej viditeľnej (nie od vrchu zoznamu)
+      var top = gBody.getBoundingClientRect().top, vis = rows.findIndex(function (r) { return r.getBoundingClientRect().bottom > top + 4; });
+      i = S.gcur >= 0 && S.gcur < rows.length ? S.gcur : (vis < 0 ? 0 : vis) - (d > 0 ? 1 : 0);
+    }
     var n = Math.min(Math.max(i + d, 0), rows.length - 1);
     rows[n].focus();
     rows[n].scrollIntoView({ block: "nearest" });
@@ -1701,6 +1708,7 @@ if (typeof module !== "undefined" && module.exports) module.exports = GCore;
       d.appendChild(im);
       d.appendChild(el("span", "sb"));
       d.appendChild(el("span", "del", "🗑"));
+      if (CM.group && CM.group.keeper === id) { var kp = el("span", "kp", "★"); kp.title = "Navrhnutá na ponechanie (najväčšie rozlíšenie)"; d.appendChild(kp); }
       d.addEventListener("click", function () { showInActive(i); });
       s.appendChild(d);
     });
@@ -1716,7 +1724,7 @@ if (typeof module !== "undefined" && module.exports) module.exports = GCore;
       shownIn.forEach(function (k) { var b = el("i", "", String(k + 1)); b.style.background = PCOL[k]; sb.appendChild(b); });
       d.classList.toggle("shown", shownIn.length > 0);
       d.classList.toggle("marked", S.marked.has(id));
-      d.setAttribute("aria-label", (it ? it.name : "") + (shownIn.length ? ", v paneli " + shownIn.map(function (k) { return k + 1; }).join(" a ") : "") + (S.marked.has(id) ? ", na zmazanie" : ""));
+      d.setAttribute("aria-label", (it ? it.name : "") + (CM.group && CM.group.keeper === id ? ", navrhnutá na ponechanie" : "") + (shownIn.length ? ", v paneli " + shownIn.map(function (k) { return k + 1; }).join(" a ") : "") + (S.marked.has(id) ? ", na zmazanie" : ""));
     });
   }
   function paintCmpBar() {

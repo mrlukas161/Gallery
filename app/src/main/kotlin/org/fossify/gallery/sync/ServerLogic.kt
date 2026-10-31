@@ -190,28 +190,25 @@ class GenLog(private val capacity: Int = DEFAULT_CAPACITY) {
     }
 }
 
-// Skupiny pre /api/groups?v=2: série (burst) a duplikáty (pHash) zlúčené tak, aby sa žiadna fotka
-// neobjavila v dvoch skupinách. Séria vzniká LEN z fotiek so skutočným dátumom snímania (EXIF/MediaStore
-// DATE_TAKEN) — náhradný čas úpravy súboru by z kopírovaných fotiek robil falošné série.
+// Skupiny pre /api/groups?v=2. Zoskupuje CompareRepository (rovnako ako zoznam „Podobné a duplikáty“
+// v mobile: série len zo skutočného dátumu snímania, presné kópie a podobné bez prekryvu, bez zamknutých
+// a vylúčených priečinkov). Tu sa skupiny len prevedú na id servera a doplnia čísla pre web/PC.
 object GroupBuilder {
-    const val BURST_GAP_MS = 3000L
     const val KIND_BURST = "burst"
-    const val KIND_DUP = "dup"
+    const val KIND_EXACT = "exact"
+    const val KIND_SIMILAR = "similar"
 
-    data class In(
-        val id: Long,
-        val path: String,
-        val bucket: String,
-        val date: Long,
-        val takenReal: Boolean,
-        val size: Long,
-        val image: Boolean,
-    )
+    // fotka z indexu servera; date = dátum snímania alebo náhradne zmeny súboru
+    data class Member(val id: Long, val bucket: String, val date: Long, val size: Long)
+
+    // skupina zo zoskupovania: poradie ciest (séria chronologicky, duplikáty od najlepšej) a navrhnutá fotka
+    data class Src(val kind: String, val paths: List<String>, val keeper: String?)
 
     data class Group(
         val key: String,
         val kind: String,
         val ids: List<Long>,
+        val keeper: Long?,
         val bytes: Long,
         val reclaim: Long,
         val from: Long,
@@ -219,80 +216,26 @@ object GroupBuilder {
         val bucket: String,
     )
 
-    fun bursts(items: Collection<In>): List<List<Long>> {
-        val out = ArrayList<List<Long>>()
-        val sorted = items.filter { it.image && it.takenReal && it.date > 0 }
-            .sortedWith(compareBy({ it.bucket }, { it.date }, { it.id }))
-        var cur = ArrayList<Long>()
-        var prev: In? = null
-        for (it in sorted) {
-            val p = prev
-            if (p != null && p.bucket == it.bucket && it.date - p.date <= BURST_GAP_MS) {
-                cur.add(it.id)
-            } else {
-                if (cur.size >= 2) out.add(cur)
-                cur = arrayListOf(it.id)
-            }
-            prev = it
-        }
-        if (cur.size >= 2) out.add(cur)
-        return out
-    }
-
-    fun build(items: Collection<In>, similar: List<List<Long>>): List<Group> {
-        val byId = items.associateBy { it.id }
-        val parent = HashMap<Long, Long>()
-        fun find(x: Long): Long {
-            var r = x
-            while (parent[r] != r) r = parent[r] ?: r
-            var c = x
-            while (c != r) {
-                val n = parent[c] ?: r
-                parent[c] = r
-                c = n
-            }
-            return r
-        }
-
-        fun union(a: Long, b: Long) {
-            parent.putIfAbsent(a, a)
-            parent.putIfAbsent(b, b)
-            val ra = find(a)
-            val rb = find(b)
-            if (ra != rb) parent[maxOf(ra, rb)] = minOf(ra, rb)
-        }
-        val burstOf = HashMap<Long, Int>()
-        bursts(items).forEachIndexed { i, ids ->
-            ids.forEach { burstOf[it] = i }
-            ids.zipWithNext().forEach { (a, b) -> union(a, b) }
-        }
-        for (g in similar) {
-            val known = g.filter { it in byId }.distinct()
-            known.zipWithNext().forEach { (a, b) -> union(a, b) }
-        }
-        val comps = parent.keys.groupBy { find(it) }.values.filter { it.size >= 2 }
-        return comps.map { toGroup(it.mapNotNull { id -> byId[id] }, burstOf) }
-            .sortedWith(compareByDescending<Group> { it.to }.thenBy { it.key })
-    }
-
-    private fun toGroup(members: List<In>, burstOf: Map<Long, Int>): Group {
-        val sorted = members.sortedWith(compareBy({ it.date }, { it.id }))
-        val bursts = sorted.map { burstOf[it.id] }.toSet()
-        val kind = if (bursts.size == 1 && bursts.first() != null) KIND_BURST else KIND_DUP
-        val bytes = sorted.sumOf { it.size.coerceAtLeast(0) }
-        val biggest = sorted.maxOf { it.size.coerceAtLeast(0) }
-        val bucket = sorted.groupingBy { it.bucket }.eachCount().maxByOrNull { it.value }?.key ?: ""
-        return Group(
-            key = key(sorted.map { it.path }),
-            kind = kind,
-            ids = sorted.map { it.id },
+    // len fotky, ktoré server sprístupňuje (byPath); skupina s menej než 2 fotkami odpadne.
+    // Kľúč sa ráta z CELEJ skupiny, aby bol rovnaký ako v mobile a nemenil sa podľa servera.
+    fun fromPaths(src: List<Src>, byPath: Map<String, Member>): List<Group> = src.mapNotNull { g ->
+        val members = g.paths.mapNotNull { p -> byPath[p] }
+        if (members.size < 2) return@mapNotNull null
+        val bytes = members.sumOf { it.size.coerceAtLeast(0) }
+        val keeper = g.keeper?.let { byPath[it] }?.takeIf { k -> members.any { it.id == k.id } }
+        val kept = keeper?.size ?: members.maxOf { it.size }
+        Group(
+            key = key(g.paths),
+            kind = g.kind,
+            ids = members.map { it.id },
+            keeper = keeper?.id,
             bytes = bytes,
-            reclaim = bytes - biggest,
-            from = sorted.first().date,
-            to = sorted.maxOf { it.date },
-            bucket = bucket,
+            reclaim = (bytes - kept.coerceAtLeast(0)).coerceAtLeast(0),
+            from = members.minOf { it.date },
+            to = members.maxOf { it.date },
+            bucket = members.groupingBy { it.bucket }.eachCount().maxByOrNull { it.value }?.key ?: "",
         )
-    }
+    }.sortedWith(compareByDescending<Group> { it.to }.thenBy { it.key })
 
     // stabilný kľúč skupiny: hash zoradených ciest (id v MediaStore sa môže zmeniť, cesta nie)
     fun key(paths: List<String>): String = ETags.hash(paths.sorted().joinToString("\n"))
@@ -305,12 +248,13 @@ object GroupBuilder {
                     .put("key", g.key)
                     .put("kind", g.kind)
                     .put("ids", JSONArray(g.ids))
+                    .put("keeper", g.keeper ?: JSONObject.NULL)
                     .put("bytes", g.bytes)
                     .put("reclaim", g.reclaim)
                     .put("from", g.from)
                     .put("to", g.to)
                     .put("bucket", g.bucket)
-                    // vlna 2 (CompareAnalysis): najlepšia fotka skupiny a istota odporúčania
+                    // vlna 2 (CompareAnalysis): najlepšia fotka skupiny podľa kvality a istota odporúčania
                     .put("best", JSONObject.NULL)
                     .put("confidence", JSONObject.NULL)
             )

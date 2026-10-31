@@ -6,6 +6,9 @@ import fi.iki.elonen.NanoHTTPD.Method
 import fi.iki.elonen.NanoHTTPD.Response
 import fi.iki.elonen.NanoHTTPD.Response.Status
 import org.fossify.gallery.extensions.config
+import org.fossify.gallery.helpers.CompareHiddenStore
+import org.fossify.gallery.helpers.CompareKind
+import org.fossify.gallery.helpers.CompareRepository
 import org.fossify.gallery.helpers.TYPE_VIDEOS
 import org.json.JSONArray
 import org.json.JSONObject
@@ -124,9 +127,6 @@ class ServerCleanup(
     private val deleteLock = Any()
 
     @Volatile
-    private var groupsCache: Pair<String, List<GroupBuilder.Group>>? = null
-
-    @Volatile
     private var binCache: Pair<Long, Map<String, PcBin.BinItem>>? = null
 
     private val prefs get() = SyncStore.prefs(appContext)
@@ -175,12 +175,12 @@ class ServerCleanup(
         }
     }
 
-    // ?v=2: {gen, groups:[{key, kind, ids, bytes, reclaim, from, to, bucket, best, confidence}]} bez prekryvu
-    // sérií a duplikátov; bez v: pôvodný formát {burst:[[id]], similar:[[id]]} z tých istých skupín
-    // (teda tiež bez falošných sérií z času úpravy súboru)
+    // ?v=2: {gen, groups:[{key, kind, ids, keeper, bytes, reclaim, from, to, bucket, best, confidence}]};
+    // bez v: pôvodný formát {burst:[[id]], similar:[[id]]}. Skupiny sú TIE ISTÉ ako v mobile
+    // (CompareRepository; skryté cez „Ponechať všetky“ / „Nie sú to duplikáty“ sa vynechajú).
     fun groups(session: IHTTPSession): Response {
         val (index, gen) = snapshot()
-        val groups = currentGroups(index, gen)
+        val groups = currentGroups(index)
         val body = if (Http.param(session, "v") == "2") {
             JSONObject().put("gen", gen).put("groups", GroupBuilder.toJson(groups)).toString()
         } else {
@@ -196,33 +196,21 @@ class ServerCleanup(
         return r
     }
 
-    // skupiny sa prepočítajú len pri zmene zoznamu alebo indexu podobných fotiek
-    private fun currentGroups(index: Map<Long, MediaServer.Item>, gen: Long): List<GroupBuilder.Group> {
-        val phash = try {
-            org.fossify.gallery.faces.PhashDatabase.getInstance(appContext).PhashDao()
-        } catch (ignored: Throwable) {
-            null
+    // CompareRepository drží výsledok v cache, kým sa nezmení MediaStore, pHash index ani rozsah
+    private fun currentGroups(index: Map<Long, MediaServer.Item>): List<GroupBuilder.Group> {
+        val snap = CompareRepository.load(appContext)
+        val hidden = CompareHiddenStore.get(appContext)
+        val src = snap.groups.filter { !hidden.isHidden(it.paths) }.map { g ->
+            val kind = when (g.kind) {
+                CompareKind.BURST -> GroupBuilder.KIND_BURST
+                CompareKind.EXACT -> GroupBuilder.KIND_EXACT
+                CompareKind.SIMILAR -> GroupBuilder.KIND_SIMILAR
+            }
+            GroupBuilder.Src(kind, g.paths, g.keeper)
         }
-        val count = try {
-            phash?.count() ?: -1
-        } catch (ignored: Throwable) {
-            -1
-        }
-        val cacheKey = "$gen:$count"
-        groupsCache?.let { if (it.first == cacheKey) return it.second }
-        val similar = try {
-            val byPath = index.values.associateBy { it.path }
-            org.fossify.gallery.faces.PhashGrouper.groupBySimilarity(phash?.getAllHashes().orEmpty())
-                .map { g -> g.mapNotNull { byPath[it]?.id } }
-        } catch (ignored: Throwable) {
-            emptyList()
-        }
-        val inputs = index.values.map {
-            GroupBuilder.In(it.id, it.path, it.bucket, it.taken, it.takenReal, it.size, it.mime.startsWith("image/"))
-        }
-        val groups = GroupBuilder.build(inputs, similar)
-        groupsCache = cacheKey to groups
-        return groups
+        val byPath = HashMap<String, GroupBuilder.Member>(index.size)
+        index.values.forEach { byPath[it.path] = GroupBuilder.Member(it.id, it.bucket, it.taken, it.size) }
+        return GroupBuilder.fromPaths(src, byPath)
     }
 
     // Kôš Galérie+ (bez zamknutých/vylúčených priečinkov), najnovšie zmazané prvé
