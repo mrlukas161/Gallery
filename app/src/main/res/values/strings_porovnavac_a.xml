@@ -1,0 +1,166 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Stringy vetvy porovnavac-A: obrazovka porovnania fotiek v mobile (ComparatorActivity) -->
+<resources>
+    <!-- titulok „Séria 3 / 17 · 12 záberov · 3. 6. 2024“ sa skladá z pa_series / pa_group_series, pa_shots a dátumu -->
+    <plurals name="pa_shots">
+        <item quantity="one">%d záber</item>
+        <item quantity="few">%d zábery</item>
+        <item quantity="many">%d záberu</item>
+        <item quantity="other">%d záberov</item>
+    </plurals>
+
+    <!-- jednorazový tip -->
+    <string name="pa_tip">Ťuk na fotku v páse ju dá do panela A, podržanie začne označovanie do Koša. Dvojťuk priblíži a priblíženie sa zrkadlí v oboch paneloch.</string>
+    <string name="pa_tip_close">Zavrieť tip</string>
+
+    <!-- panely -->
+    <string name="pa_pane_a">A</string>
+    <string name="pa_pane_b">B</string>
+    <!-- %1$d = poradie fotky v skupine, %2$d = počet fotiek -->
+    <string name="pa_position">%1$d / %2$d</string>
+    <string name="pa_folder_camera">Fotoaparát</string>
+    <string name="pa_folder_screenshots">Snímky obrazovky</string>
+    <string name="pa_folder_whatsapp">WhatsApp</string>
+    <string name="pa_folder_download">Stiahnuté</string>
+    <!-- %1$d = skóre v percentách -->
+    <string name="pa_score">skóre %1$d %%</string>
+    <string name="pa_best">★ najlepšia</string>
+    <string name="pa_best_no_reason">najvyššie skóre</string>
+    <string name="pa_marked_label">označená do Koša</string>
+    <string name="pa_keep">Ponechať</string>
+    <string name="pa_to_bin">Do Koša</string>
+    <!-- %1$s = A alebo B -->
+    <string name="pa_keep_desc">Ponechať fotku z panela %1$s</string>
+    <string name="pa_to_bin_desc">Označiť fotku z panela %1$s do Koša</string>
+    <string name="pa_prev_desc">Predošlá fotka v paneli %1$s</string>
+    <string name="pa_next_desc">Ďalšia fotka v paneli %1$s</string>
+    <string name="pa_duel_better">✓ Táto je lepšia</string>
+    <string name="pa_duel_better_desc">Fotka z panela %1$s je lepšia</string>
+
+    <!-- zdôvodnenia skóre -->
+    <string name="pa_reason_sharper">ostrejšia o %1$d %%</string>
+    <string name="pa_reason_blurrier">menej ostrá o %1$d %%</string>
+    <plurals name="pa_reason_all_eyes_open">
+        <item quantity="one">%d tvár, oči otvorené</item>
+        <item quantity="few">všetci %d majú otvorené oči</item>
+        <item quantity="many">všetkých %d má otvorené oči</item>
+        <item quantity="other">všetkých %d má otvorené oči</item>
+    </plurals>
+    <plurals name="pa_reason_eyes_closed">
+        <item quantity="one">%d má zavreté oči</item>
+        <item quantity="few">%d majú zavreté oči</item>
+        <item quantity="many">%d má zavreté oči</item>
+        <item quantity="other">%d má zavreté oči</item>
+    </plurals>
+    <!-- %1$d = tváre na tejto fotke, %2$d = tváre na porovnávanej -->
+    <string name="pa_reason_more_faces">viac tvárí (%1$d oproti %2$d)</string>
+    <string name="pa_reason_fewer_faces">chýba tvár (%1$d z %2$d)</string>
+    <string name="pa_reason_better_exposure">lepšia expozícia</string>
+    <string name="pa_reason_worse_exposure">horšia expozícia</string>
+    <plurals name="pa_reason_smiles">
+        <item quantity="one">%d úsmev</item>
+        <item quantity="few">%d úsmevy</item>
+        <item quantity="many">%d úsmevu</item>
+        <item quantity="other">%d úsmevov</item>
+    </plurals>
+    <!-- %1$s = megapixely („12“) -->
+    <string name="pa_reason_higher_res">vyššie rozlíšenie (%1$s Mpx)</string>
+    <string name="pa_reason_lower_res">nižšie rozlíšenie (%1$s Mpx)</string>
+    <!-- %1$s = priečinok („Fotoaparát“) -->
+    <string name="pa_reason_original_folder">originál z priečinka %1$s</string>
+    <string name="pa_reason_older">starší súbor – pravdepodobne originál</string>
+    <string name="pa_score_legend" formatted="false">Skóre = ostrosť (55 %) + expozícia (15 %) + otvorené oči (25 %) + úsmev (5 %). Za chýbajúcu tvár sa body strhávajú. Pri skoro rovnakom skóre vyhrá vyššie rozlíšenie, potom originál z Fotoaparátu, potom starší súbor.</string>
+    <string name="pa_faces_skipped">Tváre sa tentoraz nehodnotili – model tvárí nebol voľný (beží spracovanie knižnice) alebo sa nenačítal.</string>
+
+    <!-- priebeh analýzy -->
+    <string name="pa_progress">Vyhodnocujem %1$d / %2$d…</string>
+    <string name="pa_waiting_faces">Čakám na model tvárí…</string>
+
+    <!-- spodná lišta; %1$s = veľkosť („46 MB“), %1$d = počet -->
+    <string name="pa_keep_best_rest">Ponechať ★, ostatné do Koša (%1$s)</string>
+    <string name="pa_keep_best_rest_permanent">Ponechať ★, ostatné vymazať (%1$s)</string>
+    <string name="pa_bin_marked">Do Koša: %1$d (%2$s)</string>
+    <string name="pa_delete_marked">Vymazať: %1$d (%2$s)</string>
+    <string name="pa_bin_none">Do Koša: 0</string>
+    <string name="pa_delete_none">Vymazať: 0</string>
+    <plurals name="pa_photos_acc">
+        <item quantity="one">%d fotku</item>
+        <item quantity="few">%d fotky</item>
+        <item quantity="many">%d fotky</item>
+        <item quantity="other">%d fotiek</item>
+    </plurals>
+    <!-- %1$s = „5 fotiek“, %2$s = veľkosť -->
+    <string name="pa_confirm_bin">Presunúť do Koša %1$s (%2$s)? Miesto sa uvoľní až po vysypaní Koša.</string>
+    <string name="pa_confirm_permanent">Natrvalo vymazať %1$s (%2$s)? Kôš je vypnutý – fotky sa už nebudú dať vrátiť.</string>
+    <string name="pa_confirm_bin_button">Do Koša</string>
+    <string name="pa_confirm_permanent_button">Vymazať natrvalo</string>
+    <string name="pa_bin_failed">Presun do Koša zlyhal – nič sa nevymazalo.</string>
+    <string name="pa_delete_failed">Niektoré fotky sa nepodarilo vymazať (%1$d).</string>
+    <!-- %1$d = počet, %2$s = veľkosť -->
+    <string name="pa_moved_to_bin">V Koši: %1$d · %2$s sa uvoľní po vysypaní Koša</string>
+    <string name="pa_undo">Späť</string>
+    <string name="pa_restored">Vrátené z Koša: %1$d</string>
+    <string name="pa_restore_failed">Niektoré fotky sa nepodarilo vrátiť z Koša</string>
+    <string name="pa_all_done">Hotovo – v skupine už nie je čo porovnávať</string>
+    <string name="pa_nothing_marked">Nič nie je označené</string>
+
+    <!-- nástroje (contentDescription aj tooltip) -->
+    <string name="pa_strip_desc">Skryť alebo zobraziť pás fotiek</string>
+    <string name="pa_sync_on">Spoločné priblíženie: zapnuté</string>
+    <string name="pa_sync_off">Spoločné priblíženie: vypnuté</string>
+    <string name="pa_duel_desc">Turnaj: z každej dvojice vyber lepšiu, horšia sa označí do Koša</string>
+    <string name="pa_grid_desc">Mriežka 2×2 / 3×3</string>
+    <string name="pa_info_desc">Údaje o fotkách vedľa seba</string>
+    <string name="pa_more_desc">Ďalšie možnosti</string>
+
+    <!-- ďalšia skupina zo zoznamu „Podobné a duplikáty“; %1$d = poradie skupiny, %2$d = počet skupín -->
+    <string name="pa_next_group">Ďalšia skupina ›</string>
+    <string name="pa_group_series">Séria %1$d / %2$d</string>
+    <string name="pa_group_duplicates">Duplikáty %1$d / %2$d</string>
+    <string name="pa_series">Séria</string>
+    <string name="pa_duplicates">Duplikáty</string>
+
+    <!-- turnaj -->
+    <string name="pa_duel_status">Turnaj · zápas %1$d z %2$d</string>
+    <string name="pa_duel_end">Ukončiť</string>
+    <string name="pa_duel_done">Turnaj skončil – víťaz ostáva, do Koša je označených %1$d</string>
+    <string name="pa_duel_need_two">Na turnaj treba aspoň 2 neoznačené fotky</string>
+    <string name="pa_duel_locked">Počas turnaja vyberaj tlačidlom „Táto je lepšia“</string>
+
+    <!-- výberový režim v páse -->
+    <string name="pa_selection_title">Označuješ do Koša · %1$d</string>
+    <string name="pa_selection_done">Hotovo</string>
+    <string name="pa_selection_hint">Ďalšie ťuky v páse prepínajú značku</string>
+
+    <!-- ponuka ⋮ -->
+    <string name="pa_menu_keep_only">Ponechať len fotku z panela A, ostatné do Koša</string>
+    <string name="pa_menu_keep_best">Ponechať len ★, ostatné do Koša</string>
+    <string name="pa_menu_toggle">Označiť alebo odznačiť fotku z panela A</string>
+    <string name="pa_menu_select">Označovať v páse (výberový režim)</string>
+    <string name="pa_menu_clear">Zrušiť všetky značky</string>
+    <string name="pa_menu_legend">Ako sa počíta skóre</string>
+    <string name="pa_kept_only">Ostáva jedna fotka, do Koša je označených %1$d</string>
+
+    <!-- mriežka -->
+    <string name="pa_grid_hint">Ťuk = označiť do Koša · dvojťuk = porovnať</string>
+
+    <!-- údaje vedľa seba (ⓘ) -->
+    <string name="pa_info_time">Čas</string>
+    <string name="pa_info_resolution">Rozlíšenie</string>
+    <string name="pa_info_size">Veľkosť</string>
+    <string name="pa_info_iso">ISO</string>
+    <string name="pa_info_shutter">Uzávierka</string>
+    <string name="pa_info_aperture">Clona</string>
+    <string name="pa_info_focal">Ohnisko</string>
+    <string name="pa_info_camera">Fotoaparát</string>
+    <string name="pa_info_gps">Poloha (GPS)</string>
+    <string name="pa_info_folder">Priečinok</string>
+    <string name="pa_info_score">Skóre</string>
+    <string name="pa_yes">áno</string>
+    <string name="pa_no">nie</string>
+
+    <!-- pás (čítačka obrazovky); %1$d = poradie, %2$d = počet -->
+    <string name="pa_strip_item">Fotka %1$d z %2$d</string>
+    <string name="pa_strip_item_marked">Fotka %1$d z %2$d, označená do Koša</string>
+    <string name="pa_strip_best">najlepšia</string>
+</resources>

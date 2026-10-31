@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- rozmery porovnávača (vetva porovnavac-A) -->
+<resources>
+    <dimen name="compare_strip_size">92dp</dimen>
+    <dimen name="compare_strip_item">88dp</dimen>
+</resources>

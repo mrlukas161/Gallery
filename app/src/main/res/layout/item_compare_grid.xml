@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Bunka mriežky 2×2 / 3×3: celá fotka, v rohu skóre a ★, označená do Koša = červený rám + kôš.
+     Ťuk prepne značku, dvojťuk otvorí porovnanie (CompareGridAdapter). Výška sa nastaví v kóde. -->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="200dp"
+    android:background="?attr/selectableItemBackground"
+    android:focusable="true"
+    android:padding="2dp">
+
+    <ImageView
+        android:id="@+id/grid_image"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="#FF101010"
+        android:contentDescription="@null"
+        android:scaleType="fitCenter" />
+
+    <View
+        android:id="@+id/grid_overlay"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="#4DD32F2F"
+        android:visibility="gone" />
+
+    <View
+        android:id="@+id/grid_border"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="@drawable/border_compare_marked"
+        android:visibility="gone" />
+
+    <TextView
+        android:id="@+id/grid_score"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|start"
+        android:layout_margin="4dp"
+        android:background="#B3000000"
+        android:paddingLeft="5dp"
+        android:paddingRight="5dp"
+        android:textColor="#FFFFFFFF"
+        android:textSize="13sp"
+        android:visibility="gone"
+        tools:text="★ 92 %"
+        tools:visibility="visible" />
+
+    <ImageView
+        android:id="@+id/grid_trash"
+        android:layout_width="32dp"
+        android:layout_height="32dp"
+        android:layout_gravity="top|end"
+        android:layout_margin="4dp"
+        android:background="@drawable/bg_compare_trash_badge"
+        android:contentDescription="@null"
+        android:padding="6dp"
+        android:src="@drawable/ic_compare_trash"
+        android:visibility="gone" />
+
+    <TextView
+        android:id="@+id/grid_position"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom|start"
+        android:layout_margin="4dp"
+        android:background="#B3000000"
+        android:paddingLeft="5dp"
+        android:paddingRight="5dp"
+        android:textColor="#FFFFFFFF"
+        android:textSize="12sp"
+        tools:text="3 / 24" />
+
+</FrameLayout>

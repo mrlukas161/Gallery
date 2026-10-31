@@ -1,0 +1,180 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Jeden panel porovnávača (A alebo B): fotka s priblížením, ostrý výrez, štítok hore, tlačidlá dole -->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/pane_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@android:color/black">
+
+    <com.alexvasilkov.gestures.GestureImageView
+        android:id="@+id/pane_image"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
+
+    <!-- výrez v plnom rozlíšení pri priblížení (nad fotkou, dotyky prepúšťa ďalej) -->
+    <ImageView
+        android:id="@+id/pane_sharp"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:clickable="false"
+        android:focusable="false"
+        android:importantForAccessibility="no"
+        android:scaleType="matrix"
+        android:visibility="gone"
+        tools:ignore="ContentDescription" />
+
+    <View
+        android:id="@+id/pane_border"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="@drawable/border_pane_left"
+        android:importantForAccessibility="no" />
+
+    <LinearLayout
+        android:id="@+id/pane_header"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top"
+        android:background="#99000000"
+        android:orientation="horizontal"
+        android:paddingStart="6dp"
+        android:paddingTop="4dp"
+        android:paddingEnd="6dp"
+        android:paddingBottom="4dp">
+
+        <TextView
+            android:id="@+id/pane_badge"
+            android:layout_width="22dp"
+            android:layout_height="22dp"
+            android:layout_marginEnd="6dp"
+            android:background="#FF1976D2"
+            android:gravity="center"
+            android:textColor="#FFFFFFFF"
+            android:textSize="13sp"
+            android:textStyle="bold"
+            tools:text="A" />
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="vertical">
+
+            <TextView
+                android:id="@+id/pane_info"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:ellipsize="end"
+                android:maxLines="2"
+                android:textColor="#FFFFFFFF"
+                android:textSize="12sp"
+                tools:text="3 / 24 · 14:05:32 · 12 Mpx · 3,2 MB · Fotoaparát" />
+
+            <TextView
+                android:id="@+id/pane_score"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:ellipsize="end"
+                android:maxLines="2"
+                android:textColor="#FFFFE082"
+                android:textSize="12sp"
+                android:visibility="gone"
+                tools:text="★ najlepšia · skóre 92 % · ostrejšia o 18 %, všetci 3 majú otvorené oči"
+                tools:visibility="visible" />
+
+        </LinearLayout>
+
+        <ImageView
+            android:id="@+id/pane_trash"
+            android:layout_width="28dp"
+            android:layout_height="28dp"
+            android:layout_marginStart="6dp"
+            android:background="@drawable/bg_compare_trash_badge"
+            android:contentDescription="@string/pa_marked_label"
+            android:padding="5dp"
+            android:src="@drawable/ic_compare_trash"
+            android:visibility="gone"
+            tools:visibility="visible" />
+
+    </LinearLayout>
+
+    <ImageButton
+        android:id="@+id/pane_prev"
+        android:layout_width="36dp"
+        android:layout_height="56dp"
+        android:layout_gravity="start|center_vertical"
+        android:layout_marginStart="2dp"
+        android:background="@drawable/bg_compare_arrow"
+        android:src="@drawable/ic_compare_prev"
+        tools:ignore="ContentDescription" />
+
+    <ImageButton
+        android:id="@+id/pane_next"
+        android:layout_width="36dp"
+        android:layout_height="56dp"
+        android:layout_gravity="end|center_vertical"
+        android:layout_marginEnd="2dp"
+        android:background="@drawable/bg_compare_arrow"
+        android:src="@drawable/ic_compare_next"
+        tools:ignore="ContentDescription" />
+
+    <LinearLayout
+        android:id="@+id/pane_actions"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom|center_horizontal"
+        android:layout_marginBottom="8dp"
+        android:gravity="center"
+        android:orientation="horizontal">
+
+        <TextView
+            android:id="@+id/pane_keep"
+            android:layout_width="wrap_content"
+            android:layout_height="36dp"
+            android:layout_marginEnd="8dp"
+            android:background="@drawable/bg_compare_chip"
+            android:drawablePadding="4dp"
+            android:focusable="true"
+            android:gravity="center"
+            android:paddingStart="12dp"
+            android:paddingEnd="14dp"
+            android:text="@string/pa_keep"
+            android:textColor="#FFFFFFFF"
+            android:textSize="14sp"
+            app:drawableStartCompat="@drawable/ic_compare_keep" />
+
+        <TextView
+            android:id="@+id/pane_bin"
+            android:layout_width="wrap_content"
+            android:layout_height="36dp"
+            android:background="@drawable/bg_compare_chip"
+            android:drawablePadding="4dp"
+            android:focusable="true"
+            android:gravity="center"
+            android:paddingStart="12dp"
+            android:paddingEnd="14dp"
+            android:text="@string/pa_to_bin"
+            android:textColor="#FFFFFFFF"
+            android:textSize="14sp"
+            app:drawableStartCompat="@drawable/ic_compare_trash" />
+
+        <TextView
+            android:id="@+id/pane_win"
+            android:layout_width="wrap_content"
+            android:layout_height="40dp"
+            android:background="@drawable/bg_compare_chip_on"
+            android:focusable="true"
+            android:gravity="center"
+            android:paddingStart="16dp"
+            android:paddingEnd="16dp"
+            android:text="@string/pa_duel_better"
+            android:textColor="#FFFFFFFF"
+            android:textSize="15sp"
+            android:textStyle="bold"
+            android:visibility="gone" />
+
+    </LinearLayout>
+
+</FrameLayout>
