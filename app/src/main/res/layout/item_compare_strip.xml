@@ -1,7 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- Miniatúra v páse porovnávača: ★ najlepšia, skóre, 😑 zavreté oči, A/B = v ktorom paneli je,
+     označená do Koša = červené prekrytie + ikona koša (nie len farba) -->
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    android:layout_width="92dp"
-    android:layout_height="match_parent"
+    android:layout_width="@dimen/compare_strip_item"
+    android:layout_height="@dimen/compare_strip_item"
+    android:background="?attr/selectableItemBackground"
+    android:focusable="true"
     android:padding="2dp">
 
     <ImageView
@@ -15,7 +19,18 @@
         android:id="@+id/strip_overlay"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:background="#99D32F2F"
+        android:background="#80D32F2F"
+        android:visibility="gone" />
+
+    <ImageView
+        android:id="@+id/strip_trash"
+        android:layout_width="32dp"
+        android:layout_height="32dp"
+        android:layout_gravity="center"
+        android:background="@drawable/bg_compare_trash_badge"
+        android:contentDescription="@null"
+        android:padding="6dp"
+        android:src="@drawable/ic_compare_trash"
         android:visibility="gone" />
 
     <View
@@ -26,8 +41,8 @@
 
     <ImageView
         android:id="@+id/strip_best"
-        android:layout_width="24dp"
-        android:layout_height="24dp"
+        android:layout_width="22dp"
+        android:layout_height="22dp"
         android:layout_gravity="top|start"
         android:layout_margin="3dp"
         android:contentDescription="@null"

@@ -315,6 +315,7 @@ class CompareListActivity : SimpleActivity(), CompareGroupsAdapter.Listener {
             .putExtra(EXTRA_GROUP_POSITION, position + 1)
             .putExtra(EXTRA_GROUP_COUNT, shown.size)
             .putExtra(EXTRA_HAS_NEXT_GROUP, CompareGroups.nextGroup(queue, shown) != null)
+            .putExtra(EXTRA_TAB, tab) // porovnavac-A: titulok „Séria 3 / 17“ alebo „Duplikáty 3 / 17“
         compareLauncher.launch(intent)
     }
 

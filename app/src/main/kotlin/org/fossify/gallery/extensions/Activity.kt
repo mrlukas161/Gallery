@@ -376,6 +376,8 @@ fun BaseSimpleActivity.movePathsInRecycleBin(paths: ArrayList<String>, callback:
                     }
                 } catch (e: Exception) {
                     showErrorToast(e)
+                    // porovnavac-A: volajúci sa o zlyhaní dozvie (inak čakal donekonečna a nič nehlásil)
+                    callback?.invoke(false)
                     return@ensureBackgroundThread
                 } finally {
                     inputStream?.close()
@@ -396,6 +398,7 @@ fun BaseSimpleActivity.movePathsInRecycleBin(paths: ArrayList<String>, callback:
                     }
                 } catch (e: Exception) {
                     showErrorToast(e)
+                    callback?.invoke(false)
                     return@ensureBackgroundThread
                 }
             }
