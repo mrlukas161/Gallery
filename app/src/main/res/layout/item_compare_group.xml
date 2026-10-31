@@ -1,0 +1,97 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Dlaždica skupiny v zozname „Podobné a duplikáty“: titulka = fotka, ktorá by ostala; typ, počet, dátum
+     a uvoľniteľné miesto na tmavom prekrytí (biely text — nezávisle od témy); fajka výberového režimu -->
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:padding="2dp">
+
+    <org.fossify.commons.views.MySquareImageView
+        android:id="@+id/compare_group_image"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:contentDescription="@null"
+        android:scaleType="centerCrop" />
+
+    <TextView
+        android:id="@+id/compare_group_kind"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_alignParentStart="true"
+        android:layout_alignParentTop="true"
+        android:layout_margin="4dp"
+        android:background="#99000000"
+        android:maxLines="1"
+        android:paddingStart="4dp"
+        android:paddingEnd="4dp"
+        android:textColor="#FFFFFFFF"
+        android:textSize="11sp"
+        tools:text="Presné kópie" />
+
+    <LinearLayout
+        android:id="@+id/compare_group_info"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_alignBottom="@id/compare_group_image"
+        android:background="#99000000"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingStart="4dp"
+        android:paddingTop="2dp"
+        android:paddingEnd="4dp"
+        android:paddingBottom="2dp">
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="vertical">
+
+            <TextView
+                android:id="@+id/compare_group_reclaim"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:maxLines="1"
+                android:textColor="#FFFFFFFF"
+                android:textSize="11sp"
+                android:textStyle="bold"
+                tools:text="uvoľní 23 MB" />
+
+            <TextView
+                android:id="@+id/compare_group_date"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:maxLines="1"
+                android:textColor="#DDFFFFFF"
+                android:textSize="11sp"
+                tools:text="12. 3. 2024" />
+
+        </LinearLayout>
+
+        <TextView
+            android:id="@+id/compare_group_count"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="4dp"
+            android:textColor="#FFFFFFFF"
+            android:textSize="16sp"
+            android:textStyle="bold"
+            tools:text="5" />
+
+    </LinearLayout>
+
+    <ImageView
+        android:id="@+id/compare_group_check"
+        android:layout_width="@dimen/selection_check_size"
+        android:layout_height="@dimen/selection_check_size"
+        android:layout_alignParentTop="true"
+        android:layout_alignParentEnd="true"
+        android:layout_margin="@dimen/medium_margin"
+        android:background="@drawable/circle_background"
+        android:contentDescription="@null"
+        android:padding="@dimen/tiny_margin"
+        android:src="@drawable/ic_check_vector"
+        android:visibility="gone" />
+
+</RelativeLayout>

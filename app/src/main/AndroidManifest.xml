@@ -720,7 +720,7 @@
 
         <activity
             android:name=".activities.CompareListActivity"
-            android:configChanges="orientation"
+            android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout"
             android:exported="false"
             android:parentActivityName=".activities.MainActivity" />
 

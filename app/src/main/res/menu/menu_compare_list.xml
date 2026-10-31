@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Lišta zoznamu „Podobné a duplikáty“ -->
+<menu xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+    <item
+        android:id="@+id/compare_sort"
+        android:icon="@drawable/ic_sort_vector"
+        android:title="@string/pb_sort"
+        app:showAsAction="ifRoom" />
+    <item
+        android:id="@+id/compare_show_hidden"
+        android:checkable="true"
+        android:title="@string/pb_show_hidden"
+        app:showAsAction="never" />
+    <item
+        android:id="@+id/compare_unhide_all"
+        android:title="@string/pb_unhide_all"
+        android:visible="false"
+        app:showAsAction="never" />
+</menu>

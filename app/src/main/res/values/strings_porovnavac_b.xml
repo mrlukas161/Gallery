@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Zoznam skupín „Podobné a duplikáty“ (CompareListActivity) a karta „Na upratanie“ na Domove -->
+<resources>
+    <!-- záložky; počet skupín sa pripojí cez pb_tab_count -->
+    <string name="pb_tab_bursts">Série</string>
+    <string name="pb_tab_exact">Presné kópie</string>
+    <string name="pb_tab_similar">Podobné</string>
+    <string name="pb_tab_count">%1$s (%2$d)</string>
+
+    <!-- typ skupiny na dlaždici -->
+    <string name="pb_kind_burst">Séria</string>
+    <string name="pb_kind_exact">Presné kópie</string>
+    <string name="pb_kind_similar">Podobné</string>
+    <string name="pb_kind_hidden">%1$s · skrytá</string>
+    <string name="pb_tile_reclaim">uvoľní %1$s</string>
+
+    <!-- prázdne záložky -->
+    <string name="pb_none_bursts">Žiadne série. Série sú zábery z toho istého priečinka nasnímané tesne po sebe (do 3 s) alebo série z fotoaparátu.</string>
+    <string name="pb_none_exact">Žiadne presné kópie. Hľadajú sa až po spracovaní knižnice — nech najprv dobehne spracovanie.</string>
+    <string name="pb_none_similar">Žiadne podobné fotky. Hľadajú sa až po spracovaní knižnice — nech najprv dobehne spracovanie.</string>
+    <string name="pb_load_failed">Skupiny sa nepodarilo načítať</string>
+
+    <!-- menu -->
+    <string name="pb_sort">Zoradiť</string>
+    <string name="pb_sort_newest">Najnovšie</string>
+    <string name="pb_sort_space">Najviac miesta</string>
+    <string name="pb_sort_largest">Najväčšie skupiny</string>
+    <string name="pb_show_hidden">Ukázať skryté skupiny</string>
+    <string name="pb_unhide_all">Vrátiť všetky skryté skupiny</string>
+    <string name="pb_unhide_all_confirm">Vrátiť do zoznamu všetky skryté skupiny? Znova sa ukážu v Sériách aj v Duplikátoch.</string>
+
+    <!-- výberový režim (podržanie dlaždice) -->
+    <string name="pb_action_open">Otvoriť</string>
+    <string name="pb_action_keep_all">Ponechať všetky</string>
+    <string name="pb_action_not_duplicates">Nie sú to duplikáty</string>
+    <string name="pb_action_unhide">Vrátiť do zoznamu</string>
+    <plurals name="pb_hidden_done">
+        <item quantity="one">%d skupina je skrytá — vrátiš ju v menu „Ukázať skryté skupiny“</item>
+        <item quantity="few">%d skupiny sú skryté — vrátiš ich v menu „Ukázať skryté skupiny“</item>
+        <item quantity="many">%d skupín je skrytých — vrátiš ich v menu „Ukázať skryté skupiny“</item>
+        <item quantity="other">%d skupín je skrytých — vrátiš ich v menu „Ukázať skryté skupiny“</item>
+    </plurals>
+    <string name="pb_unhidden_done">Vrátené do zoznamu</string>
+
+    <!-- po návrate z porovnávača -->
+    <string name="pb_next_group">Ďalšia skupina ›</string>
+
+    <!-- Domov — karta „Na upratanie“: rovnaké čísla ako záložky zoznamu (skupiny), miesto len z existujúcich fotiek -->
+    <string name="pb_home_cleanup_summary">Série: %1$d · duplikáty: %2$d · uvoľní až %3$s</string>
+</resources>
