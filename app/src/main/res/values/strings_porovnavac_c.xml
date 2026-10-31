@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Fotky označené na zmazanie z webu „Galéria+ Sync“ v PC — potvrdenie v mobile -->
+    <plurals name="pcc_marked_count">
+        <item quantity="one">%d súbor</item>
+        <item quantity="few">%d súbory</item>
+        <item quantity="many">%d súborov</item>
+        <item quantity="other">%d súborov</item>
+    </plurals>
+    <string name="pcc_marked_message">V PC si označil na zmazanie %1$s (%2$s). Zatiaľ sa nič nezmazalo.</string>
+    <string name="pcc_marked_to_bin">Po potvrdení sa presunú do Koša Galérie+, odkiaľ ich vieš obnoviť.</string>
+    <string name="pcc_marked_permanent">Kôš je vypnutý – súbory sa zmažú NATRVALO a nepôjde ich obnoviť.</string>
+    <string name="pcc_marked_move">Presunúť do Koša</string>
+    <string name="pcc_marked_delete_permanent">Zmazať natrvalo</string>
+    <string name="pcc_marked_moved">Presunuté do Koša: %1$d</string>
+</resources>

@@ -185,7 +185,6 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
         private const val PICK_MEDIA = 2
         private const val PICK_WALLPAPER = 3
         private const val LAST_MEDIA_CHECK_PERIOD = 3000L
-        private const val REQ_PC_DELETE = 7021
 
         // koľko priečinkov ukázať na Domove (zvyšok je na stránke Priečinky)
         private const val HOME_FOLDERS_COUNT = 6
@@ -201,13 +200,7 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
 
         // interval obnovy riadku stavu na Domove počas behu indexovania
         private const val HOME_STATUS_TICK = 2_000L
-
-        // aby dialóg „označené z PC" neotravoval pri každom onResume, pýtame sa len keď sa počet zmení
-        @Volatile
-        private var lastPcMarkedPrompt = -1
     }
-
-    private var pendingPcDelete: List<String> = emptyList()
 
     private var mIsPickImageIntent = false
     private var mIsPickVideoIntent = false
@@ -1395,101 +1388,21 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
     }
 
     // ---------- PC sync: fotky označené z webovej galérie na zmazanie ----------
+    // Dialóg s počtom, veľkosťou a náhľadmi; mazanie ide do Koša Galérie+ (pri vypnutom Koši natrvalo)
+    // rovnakou cestou ako mazanie v appke — pozri sync/PcMarkedPrompt.
     private fun checkPcMarkedDeletions() {
         // pri výbere fotky pre inú appku sa nesmie nič vynoriť nad výberom
         if (mIsThirdPartyIntent) {
             return
         }
 
-        ensureBackgroundThread {
-            try {
-                val prefs = org.fossify.gallery.sync.SyncStore.prefs(this)
-                val all = org.fossify.gallery.sync.SyncStore.markedPaths(prefs)
-                // cesty, ktoré už neexistujú, tíško uprac
-                val gone = all.filter { !java.io.File(it).exists() }
-                if (gone.isNotEmpty()) org.fossify.gallery.sync.SyncStore.removeMarked(prefs, gone)
-                val marked = all - gone.toSet()
-                if (marked.isEmpty() || marked.size == lastPcMarkedPrompt) return@ensureBackgroundThread
-                runOnUiThread {
-                    if (isDestroyed || isFinishing) return@runOnUiThread
-                    lastPcMarkedPrompt = marked.size
-                    showThemedMessageDialog(R.string.pc_marked_title, getString(R.string.pc_marked_message, marked.size)) {
-                        setPositiveButton(R.string.pc_marked_delete) { _, _ -> deletePcMarked(marked.toList()) }
-                        setNegativeButton(R.string.pc_marked_later, null)
-                        setNeutralButton(R.string.pc_marked_clear) { _, _ ->
-                            org.fossify.gallery.sync.SyncStore.clearMarked(prefs)
-                            lastPcMarkedPrompt = -1
-                        }
-                    }
-                }
-            } catch (e: Throwable) {
-                // kontrola označení z PC je len pomôcka — jej zlyhanie nesmie zhodiť appku
-                android.util.Log.e("GaleriaPlus", "zlyhala kontrola fotiek označených z PC", e)
-            }
+        org.fossify.gallery.sync.PcMarkedPrompt.check(this) {
+            mLoadedInitialPhotos = false
+            getDirectories()
         }
-    }
-
-    private fun deletePcMarked(paths: List<String>) {
-        ensureBackgroundThread {
-            val uris = paths.mapNotNull { pcContentUriForPath(it) }
-            runOnUiThread {
-                if (isDestroyed || isFinishing || uris.isEmpty()) return@runOnUiThread
-                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
-                    try {
-                        val pi = MediaStore.createDeleteRequest(contentResolver, uris)
-                        pendingPcDelete = paths
-                        startIntentSenderForResult(pi.intentSender, REQ_PC_DELETE, null, 0, 0, 0)
-                    } catch (e: Throwable) {
-                        toast(org.fossify.commons.R.string.unknown_error_occurred)
-                    }
-                } else {
-                    var deleted = 0
-                    uris.forEach {
-                        try {
-                            if (contentResolver.delete(it, null, null) > 0) deleted++
-                        } catch (ignored: Throwable) {
-                        }
-                    }
-                    if (deleted > 0) {
-                        org.fossify.gallery.sync.SyncStore.removeMarked(org.fossify.gallery.sync.SyncStore.prefs(this), paths)
-                        toast(getString(R.string.pc_marked_deleted, deleted))
-                        lastPcMarkedPrompt = -1
-                        mLoadedInitialPhotos = false
-                        getDirectories()
-                    }
-                }
-            }
-        }
-    }
-
-    private fun pcContentUriForPath(path: String): Uri? {
-        for (base in listOf(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, MediaStore.Video.Media.EXTERNAL_CONTENT_URI)) {
-            try {
-                contentResolver.query(base, arrayOf(MediaStore.MediaColumns._ID), "${MediaStore.MediaColumns.DATA} = ?", arrayOf(path), null)?.use { c ->
-                    if (c.moveToFirst()) {
-                        return android.content.ContentUris.withAppendedId(base, c.getLong(0))
-                    }
-                }
-            } catch (ignored: Throwable) {
-            }
-        }
-        return null
     }
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, resultData: Intent?) {
-        if (requestCode == REQ_PC_DELETE) {
-            if (resultCode == RESULT_OK && pendingPcDelete.isNotEmpty()) {
-                val prefs = org.fossify.gallery.sync.SyncStore.prefs(this)
-                org.fossify.gallery.sync.SyncStore.removeMarked(prefs, pendingPcDelete)
-                toast(getString(R.string.pc_marked_deleted, pendingPcDelete.size))
-                lastPcMarkedPrompt = -1
-                mLoadedInitialPhotos = false
-                getDirectories()
-            }
-            pendingPcDelete = emptyList()
-            super.onActivityResult(requestCode, resultCode, resultData)
-            return
-        }
         if (resultCode == RESULT_OK) {
             if (requestCode == PICK_MEDIA && resultData != null) {
                 val resultIntent = Intent()

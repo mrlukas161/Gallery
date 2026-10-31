@@ -3,13 +3,11 @@ package org.fossify.gallery.sync
 import android.content.ContentResolver
 import android.content.Context
 import android.content.SharedPreferences
-import android.graphics.Bitmap
-import android.graphics.BitmapFactory
-import android.graphics.Matrix
-import android.media.MediaMetadataRetriever
 import android.net.Uri
+import android.os.Build
 import android.os.StatFs
 import android.provider.MediaStore
+import android.util.Base64
 import androidx.exifinterface.media.ExifInterface
 import org.json.JSONArray
 import org.json.JSONObject
@@ -18,11 +16,10 @@ import fi.iki.elonen.NanoHTTPD.IHTTPSession
 import fi.iki.elonen.NanoHTTPD.Method
 import fi.iki.elonen.NanoHTTPD.Response
 import fi.iki.elonen.NanoHTTPD.Response.Status
-import java.io.ByteArrayInputStream
-import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.InputStream
 import java.net.URLDecoder
+import java.security.SecureRandom
 import org.fossify.commons.extensions.getSharedPrefs
 import org.fossify.commons.helpers.ensureBackgroundThread
 import org.fossify.gallery.extensions.config
@@ -31,7 +28,10 @@ import org.fossify.gallery.helpers.EXCLUDED_FOLDERS
 import org.fossify.gallery.helpers.INCLUDED_FOLDERS
 
 // Telefónny LAN media server (NanoHTTPD). Sprístupní LEN MediaStore Images+Videos, adresované cez
-// nepriehľadné MediaStore _ID (žiadne cesty od klienta -> ../ traversal je nemožný). Chránené PIN tokenom.
+// nepriehľadné MediaStore _ID (žiadne cesty od klienta -> ../ traversal je nemožný). Chránené PIN-om:
+// PC program posiela PIN v hlavičke X-Auth-Token (alebo ?token=), prehliadač ho cez /api/login vymení
+// za session cookie (HttpOnly, SameSite=Strict). Zmeny len cez POST z rovnakého pôvodu (Origin).
+// Popis API pre PC: docs/api/server-pre-pc.md.
 // onTooManyBadPins: volá sa (raz, z vlákna požiadavky), keď sa server zamkol po hádaní PIN-u.
 class MediaServer(
     private val appContext: Context,
@@ -43,28 +43,37 @@ class MediaServer(
     companion object {
         const val DEFAULT_PORT = 8089
         const val SERVER_NAME = "Galéria+"
-        const val SERVER_VERSION = "2"
+        const val SERVER_VERSION = "3"
+
+        // čo server vie (PC program a web sa podľa toho rozhodnú, ktoré API použiť)
+        val FEATURES = listOf(
+            "session", "sinceGen", "etag", "range", "groupsV2", "groupState", "meta", "markBatch",
+            "syncedBatch", "deleteDryRun", "bin", "restore", "thumbMax", "dlMark",
+        )
         private const val SAVE_SUBDIR = "Galéria"
 
         // po toľkých RÔZNYCH zlých tokenoch sa server zamkne (šanca uhádnuť 6-miestny PIN ~ 20 : 900 000)
         private const val MAX_BAD_PINS = 20
+        private const val BAD_PIN_KEEP = 64
 
         // strop na jeden nahrávaný súbor a rezerva voľného miesta — upload nesmie zaplniť telefón
         private const val MAX_UPLOAD_BYTES = 4L * 1024 * 1024 * 1024
         private const val FREE_SPACE_RESERVE = 200L * 1024 * 1024
         private const val FREE_SPACE_CHECK_EVERY = 64L * 1024 * 1024
+        private const val COPY_BUFFER = 64 * 1024
 
-        // strop na počet fotiek v jednej požiadavke na zmazanie (PC posiela dávky po desiatkach)
-        private const val MAX_DELETE_IDS = 1000
+        // strop na telo JSON požiadaviek — parseBody inak načíta celé telo do pamäte
+        private const val MAX_BODY_BYTES = 64L * 1024
 
-        // strop na telo /api/delete (1000 id sa zmestí s rezervou) — parseBody inak načíta celé telo do pamäte
-        private const val MAX_DELETE_BODY_BYTES = 64L * 1024
+        private const val MAX_META_IDS = 8
+        private const val NONCE_BYTES = 16
+        private const val EPOCH_BYTES = 6
+        private const val ERROR_MAX = 200
+        private const val MS = 1000L
     }
 
-    // jedno mazanie naraz: NanoHTTPD obsluhuje každé spojenie vo vlastnom vlákne a dve súbežné
-    // požiadavky s rovnakým id by kopírovali do toho istého súboru v Koši
-    private val deleteLock = Any()
-
+    // w/h = rozmery uložených pixelov (pred otočením), orient = EXIF/MediaStore otočenie v stupňoch,
+    // taken = dátum snímania alebo náhradne čas úpravy súboru; takenReal = či je dátum skutočný
     data class Item(
         val id: Long,
         val name: String,
@@ -76,17 +85,23 @@ class MediaServer(
         val mime: String,
         val uri: Uri,
         val path: String,
+        val takenReal: Boolean = true,
+        val w: Int = 0,
+        val h: Int = 0,
+        val orient: Int = 0,
+        val dur: Long = 0,
     )
 
-    @Volatile
-    private var index: Map<Long, Item> = emptyMap()
-
-    // generácia zoznamu: PC sa pýta /api/ping každé 2 s a pri zmene si vypýta nové položky
-    @Volatile
-    private var generation = 0L
+    // index a generácia sa menia naraz (inak by /api/list?sinceGen videl novú generáciu so starým indexom)
+    private class Snapshot(val index: Map<Long, Item>, val gen: Long, val newest: Long)
 
     @Volatile
-    private var newestMtime = 0L
+    private var snap = Snapshot(emptyMap(), 0L, 0L)
+    private val index: Map<Long, Item> get() = snap.index
+    private val genLog = GenLog()
+
+    // náhodné id behu servera: generácie začínajú po reštarte od nuly, klient podľa epoch spozná nový beh
+    private val epoch = randomToken(EPOCH_BYTES)
 
     // Ochrana PIN-u pred hádaním na LAN: rátajú sa RÔZNE zlé tokeny (otvorená stará karta v PC
     // prehliadači posiela stále ten istý starý token a server by inak zbytočne zamkla); požiadavky
@@ -97,7 +112,17 @@ class MediaServer(
     @Volatile
     private var locked = false
 
+    private val sessions = Sessions()
+    private val media = ServerMedia(appContext)
+
+    private val marks = ServerMarks(appContext) { snap.index }
+    private val cleanup = ServerCleanup(appContext, { snap.let { it.index to it.gen } }) { rebuildIndex() }
+
+    @Volatile
+    private var html: String? = null
+
     private val resolver: ContentResolver get() = appContext.contentResolver
+    private val syncPrefs get() = appContext.getSharedPreferences(SyncStore.PREFS, Context.MODE_PRIVATE)
 
     fun itemCount(): Int = index.size
 
@@ -112,6 +137,7 @@ class MediaServer(
         if (key == null || IndexDiff.isScopeKey(key)) {
             ensureBackgroundThread {
                 try {
+                    cleanup.invalidateBin()
                     rebuildIndex()
                 } catch (ignored: Throwable) {
                 }
@@ -133,49 +159,89 @@ class MediaServer(
 
     override fun stop() {
         appContext.getSharedPrefs().unregisterOnSharedPreferenceChangeListener(prefsListener)
+        media.clearCache()
         super.stop()
     }
 
     override fun serve(session: IHTTPSession): Response {
-        return try {
-            if (!authorized(session)) {
-                return if (locked) {
-                    json(Status.FORBIDDEN, """{"error":"locked"}""")
-                } else {
-                    json(Status.FORBIDDEN, """{"error":"forbidden"}""")
+        val resp = try {
+            val uri = session.uri
+            when {
+                uri == "/" || uri == "/index.html" -> handleRoot()
+                uri == "/favicon.ico" -> NanoHTTPD.newFixedLengthResponse(Status.NO_CONTENT, "text/plain", "")
+                uri == "/api/login" -> handleLogin(session)
+                !authorized(session) -> Http.error(Status.FORBIDDEN, if (locked) "locked" else "forbidden")
+                else -> {
+                    checkMutation(session)
+                    when (uri) {
+                        "/api/ping" -> handlePing()
+                        "/api/logout" -> handleLogout(session)
+                        "/api/list" -> handleList(session)
+                        "/api/file" -> handleFile(session)
+                        "/api/thumb" -> handleThumb(session)
+                        "/api/meta" -> handleMeta(session)
+                        "/api/upload" -> handleUpload(session)
+                        "/api/delete" -> cleanup.delete(session)
+                        "/api/groups" -> cleanup.groups(session)
+                        "/api/groupstate" -> marks.groupState(session)
+                        "/api/state" -> marks.state()
+                        "/api/mark" -> marks.mark(session)
+                        "/api/synced" -> marks.synced(session)
+                        "/api/clearmarks" -> marks.clearMarks()
+                        "/api/bin" -> cleanup.bin()
+                        "/api/restore" -> cleanup.restore(session)
+                        else -> Http.error(Status.NOT_FOUND, "not_found")
+                    }
                 }
             }
-            when (session.uri) {
-                "/api/ping" -> handlePing()
-                "/api/list" -> handleList(session)
-                "/api/file" -> handleFile(session)
-                "/api/thumb" -> handleThumb(session)
-                "/api/upload" -> handleUpload(session)
-                "/api/delete" -> handleDelete(session)
-                "/api/groups" -> handleGroups()
-                "/api/state" -> handleState()
-                "/api/mark" -> handleMark(session)
-                "/api/synced" -> handleSynced(session)
-                "/api/clearmarks" -> handleClearMarks()
-                "/" -> handleRoot(session)
-                else -> json(Status.NOT_FOUND, """{"error":"not_found"}""")
-            }
+        } catch (e: HttpError) {
+            Http.error(e.status, e.code).also { if (e.close) it.closeConnection(true) }
         } catch (e: Exception) {
-            json(Status.INTERNAL_ERROR, """{"error":"${(e.message ?: "error").replace("\"", "'")}"}""")
+            Http.error(Status.INTERNAL_ERROR, (e.message ?: "error").take(ERROR_MAX))
         }
+        return Http.secure(resp)
     }
+
+    // zmeny stavu: len POST (upload aj PUT) a z rovnakého pôvodu — cudzia stránka v prehliadači nič nezmení
+    private fun checkMutation(session: IHTTPSession) {
+        val uri = session.uri
+        val write = when (uri) {
+            "/api/mark", "/api/synced", "/api/clearmarks", "/api/delete", "/api/restore", "/api/upload",
+            "/api/logout",
+            -> true
+            "/api/groupstate" -> session.method != Method.GET && session.method != Method.HEAD
+            else -> false
+        }
+        if (!write) return
+        val methodOk = session.method == Method.POST || (uri == "/api/upload" && session.method == Method.PUT)
+        val err = when {
+            !methodOk -> HttpError(Status.METHOD_NOT_ALLOWED, "use POST")
+            !originOk(session) -> HttpError(Status.FORBIDDEN, "bad_origin")
+            else -> null
+        }
+        if (err != null) throw err
+    }
+
+    private fun originOk(session: IHTTPSession): Boolean =
+        RequestGuard.sameOrigin(session.headers["origin"], session.headers["host"], session.headers["sec-fetch-site"])
 
     private fun authorized(session: IHTTPSession): Boolean {
         if (locked) return false
+        if (sessions.valid(RequestGuard.cookie(session.headers["cookie"]), System.currentTimeMillis())) return true
         val headerTok = session.headers["x-auth-token"]
         val queryTok = session.parameters["token"]?.firstOrNull()
         val tok = headerTok ?: queryTok ?: return false
+        return checkPin(tok)
+    }
+
+    // správny PIN = true; zlý sa zaráta do ochrany pred hádaním
+    private fun checkPin(tok: String): Boolean {
         if (constantTimeEquals(tok, pin)) return true
         val lockNow = synchronized(badPins) {
             if (locked) {
                 false
             } else {
-                badPins.add(tok.take(64))
+                badPins.add(tok.take(BAD_PIN_KEEP))
                 if (badPins.size >= MAX_BAD_PINS) {
                     locked = true
                     true
@@ -193,64 +259,135 @@ class MediaServer(
         return false
     }
 
+    // prehliadač: PIN -> session cookie, PIN potom nemusí byť v adrese (história, kopírovanie odkazu)
+    private fun handleLogin(session: IHTTPSession): Response {
+        val err = when {
+            session.method != Method.POST -> HttpError(Status.METHOD_NOT_ALLOWED, "use POST")
+            !originOk(session) -> HttpError(Status.FORBIDDEN, "bad_origin")
+            locked -> HttpError(Status.FORBIDDEN, "locked")
+            else -> null
+        }
+        if (err != null) throw err
+        val given = Http.readJson(session, MAX_BODY_BYTES).optString("pin", "").trim()
+        if (given.isEmpty() || !checkPin(given)) {
+            return Http.error(Status.FORBIDDEN, if (locked) "locked" else "bad_pin")
+        }
+        val token = sessions.create(System.currentTimeMillis())
+        val r = Http.json(Status.OK, JSONObject().put("ok", true))
+        r.addHeader("Set-Cookie", RequestGuard.sessionCookie(token))
+        return r
+    }
+
+    private fun handleLogout(session: IHTTPSession): Response {
+        sessions.remove(RequestGuard.cookie(session.headers["cookie"]))
+        val r = Http.json(Status.OK, JSONObject().put("ok", true))
+        r.addHeader("Set-Cookie", RequestGuard.clearCookie())
+        return r
+    }
+
+    private fun param(session: IHTTPSession, name: String): String? = Http.param(session, name)
+
+    private fun itemOf(session: IHTTPSession): Item {
+        val id = param(session, "id")?.toLongOrNull() ?: throw HttpError(Status.BAD_REQUEST, "bad id")
+        // KĽÚČOVÉ: servovať možno len id prítomné v MediaStore indexe (rozsah bez zamknutých priečinkov)
+        return index[id] ?: throw HttpError(Status.NOT_FOUND, "unknown id")
+    }
+
     private fun handlePing(): Response {
+        val s = snap
         val o = JSONObject()
             .put("name", SERVER_NAME)
             .put("version", SERVER_VERSION)
-            .put("count", index.size)
-            .put("gen", generation)
-            .put("newest", newestMtime)
+            .put("epoch", epoch)
+            .put("count", s.index.size)
+            .put("gen", s.gen)
+            .put("stateGen", SyncStore.stateGen(syncPrefs))
+            .put("newest", s.newest)
             .put("allFiles", PcDeleter.canDelete())
             .put("recycleBin", appContext.config.useRecycleBin)
-        return json(Status.OK, o.toString())
+            .put("features", JSONArray(FEATURES))
+        return Http.json(Status.OK, o)
     }
 
+    // bez parametrov: celé pole položiek (pôvodný formát); ?since=mtime: len novšie (pôvodné);
+    // ?sinceGen=N: {gen, epoch, full, upserts, removed} — len zmeny od generácie N
     private fun handleList(session: IHTTPSession): Response {
-        val since = session.parameters["since"]?.firstOrNull()?.toLongOrNull()
-        val arr = JSONArray()
-        for (it in IndexDiff.since(index.values, since) { i -> i.mtime }) {
-            arr.put(
-                JSONObject()
-                    .put("id", it.id)
-                    .put("relpath", it.relpath)
-                    .put("name", it.name)
-                    .put("size", it.size)
-                    .put("mtime", it.mtime)
-                    .put("taken", it.taken)
-                    .put("bucket", it.bucket)
-                    .put("mime", it.mime)
-            )
+        val s = snap
+        val sinceGen = param(session, "sinceGen")?.toLongOrNull()
+        val since = param(session, "since")?.toLongOrNull()
+        val stateGen = SyncStore.stateGen(syncPrefs)
+        val etag = ETags.of("l", epoch, s.gen, stateGen, sinceGen ?: "a", since ?: "a")
+        if (ETags.matches(session.headers["if-none-match"], etag)) return Http.notModified(etag)
+        val marked = SyncStore.markedPaths(syncPrefs)
+        val synced = SyncStore.syncedMap(syncPrefs)
+        val toJson = { list: Collection<Item> ->
+            JSONArray().also { a -> list.forEach { a.put(itemJson(it, marked, synced)) } }
         }
-        return json(Status.OK, arr.toString())
+        val body = if (sinceGen != null) {
+            val delta = genLog.since(sinceGen, s.gen)
+            val o = JSONObject().put("gen", s.gen).put("epoch", epoch).put("stateGen", stateGen)
+            if (delta == null) {
+                o.put("full", true).put("upserts", toJson(s.index.values)).put("removed", JSONArray())
+            } else {
+                o.put("full", false).put("upserts", toJson(delta.upserts.mapNotNull { s.index[it] }))
+                    .put("removed", JSONArray(delta.removed.filter { it !in s.index }))
+            }
+            o.toString()
+        } else {
+            toJson(IndexDiff.since(s.index.values, since) { i -> i.mtime }).toString()
+        }
+        val r = Http.json(Status.OK, body)
+        r.addHeader("ETag", etag)
+        return r
+    }
+
+    private fun itemJson(it: Item, marked: Set<String>, synced: Map<String, Long>): JSONObject {
+        val o = JSONObject()
+            .put("id", it.id)
+            .put("relpath", it.relpath)
+            .put("name", it.name)
+            .put("size", it.size)
+            .put("mtime", it.mtime)
+            .put("taken", it.taken)
+            .put("takenReal", it.takenReal)
+            .put("bucket", it.bucket)
+            .put("mime", it.mime)
+            .put("w", it.w)
+            .put("h", it.h)
+            .put("orient", it.orient)
+            .put("marked", it.path in marked)
+            .put("synced", synced[it.path] ?: 0L)
+        if (it.dur > 0) o.put("dur", it.dur)
+        return o
     }
 
     private fun handleFile(session: IHTTPSession): Response {
-        val idStr = session.parameters["id"]?.firstOrNull()
-            ?: return json(Status.BAD_REQUEST, """{"error":"missing id"}""")
-        val id = idStr.toLongOrNull()
-            ?: return json(Status.BAD_REQUEST, """{"error":"bad id"}""")
-        // KĽÚČOVÉ: servovať možno len id prítomné v MediaStore indexe.
-        val item = index[id]
-            ?: return json(Status.NOT_FOUND, """{"error":"unknown id"}""")
-        // voliteľne zmenšená/komprimovaná verzia (q=kvalita %, max=dlhá hrana px) — len obrázky
-        val q = session.parameters["q"]?.firstOrNull()?.toIntOrNull()
-        val max = session.parameters["max"]?.firstOrNull()?.toIntOrNull()
-        if (q != null && item.mime.startsWith("image/")) {
-            val bmp = decodeSampled(item.uri, (max ?: 2048).coerceIn(256, 8192))
-            if (bmp != null) return jpegResponse(bmp, q)
+        val item = itemOf(session)
+        return media.file(session, item) {
+            // „✓ v PC" až po odoslaní celého originálu (prerušené sťahovanie sa nezapíše)
+            if (item.path.isNotEmpty()) SyncStore.addSynced(syncPrefs, listOf(item.path))
         }
-        val stream: InputStream = resolver.openInputStream(item.uri)
-            ?: return json(Status.NOT_FOUND, """{"error":"open failed"}""")
-        val resp = NanoHTTPD.newFixedLengthResponse(Status.OK, item.mime, stream, item.size)
-        resp.addHeader("Content-Disposition", "inline; filename=\"${item.name}\"")
-        resp.addHeader("Accept-Ranges", "none")
-        return resp
+    }
+
+    private fun handleThumb(session: IHTTPSession): Response {
+        val binKey = param(session, "bin")
+        if (binKey != null) {
+            val bi = cleanup.binItems()[binKey] ?: return Http.error(Status.NOT_FOUND, "unknown key")
+            return media.binThumb(session, bi.binFile, bi.key)
+        }
+        return media.thumb(session, itemOf(session))
+    }
+
+    private fun handleMeta(session: IHTTPSession): Response {
+        val o = JSONObject()
+        for (id in RequestGuard.parseIdList(param(session, "ids"), MAX_META_IDS)) {
+            val item = index[id] ?: continue
+            o.put(id.toString(), MediaMeta.of(resolver, item))
+        }
+        return Http.json(Status.OK, o)
     }
 
     private fun handleUpload(session: IHTTPSession): Response {
-        if (session.method != Method.POST && session.method != Method.PUT) {
-            return json(Status.METHOD_NOT_ALLOWED, """{"error":"use POST"}""")
-        }
         val ctype = session.headers["content-type"].orEmpty().lowercase()
         return if (ctype.startsWith("multipart/form-data")) {
             uploadMultipart(session)
@@ -262,29 +399,29 @@ class MediaServer(
     // Hlavná cesta (PC nástroj): multipart/form-data -> parseBody spooluje časť do dočasného súboru.
     private fun uploadMultipart(session: IHTTPSession): Response {
         val declared = session.headers["content-length"]?.toLongOrNull()
-            ?: return json(Status.LENGTH_REQUIRED, """{"error":"missing Content-Length"}""")
+            ?: return Http.error(Status.LENGTH_REQUIRED, "missing Content-Length")
         // parseBody najprv celé telo zapíše do dočasného súboru, potom sa kopíruje do MediaStore
         rejectUpload(declared, copies = 2)?.let { return it }
         val files = HashMap<String, String>()
         session.parseBody(files)
         val firstPart = files.entries.firstOrNull()
-            ?: return json(Status.BAD_REQUEST, """{"error":"no file part"}""")
+            ?: return Http.error(Status.BAD_REQUEST, "no file part")
         val tmpPath = firstPart.value
         val name = session.parameters[firstPart.key]?.firstOrNull()
             ?: ("upload_" + System.currentTimeMillis())
         val mime = guessMime(name)
         val tmp = File(tmpPath)
-        val saved = saveToMediaStore(name, mime, tmp.length()) { out ->
+        val saved = saveMediaScoped(appContext, name, mime, SAVE_SUBDIR) { out ->
             tmp.inputStream().use { it.copyTo(out) }
-        } ?: return json(Status.INTERNAL_ERROR, """{"error":"save failed"}""")
+        } ?: return Http.error(Status.INTERNAL_ERROR, "save failed")
         rebuildIndex()
-        return json(Status.OK, JSONObject().put("saved", saved.first).put("uri", saved.second).toString())
+        return Http.json(Status.OK, JSONObject().put("saved", saved.first).put("uri", saved.second))
     }
 
     // Fallback: surové bajty v tele + X-Filename hlavička (názov je URL-kódovaný).
     private fun uploadRaw(session: IHTTPSession): Response {
         val rawName = session.headers["x-filename"]
-            ?: return json(Status.BAD_REQUEST, """{"error":"missing X-Filename"}""")
+            ?: return Http.error(Status.BAD_REQUEST, "missing X-Filename")
         val name = try {
             URLDecoder.decode(rawName, "UTF-8")
         } catch (e: Exception) {
@@ -294,251 +431,61 @@ class MediaServer(
         val lenHdr = session.headers["content-length"]?.toLongOrNull() ?: -1L
         rejectUpload(lenHdr, copies = 1)?.let { return it }
         val body = session.inputStream
-        val saved = saveToMediaStore(name, mime, lenHdr) { out ->
+        val saved = saveMediaScoped(appContext, name, mime, SAVE_SUBDIR) { out ->
             copyExactly(body, out, lenHdr)
-        } ?: return json(Status.INTERNAL_ERROR, """{"error":"save failed"}""")
+        } ?: return Http.error(Status.INTERNAL_ERROR, "save failed")
         rebuildIndex()
-        return json(Status.OK, JSONObject().put("saved", saved.first).put("uri", saved.second).toString())
+        return Http.json(Status.OK, JSONObject().put("saved", saved.first).put("uri", saved.second))
     }
 
-    // mazanie z PC porovnávača priamo v mobile (do Koša podľa nastavenia) — len po potvrdení na PC
-    private fun handleDelete(session: IHTTPSession): Response {
-        if (session.method != Method.POST) return json(Status.METHOD_NOT_ALLOWED, """{"error":"use POST"}""")
-        // veľkosť tela over PRED parseBody (ten číta celé telo bez limitu); telo ostáva neprečítané,
-        // preto spojenie zavrieť (Connection: close) — inak by zvyšok tela skazil ďalšiu požiadavku na keep-alive
-        when (IndexDiff.deleteBodyReject(session.headers["content-length"], MAX_DELETE_BODY_BYTES)) {
-            411 -> return json(Status.LENGTH_REQUIRED, """{"error":"missing Content-Length"}""").also { it.closeConnection(true) }
-            413 -> return json(Status.PAYLOAD_TOO_LARGE, """{"error":"body too large"}""").also { it.closeConnection(true) }
-        }
-        // telo prečítať vždy, aj pri 409: neprečítané by na keep-alive spojení skazilo ďalšiu požiadavku (400)
-        val files = HashMap<String, String>()
-        session.parseBody(files)
-        if (!PcDeleter.canDelete()) return json(Status.CONFLICT, """{"error":"no_all_files_access"}""")
-        val body = files["postData"].orEmpty()
-        // Throwable: hlboko vnorený JSON hodí StackOverflowError, ktorý by inak zhodil vlákno servera aj appku
-        val arr = try {
-            JSONObject(body).getJSONArray("ids")
+    // stránka sa servíruje aj bez prihlásenia (neobsahuje dáta; PIN formulár) — s jednorazovým CSP nonce
+    private fun handleRoot(): Response {
+        val page = html ?: try {
+            appContext.assets.open("gallery.html").use { String(it.readBytes(), Charsets.UTF_8) }.also { html = it }
         } catch (e: Throwable) {
-            return json(Status.BAD_REQUEST, """{"error":"bad body"}""")
+            return Http.error(Status.INTERNAL_ERROR, "gallery.html chýba")
         }
-        if (arr.length() > MAX_DELETE_IDS) return json(Status.BAD_REQUEST, """{"error":"too many ids"}""")
-        // jedno mazanie naraz (rovnaké id v dvoch súbežných požiadavkách)
-        synchronized(deleteLock) {
-            val failed = JSONObject()
-            val items = ArrayList<Item>()
-            // duplicitné id by sa mazalo dvakrát (druhýkrát by skončilo ako „missing“ vo failed)
-            for (id in IndexDiff.uniqueIds((0 until arr.length()).map { arr.optLong(it, -1L) })) {
-                val item = index[id]
-                if (item == null) failed.put(id.toString(), "unknown id") else items.add(item)
-            }
-            val r = PcDeleter.delete(appContext, items)
-            r.failed.forEach { (id, msg) -> failed.put(id.toString(), msg) }
-            val gonePaths = items.filter { it.id in r.deleted }.map { it.path }
-            if (gonePaths.isNotEmpty()) SyncStore.removeMarked(syncPrefs, gonePaths)
-            rebuildIndex()
-            return json(Status.OK, JSONObject().put("deleted", JSONArray(r.deleted)).put("failed", failed).put("recycleBin", r.toRecycleBin).toString())
-        }
-    }
-
-    // ---------- SYNC MANAŽÉR: skupiny, značky na zmazanie, evidencia stiahnutých ----------
-    // Perzistentné v prefs "galeria_pcsync": marked_delete = StringSet ciest; synced_json = {cesta: čas_ms}.
-    // Kľúč = cesta (stabilná aj po reštarte servera/telefónu); klientovi sa mapuje na aktuálne id.
-
-    private val syncPrefs get() = appContext.getSharedPreferences(SyncStore.PREFS, Context.MODE_PRIVATE)
-
-    // burst série (rovnaký priečinok, odstup ≤3 s) + duplikáty podľa pHash (ak je index)
-    private fun handleGroups(): Response {
-        val o = JSONObject()
-        // burst: len obrázky, zoradené podľa bucket+taken
-        val burst = JSONArray()
-        val images = index.values.filter { it.mime.startsWith("image/") }.sortedWith(compareBy({ it.bucket }, { it.taken }))
-        var cur = ArrayList<Long>()
-        var prevBucket = ""
-        var prevTaken = 0L
-        for (it in images) {
-            if (cur.isNotEmpty() && it.bucket == prevBucket && it.taken > 0 && prevTaken > 0 && it.taken - prevTaken <= 3000) {
-                cur.add(it.id)
-            } else {
-                if (cur.size >= 2) burst.put(JSONArray(cur))
-                cur = arrayListOf(it.id)
-            }
-            prevBucket = it.bucket
-            prevTaken = it.taken
-        }
-        if (cur.size >= 2) burst.put(JSONArray(cur))
-        o.put("burst", burst)
-        // duplikáty: pHash skupiny (cesty -> id cez reverzný index)
-        val similar = JSONArray()
-        try {
-            val byPath = index.values.associateBy { it.path }
-            val hashes = org.fossify.gallery.faces.PhashDatabase.getInstance(appContext).PhashDao().getAllHashes()
-            val groups = org.fossify.gallery.faces.PhashGrouper.groupBySimilarity(hashes)
-            for (g in groups) {
-                val ids = g.mapNotNull { byPath[it]?.id }
-                if (ids.size >= 2) similar.put(JSONArray(ids))
-            }
-        } catch (ignored: Throwable) {
-        }
-        o.put("similar", similar)
-        return json(Status.OK, o.toString())
-    }
-
-    // aktuálny stav značiek pre klienta: marked=[id...], synced={id: čas_ms}
-    private fun handleState(): Response {
-        val marked = SyncStore.markedPaths(syncPrefs)
-        val synced = SyncStore.syncedMap(syncPrefs)
-        val mArr = JSONArray()
-        val sObj = JSONObject()
-        for (it in index.values) {
-            if (it.path in marked) mArr.put(it.id)
-            synced[it.path]?.let { ts -> sObj.put(it.id.toString(), ts) }
-        }
-        return json(Status.OK, JSONObject().put("marked", mArr).put("synced", sObj).toString())
-    }
-
-    private fun handleMark(session: IHTTPSession): Response {
-        val id = session.parameters["id"]?.firstOrNull()?.toLongOrNull()
-            ?: return json(Status.BAD_REQUEST, """{"error":"bad id"}""")
-        val item = index[id] ?: return json(Status.NOT_FOUND, """{"error":"unknown id"}""")
-        if (item.path.isEmpty()) return json(Status.NOT_FOUND, """{"error":"no path"}""")
-        val del = session.parameters["del"]?.firstOrNull() != "0"
-        SyncStore.setMarked(syncPrefs, item.path, del)
-        return json(Status.OK, """{"ok":true,"marked":${SyncStore.markedPaths(syncPrefs).size}}""")
-    }
-
-    private fun handleSynced(session: IHTTPSession): Response {
-        val id = session.parameters["id"]?.firstOrNull()?.toLongOrNull()
-            ?: return json(Status.BAD_REQUEST, """{"error":"bad id"}""")
-        val item = index[id] ?: return json(Status.NOT_FOUND, """{"error":"unknown id"}""")
-        if (item.path.isEmpty()) return json(Status.NOT_FOUND, """{"error":"no path"}""")
-        SyncStore.addSynced(syncPrefs, item.path)
-        return json(Status.OK, """{"ok":true}""")
-    }
-
-    private fun handleClearMarks(): Response {
-        SyncStore.clearMarked(syncPrefs)
-        return json(Status.OK, """{"ok":true}""")
-    }
-
-    private fun handleRoot(session: IHTTPSession): Response {
-        return try {
-            val html = appContext.assets.open("gallery.html").use { it.readBytes() }
-            NanoHTTPD.newFixedLengthResponse(Status.OK, "text/html; charset=utf-8", ByteArrayInputStream(html), html.size.toLong())
-        } catch (e: Throwable) {
-            json(Status.INTERNAL_ERROR, """{"error":"gallery.html chýba"}""")
-        }
-    }
-
-    private fun handleThumb(session: IHTTPSession): Response {
-        val id = session.parameters["id"]?.firstOrNull()?.toLongOrNull()
-            ?: return json(Status.BAD_REQUEST, """{"error":"bad id"}""")
-        val item = index[id] ?: return json(Status.NOT_FOUND, """{"error":"unknown id"}""")
-        val s = session.parameters["s"]?.firstOrNull()?.toIntOrNull()?.coerceIn(64, 1024) ?: 300
-        val bmp = (if (item.mime.startsWith("video/")) videoFrame(item.uri, s) else decodeSampled(item.uri, s))
-            ?: return json(Status.NOT_FOUND, """{"error":"decode failed"}""")
-        return jpegResponse(bmp, 80)
-    }
-
-    // dekóduj obrázok z uri zmenšený (~maxPx dlhá hrana), pamäťovo šetrne cez inSampleSize
-    private fun decodeSampled(uri: Uri, maxPx: Int): Bitmap? {
-        return try {
-            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-            resolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, bounds) }
-            val w = bounds.outWidth
-            val h = bounds.outHeight
-            if (w <= 0 || h <= 0) return null
-            var sample = 1
-            while (w / sample > maxPx * 2 || h / sample > maxPx * 2) sample *= 2
-            val opts = BitmapFactory.Options().apply {
-                inSampleSize = sample
-                inPreferredConfig = Bitmap.Config.ARGB_8888
-            }
-            val bmp = resolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, opts) } ?: return null
-            // najprv zmenši (lacnejšie), potom otoč podľa EXIF — BitmapFactory orientáciu ignoruje
-            // a zvislé fotky by prišli do PC otočené na bok
-            applyExifOrientation(scaleToMax(bmp, maxPx), uri)
-        } catch (e: Throwable) {
-            null
-        }
-    }
-
-    // EXIF orientácia (1–8) z uri; pri akejkoľvek chybe čítania 1 = bez otočenia
-    private fun readExifOrientation(uri: Uri): Int = try {
-        resolver.openInputStream(uri)?.use {
-            ExifInterface(it).getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL)
-        } ?: ExifInterface.ORIENTATION_NORMAL
-    } catch (e: Throwable) {
-        ExifInterface.ORIENTATION_NORMAL
-    }
-
-    private fun applyExifOrientation(bmp: Bitmap, uri: Uri): Bitmap {
-        val t = ExifOrient.of(readExifOrientation(uri))
-        if (t.degrees == 0 && !t.mirror) return bmp
-        return try {
-            val m = Matrix()
-            m.setRotate(t.degrees.toFloat())
-            if (t.mirror) m.postScale(-1f, 1f)
-            val out = Bitmap.createBitmap(bmp, 0, 0, bmp.width, bmp.height, m, true)
-            if (out !== bmp) bmp.recycle()
-            out
-        } catch (e: Throwable) {
-            bmp // pri nedostatku pamäte radšej neotočený náhľad než žiadny
-        }
-    }
-
-    private fun videoFrame(uri: Uri, maxPx: Int): Bitmap? {
-        val mmr = MediaMetadataRetriever()
-        return try {
-            mmr.setDataSource(appContext, uri)
-            val frame = mmr.frameAtTime ?: return null
-            scaleToMax(frame, maxPx)
-        } catch (e: Throwable) {
-            null
-        } finally {
-            try {
-                mmr.release()
-            } catch (ignored: Throwable) {
-            }
-        }
-    }
-
-    private fun scaleToMax(bmp: Bitmap, maxPx: Int): Bitmap {
-        val longEdge = maxOf(bmp.width, bmp.height)
-        if (longEdge <= maxPx || longEdge <= 0) return bmp
-        val sc = maxPx.toFloat() / longEdge
-        val out = Bitmap.createScaledBitmap(bmp, (bmp.width * sc).toInt().coerceAtLeast(1), (bmp.height * sc).toInt().coerceAtLeast(1), true)
-        if (out !== bmp) bmp.recycle()
-        return out
-    }
-
-    private fun jpegResponse(bmp: Bitmap, quality: Int): Response {
-        val bos = ByteArrayOutputStream()
-        bmp.compress(Bitmap.CompressFormat.JPEG, quality.coerceIn(30, 100), bos)
-        bmp.recycle()
-        val bytes = bos.toByteArray()
-        val r = NanoHTTPD.newFixedLengthResponse(Status.OK, "image/jpeg", ByteArrayInputStream(bytes), bytes.size.toLong())
-        r.addHeader("Cache-Control", "max-age=86400")
+        val nonce = randomToken(NONCE_BYTES)
+        val body = RequestGuard.injectNonce(page, nonce)
+        val r = NanoHTTPD.newFixedLengthResponse(Status.OK, "text/html; charset=utf-8", body)
+        r.addHeader("Content-Security-Policy", RequestGuard.csp(nonce))
+        r.addHeader("Cache-Control", "no-store")
         return r
+    }
+
+    private fun randomToken(bytes: Int): String {
+        val b = ByteArray(bytes)
+        SecureRandom().nextBytes(b)
+        return Base64.encodeToString(b, Base64.NO_WRAP or Base64.URL_SAFE or Base64.NO_PADDING)
     }
 
     @Synchronized
     private fun rebuildIndex() {
-        val map = LinkedHashMap<Long, Item>()
+        val all = LinkedHashMap<Long, Item>()
         // zamknuté a vylúčené priečinky PC nevidí (rozhodnutie Lukáša 20.10.2026)
         val scope = IndexScope(appContext)
         // provider dočasne nedostupný (query vrátilo null) -> ponechať starý index a generáciu,
         // inak by PC uvidel prázdnu knižnicu a ponúkol všetko ako nové
-        if (!collect(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, false, map, scope)) return
-        if (!collect(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, true, map, scope)) return
-        val old = index
-        index = map
-        newestMtime = map.values.maxOfOrNull { it.mtime } ?: 0L
-        if (IndexDiff.changed(old.mapValues { it.value.mtime to it.value.size }, map.mapValues { it.value.mtime to it.value.size })) generation++
+        if (!collect(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, false, all, scope)) return
+        if (!collect(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, true, all, scope)) return
+        // jeden zoznam podľa dátumu (fotky aj videá premiešané), najnovšie prvé
+        val map = LinkedHashMap<Long, Item>()
+        all.values.sortedWith(compareByDescending<Item> { it.taken }.thenByDescending { it.id })
+            .forEach { map[it.id] = it }
+        val old = snap
+        val delta = GenLog.diff(
+            old.index.mapValues { it.value.mtime to it.value.size },
+            map.mapValues { it.value.mtime to it.value.size },
+        )
+        val changed = delta.upserts.isNotEmpty() || delta.removed.isNotEmpty()
+        val gen = if (changed) old.gen + 1 else old.gen
+        if (changed) genLog.record(gen, delta.upserts, delta.removed)
+        snap = Snapshot(map, gen, map.values.maxOfOrNull { it.mtime } ?: 0L)
     }
 
-    // true = dotaz prebehol (aj prázdny výsledok), false = provider nevrátil kurzor
-    private fun collect(base: Uri, isVideo: Boolean, into: MutableMap<Long, Item>, scope: IndexScope): Boolean {
-        val proj = arrayOf(
+    // stĺpce, ktoré nemusia existovať na každej verzii Androidu (video ORIENTATION až od API 29)
+    private fun projection(isVideo: Boolean): Array<String> {
+        val cols = arrayListOf(
             MediaStore.MediaColumns._ID,
             MediaStore.MediaColumns.DISPLAY_NAME,
             MediaStore.MediaColumns.SIZE,
@@ -547,43 +494,66 @@ class MediaServer(
             MediaStore.MediaColumns.BUCKET_DISPLAY_NAME,
             MediaStore.MediaColumns.MIME_TYPE,
             MediaStore.MediaColumns.DATA,
+            MediaStore.MediaColumns.WIDTH,
+            MediaStore.MediaColumns.HEIGHT,
         )
-        val cursor = resolver.query(base, proj, null, null, "${MediaStore.MediaColumns.DATE_MODIFIED} DESC") ?: return false
+        if (!isVideo) cols.add(MediaStore.Images.ImageColumns.ORIENTATION)
+        if (isVideo) cols.add(MediaStore.Video.VideoColumns.DURATION)
+        if (isVideo && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) cols.add(MediaStore.MediaColumns.ORIENTATION)
+        return cols.toTypedArray()
+    }
+
+    // true = dotaz prebehol (aj prázdny výsledok), false = provider nevrátil kurzor
+    private fun collect(base: Uri, isVideo: Boolean, into: MutableMap<Long, Item>, scope: IndexScope): Boolean {
+        val cursor = resolver.query(base, projection(isVideo), null, null, null) ?: return false
         cursor.use { c ->
-            val iId = c.getColumnIndexOrThrow(MediaStore.MediaColumns._ID)
-            val iNm = c.getColumnIndexOrThrow(MediaStore.MediaColumns.DISPLAY_NAME)
-            val iSz = c.getColumnIndexOrThrow(MediaStore.MediaColumns.SIZE)
-            val iMt = c.getColumnIndexOrThrow(MediaStore.MediaColumns.DATE_MODIFIED)
-            val iTk = c.getColumnIndex(MediaStore.MediaColumns.DATE_TAKEN)
-            val iBk = c.getColumnIndexOrThrow(MediaStore.MediaColumns.BUCKET_DISPLAY_NAME)
-            val iMm = c.getColumnIndexOrThrow(MediaStore.MediaColumns.MIME_TYPE)
-            val iDt = c.getColumnIndex(MediaStore.MediaColumns.DATA)
+            val cols = Cols(c)
             while (c.moveToNext()) {
-                val id = c.getLong(iId)
-                val path = (if (iDt >= 0) c.getString(iDt) else null) ?: ""
+                val path = cols.str(cols.data) ?: ""
                 // bez cesty sa nedá overiť priečinok -> radšej nesprístupniť (súkromie má prednosť)
-                if (path.isEmpty() || !scope.allows(path)) continue
-                val name = c.getString(iNm) ?: "$id"
-                val bucket = c.getString(iBk) ?: "Camera"
-                val mime = c.getString(iMm) ?: if (isVideo) "video/*" else "image/*"
-                val uri = Uri.withAppendedPath(base, id.toString())
-                val mtime = c.getLong(iMt)
-                val taken = if (iTk >= 0) c.getLong(iTk).takeIf { it > 0 } ?: (mtime * 1000) else mtime * 1000
-                into[id] = Item(
-                    id = id, name = name, relpath = "$bucket/$name",
-                    size = c.getLong(iSz), mtime = mtime, taken = taken,
-                    bucket = bucket, mime = mime, uri = uri,
-                    path = path,
-                )
+                if (path.isNotEmpty() && scope.allows(path)) {
+                    val item = cols.item(base, isVideo, path)
+                    into[item.id] = item
+                }
             }
         }
         return true
     }
 
-    private fun json(status: Status, body: String): Response {
-        val r = NanoHTTPD.newFixedLengthResponse(status, "application/json; charset=utf-8", body)
-        r.addHeader("Cache-Control", "no-store")
-        return r
+    // indexy stĺpcov kurzora raz (nie pri každom riadku); chýbajúci stĺpec = -1 -> 0 / null
+    private class Cols(private val c: android.database.Cursor) {
+        private val id = c.getColumnIndex(MediaStore.MediaColumns._ID)
+        val data = c.getColumnIndex(MediaStore.MediaColumns.DATA)
+        private val name = c.getColumnIndex(MediaStore.MediaColumns.DISPLAY_NAME)
+        private val size = c.getColumnIndex(MediaStore.MediaColumns.SIZE)
+        private val modified = c.getColumnIndex(MediaStore.MediaColumns.DATE_MODIFIED)
+        private val taken = c.getColumnIndex(MediaStore.MediaColumns.DATE_TAKEN)
+        private val bucket = c.getColumnIndex(MediaStore.MediaColumns.BUCKET_DISPLAY_NAME)
+        private val mime = c.getColumnIndex(MediaStore.MediaColumns.MIME_TYPE)
+        private val width = c.getColumnIndex(MediaStore.MediaColumns.WIDTH)
+        private val height = c.getColumnIndex(MediaStore.MediaColumns.HEIGHT)
+        private val orient = c.getColumnIndex(MediaStore.Images.ImageColumns.ORIENTATION)
+        private val dur = c.getColumnIndex(MediaStore.Video.VideoColumns.DURATION)
+
+        fun num(i: Int): Long = if (i >= 0 && !c.isNull(i)) c.getLong(i) else 0L
+
+        fun str(i: Int): String? = if (i >= 0) c.getString(i) else null
+
+        fun item(base: Uri, isVideo: Boolean, path: String): Item {
+            val itemId = num(id)
+            val n = str(name) ?: "$itemId"
+            val b = str(bucket) ?: "Camera"
+            val mtime = num(modified)
+            val takenRaw = num(taken)
+            return Item(
+                id = itemId, name = n, relpath = "$b/$n", size = num(size), mtime = mtime,
+                // bez dátumu snímania náhradne čas úpravy — ale takenReal=false (série z neho nevznikajú)
+                taken = if (takenRaw > 0) takenRaw else mtime * MS,
+                bucket = b, mime = str(mime) ?: if (isVideo) "video/*" else "image/*",
+                uri = Uri.withAppendedPath(base, itemId.toString()), path = path, takenReal = takenRaw > 0,
+                w = num(width).toInt(), h = num(height).toInt(), orient = num(orient).toInt(), dur = num(dur),
+            )
+        }
     }
 
     private fun guessMime(name: String): String = when (name.substringAfterLast('.', "").lowercase()) {
@@ -602,11 +572,11 @@ class MediaServer(
     // null = upload smie pokračovať, inak odpoveď s dôvodom; copies = koľkokrát dáta zaberú miesto
     private fun rejectUpload(length: Long, copies: Int): Response? {
         if (length > MAX_UPLOAD_BYTES) {
-            return json(Status.PAYLOAD_TOO_LARGE, """{"error":"file too large"}""")
+            return Http.error(Status.PAYLOAD_TOO_LARGE, "file too large")
         }
         val free = freeBytes()
         if (free >= 0 && free < length.coerceAtLeast(0) * copies + FREE_SPACE_RESERVE) {
-            return json(Status.PAYLOAD_TOO_LARGE, """{"error":"not enough free space"}""")
+            return Http.error(Status.PAYLOAD_TOO_LARGE, "not enough free space")
         }
         return null
     }
@@ -622,7 +592,7 @@ class MediaServer(
         if (len < 0) {
             // bez Content-Length najviac MAX_UPLOAD_BYTES a priebežne kontroluj voľné miesto —
             // inak by klient vedel zaplniť úložisko; výnimka = saveMediaScoped položku zmaže
-            val buf = ByteArray(64 * 1024)
+            val buf = ByteArray(COPY_BUFFER)
             var copied = 0L
             var nextCheck = FREE_SPACE_CHECK_EVERY
             while (true) {
@@ -639,7 +609,7 @@ class MediaServer(
             }
             return
         }
-        val buf = ByteArray(64 * 1024)
+        val buf = ByteArray(COPY_BUFFER)
         var remaining = len
         while (remaining > 0) {
             val n = input.read(buf, 0, minOf(buf.size.toLong(), remaining).toInt())
@@ -649,8 +619,6 @@ class MediaServer(
         }
     }
 
-    private fun escape(s: String) = s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-
     private fun constantTimeEquals(a: String, b: String): Boolean {
         val x = a.toByteArray()
         val y = b.toByteArray()
@@ -659,11 +627,6 @@ class MediaServer(
         for (i in x.indices) r = r or (x[i].toInt() xor y[i].toInt())
         return r == 0
     }
-
-    private fun saveToMediaStore(
-        name: String, mime: String, sizeHint: Long,
-        writer: (java.io.OutputStream) -> Unit,
-    ): Pair<String, String>? = saveMediaScoped(appContext, name, mime, SAVE_SUBDIR, writer)
 }
 
 // EXIF orientácia (1–8) -> (uhol v smere hodín, potom zrkadlenie vodorovne). Čistá logika, testovateľná na JVM.
