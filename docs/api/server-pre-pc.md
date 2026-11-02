@@ -28,13 +28,16 @@ servera (Nastavenia, tlačidlo v notifikácii) alebo po zamknutí pre hádanie P
 ## Bezpečnosť
 
 - **Zmeny len cez POST** (`/api/mark`, `/api/synced`, `/api/clearmarks`, `/api/delete`, `/api/restore`,
-  `/api/groupstate` pri zápise, `/api/logout`, `/api/quality`; `/api/upload` aj PUT). GET na ne vráti
+  `/api/groupstate` pri zápise, `/api/logout`, `/api/quality`, `/api/favorite`, `/api/zip`; `/api/upload` aj PUT). GET na ne vráti
   `405 {"error":"use POST"}`.
   **Dočasne (0.67):** `/api/mark`, `/api/synced` a `/api/clearmarks` prijmú aj starší tvar GET `?id=&del=`,
   ale len s PIN tokenom priamo v požiadavke (`X-Auth-Token` alebo `?token=`). Po prechode PC programu na POST sa to zruší.
 - **Origin**: ak požiadavka pošle hlavičku `Origin`, musí byť `http://<Host>` (inak `403 {"error":"bad_origin"}`).
   Rovnako `Sec-Fetch-Site` musí byť `same-origin` alebo `none`. PC program tieto hlavičky neposiela → prejde.
-- Každá odpoveď má `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`, `X-Frame-Options: DENY`,
+  `Origin: null` neprejde nikdy. Stránka webu má preto `Referrer-Policy: same-origin` (hlavička aj `<meta>`) —
+  pri `no-referrer` by Chrome formulárový POST (`/api/zip`) poslal s `Origin: null`. Ostatné odpovede majú
+  `Referrer-Policy: no-referrer`.
+- Každá odpoveď má `X-Content-Type-Options: nosniff`, `Referrer-Policy` (viď vyššie), `X-Frame-Options: DENY`,
   `Cross-Origin-Resource-Policy: same-origin`. Stránka má `Content-Security-Policy` s jednorazovým nonce.
 - **Chyby sú vždy JSON** `{"error":"<kód>"}` s HTTP stavom (400, 403, 404, 405, 409, 411, 413, 416, 429, 500).
 - Telá JSON požiadaviek: `Content-Type: application/json; charset=utf-8` a povinná `Content-Length`
@@ -52,7 +55,11 @@ servera (Nastavenia, tlačidlo v notifikácii) alebo po zamknutí pre hádanie P
 | GET | `/api/list` | zoznam fotiek a videí (celý alebo len zmeny) |
 | GET | `/api/file?id=` | originál (Range, ETag) alebo zmenšené JPEG |
 | GET | `/api/thumb?id=` | náhľad JPEG (aj HEIC/DNG/video) |
-| GET | `/api/meta?ids=` | EXIF pre porovnávač |
+| GET | `/api/meta?ids=` | EXIF pre porovnávač (aj dĺžka videa pohyblivej fotky) |
+| GET | `/api/motion?id=` | video z pohyblivej fotky (Range) |
+| GET | `/api/favorites` | obľúbené (rovnaké ako v appke) |
+| POST | `/api/favorite` | pridať / odobrať obľúbené |
+| POST | `/api/zip` | viac súborov naraz ako jeden ZIP (formulár) |
 | GET | `/api/groups` | série a duplikáty (rovnaké ako v mobile) |
 | POST | `/api/quality` | skóre kvality skupiny (ostrosť, expozícia, tváre, oči) — počíta mobil |
 | GET/POST | `/api/groupstate` | stav prechádzania skupín |
@@ -66,10 +73,11 @@ servera (Nastavenia, tlačidlo v notifikácii) alebo po zamknutí pre hádanie P
 ## `GET /api/ping`
 
 ```json
-{"name":"Galéria+","version":"3","epoch":"q3J_x9Zk","count":10512,"gen":7,"stateGen":42,
+{"name":"Galéria+","version":"3","epoch":"q3J_x9Zk","count":10512,"gen":7,"stateGen":42,"favGen":1730369000123,
  "newest":1730370000,"allFiles":true,"recycleBin":true,
  "features":["session","sinceGen","etag","range","groupsV2","groupState","meta","markBatch",
-             "syncedBatch","deleteDryRun","bin","restore","thumbMax","dlMark","quality","stateSince","stats"]}
+             "syncedBatch","deleteDryRun","bin","restore","thumbMax","dlMark","quality","stateSince","stats",
+             "zip","favorites","motion","thumbFull"]}
 ```
 
 - `version` — `"3"`; podľa `features` sa rozhoduj, ktoré API použiť (staré servery pole nemajú).
@@ -79,6 +87,8 @@ servera (Nastavenia, tlačidlo v notifikácii) alebo po zamknutí pre hádanie P
 - `gen` — generácia zoznamu, zvýši sa pri každej zmene (pribudnutá, zmazaná, upravená fotka). Nie je to počítadlo
   od nuly — porovnávaj len na rovnosť.
 - `stateGen` — zvýši sa pri každej zmene značiek, stiahnutých alebo stavu skupín (aj z mobilu).
+- `favGen` — zmení sa pri zmene obľúbených (z PC hneď, z mobilu najneskôr pri ďalšej obnove zoznamu alebo
+  `GET /api/favorites`). Porovnávaj len na rovnosť.
 - `allFiles` — appka má „Prístup ku všetkým súborom“ → funguje `/api/delete` a `/api/restore`.
 - `recycleBin` — Kôš je zapnutý (mazanie ide do Koša, inak natrvalo).
 
@@ -106,6 +116,8 @@ Bez parametrov (pôvodný formát) — pole položiek, zoradené **podľa dátum
 | `dur` | dĺžka videa v ms (len videá) |
 | `marked` | označené na zmazanie (z webu/PC) |
 | `synced` | čas zápisu „✓ v PC“ v ms, 0 = nie |
+| `fav` | `true` len pre obľúbenú (rovnaké obľúbené ako v appke); inak pole chýba |
+| `motion` | `true` len pre pohyblivú fotku, ktorú mobil už pozná z prehľadávania „Špeciálnych fotiek“ (bez čítania súboru); inak pole chýba — over cez `/api/meta` |
 
 - `?since=<mtime>` — len položky s `mtime >= since` (pôvodné, nevidí zmazané; radšej `sinceGen`).
 - `?sinceGen=<N>` — len zmeny od generácie N:
@@ -139,10 +151,14 @@ Bez parametrov (pôvodný formát) — pole položiek, zoradené **podľa dátum
 
 - `&s=<64–1024>` (predvolene 300) — malý náhľad (mriežka). Do 512 px z `ContentResolver.loadThumbnail`
   (Android 10+), cache v pamäti servera podľa id + mtime + veľkosti.
-- `&max=<64–4096>` — väčší náhľad, napr. `max=2560` pre porovnávač (dekóduje sa raz cez ImageDecoder priamo na
-  cieľovú veľkosť, EXIF otočenie je uplatnené; HEIC, DNG aj video snímka). Náhľady ≥ 1024 px sú aj v diskovej
+- `&max=<64–8192>` — väčší náhľad, napr. `max=2560` pre porovnávač (dekóduje sa raz cez ImageDecoder priamo na
+  cieľovú veľkosť, EXIF otočenie je uplatnené; HEIC, DNG aj video snímka). Náhľad sa nikdy nezväčšuje nad
+  originál — **„Plná kvalita“** HEIC/DNG = `max` ≥ dlhá strana originálu (feature `thumbFull`). Kvalita JPEG:
+  do 512 px 80, do 2560 px 85, nad tým 92. Nad 4096 px sa dekóduje **len jeden obrázok naraz**; medzivýsledok
+  má najviac 8192² px (50 Mpx sa dekóduje celé, 200 Mpx so vzorkovaním 2). Náhľady ≥ 1024 px sú aj v diskovej
   cache mobilu (`cacheDir/pc_thumbs`, ~300 MB, najdlhšie nepoužité sa mažú) — prežijú reštart servera.
-- Veľké dekódovania (> 512 px) idú najviac **2 naraz**, ďalších najviac **6 čaká**; ďalšia požiadavka dostane hneď
+- Veľké dekódovania (> 512 px) idú najviac **2 naraz** (nad 4096 px jedno výhradne), ďalších najviac **6 čaká**;
+  ďalšia požiadavka dostane hneď
   `503 {"error":"busy"}` + `Retry-After: 1` → skús znova o sekundu. Keď klient spojenie zavrie (prehliadač zrušil
   načítanie obrázka), mobil náhľad, ktorý ešte nezačal dekódovať, zahodí.
 - `&v=<mtime>` — keď sedí s aktuálnym `mtime`, odpoveď má `Cache-Control: private, max-age=604800, immutable`;
@@ -160,6 +176,49 @@ Najviac 8 id. Vráti objekt podľa id (neznáme id chýbajú). Čísla sú surov
 ```
 
 `exp` je čas v sekundách, `gps` = poloha v EXIF áno/nie (súradnice sa neposielajú). Video: `format`, `w`, `h`, `dur`.
+Pohyblivá fotka má navyše `"motion":{"len":<bajty videa>}` (video stiahneš cez `/api/motion`).
+
+## `GET /api/motion?id=<id>`
+
+Video vložené v pohyblivej fotke (Xiaomi/HyperOS, Samsung, Pixel) ako `video/mp4` — výrez súboru
+`[videoOffset, videoOffset+len)`. Feature `motion`.
+
+- `Accept-Ranges: bytes`, `Range` voči **dĺžke výrezu** (`bytes=a-b`, `bytes=a-`, `bytes=-n`) → `206` +
+  `Content-Range: bytes a-b/<len>`; mimo výrezu `416` + `Content-Range: bytes */<len>`.
+- `ETag`, `If-None-Match` → `304`, `Cache-Control: private, max-age=3600`.
+- Nie je pohyblivá (alebo je to video) → `404 {"error":"not_motion"}`; neznáme id `404 {"error":"unknown id"}`.
+- Nezapisuje „✓ v PC“.
+
+## Obľúbené (`/api/favorites`, `/api/favorite`)
+
+Rovnaké obľúbené ako v appke (DB obľúbených + príznak v knižnici appky). Feature `favorites`.
+
+- `GET /api/favorites` → `{"ids":[11,12],"gen":1730369000124}` — id z indexu servera (bez zamknutých
+  a vylúčených priečinkov); `gen` = `favGen` z `ping`.
+- `POST /api/favorite` `{"ids":[11,12],"fav":true}` (najviac **2000** id, telo do 64 kB) →
+  `{"changed":[12],"fav":true,"gen":1730369000125}` — `changed` = id, ktorým sa stav naozaj zmenil (neznáme id
+  a tie, čo už stav mali, sa vynechajú). Chyby: `400 {"error":"too_many"}`, `400 {"error":"bad ids"}`,
+  `400 {"error":"bad fav"}` (chýba `fav`). Na Androide 11+ sa skúsi aj príznak obľúbenej v MediaStore (pre iné
+  galérie) — ak to systém bez dialógu nedovolí, potichu sa vynechá.
+- Zmena posunie `favGen` aj `gen` zoznamu: `/api/list?sinceGen` vráti zmenené položky v `upserts` s novým `fav`.
+
+## `POST /api/zip`
+
+Viac súborov ako **jeden ZIP** (prehliadač inak blokuje hromadné sťahovanie). Feature `zip`.
+
+- Telo `application/x-www-form-urlencoded` (formulár): `ids=1,2,3` (najviac **500** rôznych id; pole sa môže
+  opakovať) a voliteľne `token=<PIN>` pre klienta bez cookie (overí sa ako `X-Auth-Token`, zlý PIN sa do
+  ochrany pred hádaním nezaráta). POST + kontrola `Origin` ako pri ostatných zmenách (`Origin: null` neprejde).
+- Odpoveď `200 application/zip`, `Content-Disposition: attachment; filename="Galeria-RRRRMMDD-HHMM.zip"`
+  (miestny čas mobilu), `Transfer-Encoding: chunked` — ZIP sa skladá priebežne, nič sa nedrží v pamäti.
+  Položky bez kompresie, mená ako v mobile (duplicity `IMG_1 (2).jpg`), čas záznamu = čas zmeny súboru.
+- Neznáme / nedostupné id (zamknuté, vylúčené, zmazané) a súbory, ktoré sa nedali otvoriť, sa preskočia
+  a na koniec ZIP-u pribudne `chybajuce.txt` so zoznamom.
+- „✓ v PC“ sa zapíše až keď ZIP odišiel celý a bez chyby, len pre súbory, ktoré v ňom celé sú. Pri chybe sa
+  prenos preruší (prehliadač ukáže nedokončené sťahovanie) a nič sa neoznačí.
+- Chyby: `400 {"error":"too_many","max":500}`, `400 {"error":"bad ids"}`, `403 forbidden/bad_origin/locked`,
+  `405 use POST`, `411`/`413` (telo bez dĺžky / nad 64 kB, spojenie sa zavrie), `503 {"error":"busy"}` +
+  `Retry-After: 2` (naraz najviac **2 ZIP-y**; každý zaberá jedno spojenie z limitu 20).
 
 ## `GET /api/groups`
 
@@ -408,7 +467,9 @@ Ako to čítať:
 
 ## Novinky (server-rychlost)
 
-- `features` obsahuje `stateSince` (`/api/state?since=`) a `stats` (`/api/stats`). Všetko je spätne kompatibilné.
+- `features` obsahuje `stateSince` (`/api/state?since=`), `stats` (`/api/stats`), `zip` (`POST /api/zip`),
+  `favorites` (`/api/favorites`, `/api/favorite`, `fav` v zozname, `favGen` v ping), `motion` (`/api/motion`,
+  `motion` v zozname a v `/api/meta`) a `thumbFull` (`/api/thumb?max` až 8192). Všetko je spätne kompatibilné.
 - Každá odpoveď má `Server-Timing`. Nové kódy: `503 {"error":"busy"}` + `Retry-After` (fronta dekódovaní alebo
   limit spojení).
 - PIN, `epoch` aj prihlásenia prežijú reštart služby systémom; `gen` po reštarte pokračuje s odstupom.

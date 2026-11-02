@@ -49,6 +49,19 @@ object Http {
 
     fun json(status: Status, body: JSONObject): Response = json(status, body.toString())
 
+    // telo formulára (application/x-www-form-urlencoded) s limitom veľkosti pred parseBody — polia ako
+    // session.parameters (aj z adresy); pri odmietnutí sa spojenie zavrie (neprečítané telo)
+    fun readForm(session: IHTTPSession, max: Long): Map<String, List<String>> {
+        val reject = when (IndexDiff.deleteBodyReject(session.headers["content-length"], max)) {
+            CODE_LENGTH_REQUIRED -> HttpError(Status.LENGTH_REQUIRED, "missing Content-Length", close = true)
+            CODE_TOO_LARGE -> HttpError(Status.PAYLOAD_TOO_LARGE, "body too large", close = true)
+            else -> null
+        }
+        if (reject != null) throw reject
+        session.parseBody(HashMap())
+        return session.parameters.orEmpty()
+    }
+
     fun json(status: Status, body: String): Response {
         val r = NanoHTTPD.newFixedLengthResponse(status, "application/json; charset=utf-8", body)
         r.addHeader("Cache-Control", "no-store")
@@ -66,10 +79,11 @@ object Http {
     fun bytes(mime: String, data: ByteArray): Response =
         NanoHTTPD.newFixedLengthResponse(Status.OK, mime, ByteArrayInputStream(data), data.size.toLong())
 
-    // hlavičky pre každú odpoveď: bez MIME hádania, bez Referer (token v adrese), bez vkladania do cudzích stránok
+    // hlavičky pre každú odpoveď: bez MIME hádania, bez Referer (token v adrese), bez vkladania do cudzích stránok;
+    // stránka si Referrer-Policy nastavuje sama (same-origin kvôli formuláru /api/zip)
     fun secure(r: Response): Response {
         r.addHeader("X-Content-Type-Options", "nosniff")
-        r.addHeader("Referrer-Policy", "no-referrer")
+        if (r.getHeader("Referrer-Policy") == null) r.addHeader("Referrer-Policy", "no-referrer")
         r.addHeader("X-Frame-Options", "DENY")
         r.addHeader("Cross-Origin-Resource-Policy", "same-origin")
         return r
@@ -82,14 +96,10 @@ object Http {
 // (fronta s limitom, 503 + Retry-After, zahodenie zrušených požiadaviek).
 class ServerMedia(private val appContext: Context) {
     companion object {
-        const val DEFAULT_THUMB = 300
-        const val MAX_S = 1024
-        const val MIN_PX = 64
-        const val MAX_THUMB_PX = 4096
         const val REDUCED_DEFAULT = 2048
         const val REDUCED_MIN = 256
+        const val REDUCED_MAX = 4096
         private const val SMALL_QUALITY = 80
-        private const val LARGE_QUALITY = 85
         private const val IMMUTABLE = "private, max-age=604800, immutable"
         private const val REVALIDATE = "private, no-cache"
     }
@@ -149,7 +159,7 @@ class ServerMedia(private val appContext: Context) {
     }
 
     private fun reduced(session: IHTTPSession, item: MediaServer.Item, q: Int, dl: Boolean): Response {
-        val max = (Http.param(session, "max")?.toIntOrNull() ?: REDUCED_DEFAULT).coerceIn(REDUCED_MIN, MAX_THUMB_PX)
+        val max = (Http.param(session, "max")?.toIntOrNull() ?: REDUCED_DEFAULT).coerceIn(REDUCED_MIN, REDUCED_MAX)
         val etag = ETags.of("r", item.id, item.mtime, item.size, q, max)
         if (ETags.matches(session.headers["if-none-match"], etag)) return Http.notModified(etag)
         val key = "r:${item.id}:${item.mtime}:${item.size}:$max:q$q"
@@ -166,7 +176,7 @@ class ServerMedia(private val appContext: Context) {
         return r
     }
 
-    // náhľad: s=64..1024 (mriežka), max=64..4096 (porovnávač, napr. 2560); v=mtime -> dlhá cache
+    // náhľad: s=64..1024 (mriežka), max=64..8192 (porovnávač 2560, HEIC/DNG v plnom rozlíšení); v=mtime -> dlhá cache
     fun thumb(session: IHTTPSession, item: MediaServer.Item): Response {
         val px = thumbPx(session)
         val etag = ETags.of("t", item.id, item.mtime, item.size, px)
@@ -175,8 +185,8 @@ class ServerMedia(private val appContext: Context) {
         val bytes = cache.thumb(key, px) ?: run {
             val out = renderThumb(session, item, px)
             if (out is ServerDecoder.Result.Fail) return out.response
-            val q = if (px <= ServerThumbCache.SMALL_MAX) SMALL_QUALITY else LARGE_QUALITY
-            decoder.jpeg((out as ServerDecoder.Result.Ok).bmp, q).also { cache.putThumb(key, px, it) }
+            val bmp = (out as ServerDecoder.Result.Ok).bmp
+            decoder.jpeg(bmp, ThumbSize.quality(px)).also { cache.putThumb(key, px, it) }
         }
         val r = Http.bytes("image/jpeg", bytes)
         r.addHeader("ETag", etag)
@@ -196,10 +206,7 @@ class ServerMedia(private val appContext: Context) {
         return r
     }
 
-    private fun thumbPx(session: IHTTPSession): Int {
-        val max = Http.param(session, "max")?.toIntOrNull()?.coerceIn(MIN_PX, MAX_THUMB_PX)
-        return max ?: Http.param(session, "s")?.toIntOrNull()?.coerceIn(MIN_PX, MAX_S) ?: DEFAULT_THUMB
-    }
+    private fun thumbPx(session: IHTTPSession): Int = ThumbSize.px(Http.param(session, "max"), Http.param(session, "s"))
 
     private fun renderThumb(session: IHTTPSession, item: MediaServer.Item, px: Int): ServerDecoder.Result {
         val video = item.mime.startsWith("video/")
@@ -221,7 +228,7 @@ class ServerMedia(private val appContext: Context) {
 // náhľady a disková cache (cacheDir/pc_thumbs, LRU ~300 MB) pre náhľady ≥ 1024 px a zmenšené JPEG.
 class ServerThumbCache(appContext: Context) {
     companion object {
-        const val SMALL_MAX = 512
+        const val SMALL_MAX = ThumbSize.SMALL
         const val DISK_MIN_PX = 1024
         const val DISK_DIR = "pc_thumbs"
         private const val SMALL_CACHE_BYTES = 16L * 1024 * 1024
@@ -290,7 +297,8 @@ class ServerThumbCache(appContext: Context) {
 }
 
 // Dekódovanie náhľadov (server-rychlost): veľké (stovky MB pamäte) najviac po dvoch a 6 čakajúcich
-// (inak 503 + Retry-After), malé po štyroch; požiadavka, ktorej klient zavrel spojenie, sa nedekóduje.
+// (inak 503 + Retry-After), malé po štyroch; plné rozlíšenie nad 4096 px obsadí obe veľké miesta (beží
+// samo); požiadavka, ktorej klient zavrel spojenie, sa nedekóduje.
 // Časy idú do Server-Timing (q = čakanie vo fronte, dec = dekódovanie, jpg = kompresia).
 class ServerDecoder {
     companion object {
@@ -314,7 +322,7 @@ class ServerDecoder {
     fun decode(session: IHTTPSession, px: Int, block: () -> Bitmap?): Result {
         val queue = if (px > ServerThumbCache.SMALL_MAX) largeQueue else smallQueue
         val t0 = System.nanoTime()
-        val outcome = queue.run({ ClientConn.gone(session) }) {
+        val outcome = queue.run({ ClientConn.gone(session) }, exclusive = px > ThumbSize.EXCLUSIVE) {
             RequestTiming.current()?.add("q", (System.nanoTime() - t0) / NS_PER_MS)
             RequestTiming.measure("dec") { block() }
         }

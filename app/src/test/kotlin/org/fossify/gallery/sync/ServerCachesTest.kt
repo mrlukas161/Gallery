@@ -110,6 +110,53 @@ class ServerCachesTest {
         assertEquals(DecodePlan(1, 4096, 3072), DecodePlan.of(4096, 3072, 4096))
     }
 
+    // web-0.67.2 „Plná kvalita“: max až 8192, plné rozlíšenie (dekóduje sa samo) má strop 8192² px
+    @Test
+    fun plneRozlisenieBezZbytocnehoZmensenia() {
+        assertEquals(DecodePlan(1, 4032, 3024), DecodePlan.of(4032, 3024, 4032))
+        assertEquals(DecodePlan(1, 4032, 3024), DecodePlan.of(4032, 3024, 8192))
+        // 50 Mpx v plnom rozlíšení sa dekóduje celé
+        assertEquals(DecodePlan(1, 8160, 6120), DecodePlan.of(8160, 6120, 8160))
+        // náhľad prehliadača 2560 z 12 Mpx
+        assertEquals(DecodePlan(1, 2560, 1920), DecodePlan.of(4032, 3024, 2560))
+        // malé náhľady
+        assertEquals(8, DecodePlan.of(4032, 3024, 300).sample)
+        assertEquals(8, DecodePlan.of(8160, 6120, 512).sample)
+    }
+
+    @Test
+    fun nikdyObrovskaBitmapa() {
+        // 200 Mpx (16320 × 12240): pri max 8192 vzorkovanie 2 -> 8160 px (50 Mpx)
+        val full = DecodePlan.of(16320, 12240, 8192)
+        assertEquals(2, full.sample)
+        assertEquals(8160, full.width)
+        // pri 4096 (dve dekódovania naraz) prísnejší strop 25 Mpx -> vzorkovanie 4, výsledok 4080 px
+        val big = DecodePlan.of(16320, 12240, 4096)
+        assertEquals(4, big.sample)
+        assertEquals(4080, big.width)
+        assertTrue((16320L / big.sample) * (12240L / big.sample) <= DecodePlan.GUARD_PX)
+    }
+
+    @Test
+    fun vyhradneDekodovanieBeziSamo() {
+        val q = DecodeQueue(parallel = 2, maxWaiting = 6, pollMs = 10)
+        val release = CountDownLatch(1)
+        val started = CountDownLatch(1)
+        val one = thread { q.run({ false }) { started.countDown(); release.await() } }
+        assertTrue(started.await(1, TimeUnit.SECONDS))
+        val exclusiveRan = AtomicBoolean(false)
+        val ex = thread { q.run({ false }, exclusive = true) { exclusiveRan.set(true) } }
+        Thread.sleep(100)
+        // druhé miesto je voľné, ale výhradné dekódovanie čaká, kým nedobehne prvé
+        assertFalse(exclusiveRan.get())
+        assertEquals(1, q.waiting)
+        release.countDown()
+        one.join(2000)
+        ex.join(2000)
+        assertTrue(exclusiveRan.get())
+        assertEquals(0, q.running)
+    }
+
     @Test
     fun neplatneRozmery() {
         assertEquals(DecodePlan(1, 0, 0), DecodePlan.of(0, 0, 1024))

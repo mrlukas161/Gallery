@@ -32,15 +32,18 @@ class DecodeQueue(private val parallel: Int, private val maxWaiting: Int, privat
     val running: Int get() = parallel - permits.availablePermits()
     val waiting: Int get() = waitingNow.get()
 
-    fun <T> run(isCancelled: () -> Boolean, block: () -> T): Outcome<T> {
-        if (!permits.tryAcquire(0, TimeUnit.MILLISECONDS)) {
+    // exclusive = obsadí všetky miesta (plné rozlíšenie nad 4096 px beží samo); fronta je spravodlivá,
+    // takže výhradné dekódovanie nepredbehnú ďalšie malé
+    fun <T> run(isCancelled: () -> Boolean, exclusive: Boolean = false, block: () -> T): Outcome<T> {
+        val need = if (exclusive) parallel else 1
+        if (!permits.tryAcquire(need, 0, TimeUnit.MILLISECONDS)) {
             if (waitingNow.incrementAndGet() > maxWaiting) {
                 waitingNow.decrementAndGet()
                 rejected.incrementAndGet()
                 return Outcome.Rejected
             }
             try {
-                if (!awaitPermit(isCancelled)) {
+                if (!awaitPermit(need, isCancelled)) {
                     cancelled.incrementAndGet()
                     return Outcome.Cancelled
                 }
@@ -57,14 +60,14 @@ class DecodeQueue(private val parallel: Int, private val maxWaiting: Int, privat
             completed.incrementAndGet()
             return Outcome.Done(v)
         } finally {
-            permits.release()
+            permits.release(need)
         }
     }
 
     // false = zrušené počas čakania (miesto sa nevzalo)
-    private fun awaitPermit(isCancelled: () -> Boolean): Boolean {
+    private fun awaitPermit(need: Int, isCancelled: () -> Boolean): Boolean {
         try {
-            while (!permits.tryAcquire(pollMs, TimeUnit.MILLISECONDS)) {
+            while (!permits.tryAcquire(need, pollMs, TimeUnit.MILLISECONDS)) {
                 if (isCancelled()) return false
             }
             return true
@@ -83,9 +86,15 @@ class DecodeQueue(private val parallel: Int, private val maxWaiting: Int, privat
 // (mocnina 2) tak, aby dekódovaný medzivýsledok nebol menší ako cieľ. Ochrana pamäte: keby medzivýsledok
 // mal viac ako guardPx pixelov (HEIC 50 Mpx = ~200 MB), vzorkuje sa ešte raz a cieľ sa zmenší —
 // výsledok potom môže byť o kúsok menší ako maxPx (8160 px -> 4080 namiesto 4096), nikdy väčší.
+// Plné rozlíšenie (maxPx nad ThumbSize.EXCLUSIVE, dekóduje sa samo) má strop FULL_GUARD_PX = 8192²
+// (50 Mpx sa dekóduje celé, 200 Mpx so vzorkovaním 2).
 data class DecodePlan(val sample: Int, val width: Int, val height: Int) {
     companion object {
         const val GUARD_PX = 25_000_000L
+        const val FULL_GUARD_PX = 8192L * 8192
+
+        // strop medzivýsledku podľa požadovanej veľkosti
+        fun guardFor(maxPx: Int): Long = if (maxPx > ThumbSize.EXCLUSIVE) FULL_GUARD_PX else GUARD_PX
 
         // rozmery w×h zmenšené tak, aby dlhá hrana bola najviac maxPx (pomer strán zachovaný, aspoň 1 px)
         fun fit(w: Int, h: Int, maxPx: Int): Pair<Int, Int> {
@@ -97,7 +106,7 @@ data class DecodePlan(val sample: Int, val width: Int, val height: Int) {
             return fw to fh
         }
 
-        fun of(w: Int, h: Int, maxPx: Int, guardPx: Long = GUARD_PX): DecodePlan {
+        fun of(w: Int, h: Int, maxPx: Int, guardPx: Long = guardFor(maxPx)): DecodePlan {
             if (w <= 0 || h <= 0 || maxPx <= 0) return DecodePlan(1, w, h)
             var (tw, th) = fit(w, h, maxPx)
             var s = 1

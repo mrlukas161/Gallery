@@ -109,6 +109,38 @@ object ContentDisposition {
     }
 }
 
+// Veľkosť a kvalita náhľadu /api/thumb (vetva web-0.67.2, zapracované v server-rychlost):
+// s=64..1024 (miniatúry), max=64..8192 (prehliadač 2560, „Plná kvalita“ pre HEIC/DNG = dlhá strana
+// originálu). Náhľad sa nikdy nezväčšuje nad originál, takže max ≥ originál = plné rozlíšenie.
+// Dekódovanie a pamäť stráži DecodePlan (ServerCaches.kt), nad EXCLUSIVE px beží dekódovanie samo
+// (všetky miesta vo fronte veľkých dekódovaní, ServerDecoder).
+object ThumbSize {
+    const val DEFAULT = 300
+    const val MIN = 64
+    const val MAX_S = 1024
+    const val MAX = 8192
+
+    // do 512 px systémový náhľad (rýchly), do 2560 px náhľad prehliadača, nad tým plné rozlíšenie
+    const val SMALL = 512
+    const val PREVIEW = 2560
+
+    // nad 4096 px dekóduje server len jeden obrázok naraz (pamäť telefónu)
+    const val EXCLUSIVE = 4096
+    private const val Q_SMALL = 80
+    private const val Q_PREVIEW = 85
+    private const val Q_FULL = 92
+
+    fun px(max: String?, s: String?): Int =
+        max?.toIntOrNull()?.coerceIn(MIN, MAX) ?: s?.toIntOrNull()?.coerceIn(MIN, MAX_S) ?: DEFAULT
+
+    // plné rozlíšenie (HEIC → JPEG) má mať vyššiu kvalitu než bežný náhľad
+    fun quality(px: Int): Int = when {
+        px <= SMALL -> Q_SMALL
+        px <= PREVIEW -> Q_PREVIEW
+        else -> Q_FULL
+    }
+}
+
 object ETags {
     private const val SHORT_HASH = 16
 
@@ -401,6 +433,10 @@ class Sessions(
 // Požiadavka bez Origin (PC program, curl) prejde — tú chráni PIN v hlavičke X-Auth-Token.
 object RequestGuard {
     const val COOKIE = "gp_sid"
+
+    // Referrer-Policy stránky webu (gallery.html má rovnakú <meta name="referrer">): formulárový POST
+    // (/api/zip) tak nesie Origin http://<Host>; pri no-referrer by Chrome poslal Origin: null
+    const val PAGE_REFERRER_POLICY = "same-origin"
 
     // DOČASNE (0.67): starší PC porovnávač volá tieto zmeny cez GET (?id=&token=). Povolené len s PIN
     // tokenom v požiadavke (hlavička alebo ?token=), nie s cookie prehliadača — cudzia stránka tak

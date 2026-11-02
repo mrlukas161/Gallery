@@ -283,6 +283,36 @@ class ServerLogicTest {
         assertEquals(0, empty.count())
     }
 
+    // /api/zip ide z formulára (navigácia): stránka má Referrer-Policy same-origin, Chrome teda pošle
+    // Origin = http://<Host>; pri no-referrer by poslal Origin: null — ten neprejde
+    @Test fun zip_formular_s_originom_hostitela_prejde_a_null_nie() {
+        val host = "192.168.1.5:8089"
+        assertTrue(RequestGuard.sameOrigin("http://192.168.1.5:8089", host, "same-origin"))
+        assertFalse(RequestGuard.sameOrigin("null", host, "same-origin"))
+        assertFalse(RequestGuard.sameOrigin("null", host, null))
+        assertFalse(RequestGuard.sameOrigin("http://192.168.1.6:8089", host, "same-site"))
+        assertEquals("same-origin", RequestGuard.PAGE_REFERRER_POLICY)
+    }
+
+    // ---------- /api/thumb: veľkosť a kvalita (web-0.67.2: plná kvalita HEIC/DNG) ----------
+    @Test fun nahlad_velkost_z_parametrov() {
+        assertEquals(ThumbSize.DEFAULT, ThumbSize.px(null, null))
+        assertEquals(300, ThumbSize.px(null, "300"))
+        assertEquals(1024, ThumbSize.px(null, "5000")) // s je len pre miniatúry
+        assertEquals(64, ThumbSize.px(null, "1"))
+        assertEquals(2560, ThumbSize.px("2560", "300")) // max má prednosť
+        assertEquals(4032, ThumbSize.px("4032", null)) // „Plná kvalita“: max = dlhá strana originálu
+        assertEquals(8192, ThumbSize.px("20000", null))
+        assertEquals(ThumbSize.DEFAULT, ThumbSize.px("x", "y"))
+    }
+
+    @Test fun nahlad_plne_rozlisenie_ma_vyssiu_kvalitu() {
+        assertEquals(80, ThumbSize.quality(300))
+        assertEquals(80, ThumbSize.quality(512))
+        assertEquals(85, ThumbSize.quality(2560))
+        assertEquals(92, ThumbSize.quality(4032))
+    }
+
     @Test fun origin_rovnaky_alebo_ziadny() {
         assertTrue(RequestGuard.sameOrigin(null, "192.168.1.5:8089", null))
         assertTrue(RequestGuard.sameOrigin("http://192.168.1.5:8089", "192.168.1.5:8089", "same-origin"))
