@@ -311,6 +311,37 @@
   key("Escape"); await sleep(50);
   ok("Esc menu zavrie", $("#ctx").hidden, "");
 
+  // ---------- Obľúbené (Shift+F, F ostáva filter), ťahanie do inej aplikácie, živé fotky ----------
+  async function apiLog() { return (await fetch("/__api")).json(); }
+  await closeAll();
+  ok("obľúbená zo zoznamu (#2) má ★", cell(1) && cell(1).classList.contains("isfav") && cell(1).querySelector(".fav").textContent === "★", cell(1) && cell(1).className);
+  key("Home"); await sleep(50);
+  var a0 = (await apiLog()).length;
+  key("F", { shift: true }); await sleep(300);
+  var al = (await apiLog()).slice(a0);
+  ok("Shift+F = 1 POST /api/favorite pre fotku pod kurzorom", al.length === 1 && al[0].favorite && al[0].favorite.join() === "1" && al[0].fav === true && cell(0).classList.contains("isfav"), JSON.stringify(al));
+  key("z", { ctrl: true }); await sleep(300);
+  al = (await apiLog()).slice(a0);
+  ok("Ctrl+Z vráti obľúbenú", al.length === 2 && al[1].fav === false && !cell(0).classList.contains("isfav"), JSON.stringify(al));
+  key("f"); await sleep(150);
+  ok("F (bez Shift) ostáva prepnutie filtra", $("#filter").value === "new", $("#filter").value);
+  $("#filter").value = "all"; $("#filter").dispatchEvent(new Event("change", { bubbles: true })); await sleep(150);
+  var dt = new DataTransfer(), dev = new DragEvent("dragstart", { bubbles: true, cancelable: true, dataTransfer: dt });
+  cell(0).dispatchEvent(dev);
+  ok("ťahanie dlaždice: DownloadURL na /api/file (originál, meno súboru)", dt.getData("DownloadURL") === "image/jpeg:IMG_0001.jpg:" + location.origin + "/api/file?id=1&dl=1", dt.getData("DownloadURL"));
+  click(cell(2)); await sleep(600); // #3 = živá podľa zoznamu
+  var lv = $("#vStage .live");
+  ok("živá fotka v prehliadači: odznak ŽIVÁ a ▶ Prehrať", overlays().indexOf("viewer") >= 0 && lv && !lv.hidden, lv && lv.hidden);
+  if (lv) lv.querySelector("button").click();
+  var mv = $("#vStage .mot video");
+  ok("▶ Prehrať: video so zvukom z /api/motion", mv && mv.getAttribute("src") === "/api/motion?id=3" && !mv.muted, mv && mv.getAttribute("src"));
+  key("Escape"); await sleep(80);
+  ok("Esc zastaví video, prehliadač ostane", !$("#vStage .mot") && overlays().indexOf("viewer") >= 0, overlays());
+  key("ArrowRight"); key("ArrowRight"); key("ArrowRight"); key("ArrowRight"); await sleep(900); // #7 = živá len podľa /api/meta
+  ok("živá podľa /api/meta (zoznam to nevie)", / 7 \/ /.test($("#vInfo").textContent) && !$("#vStage .live").hidden, $("#vInfo").textContent);
+  ok("meta pre #7 sa pýtala práve raz", (await apiLog()).slice(a0).filter(function (x) { return x.meta === "7"; }).length === 1, JSON.stringify((await apiLog()).slice(a0)));
+  await closeAll();
+
   if (hidOn) { $("#hideMarkedBtn").click(); await sleep(100); }
   HTMLAnchorElement.prototype.click = origClick;
   var bad = R.filter(function (x) { return !x.ok; });

@@ -709,3 +709,117 @@ test("diagnostika servera: ľubovoľný JSON ako riadky tabuľky", () => {
   assert.equal(m["deep.a.b.c"], '{"d":1}'); // hlboké vnorenie ako JSON
   assert.deepEqual(plain(C.statsRows(5)), [{ k: "hodnota", v: "5" }]);
 });
+
+// ---------- web-0.67.2-fav: Obľúbené, živé fotky, pretiahnutie do inej aplikácie, schránka ----------
+test("Obľúbené: filter „Len obľúbené“ / „Živé fotky“ a poradie filtrov pre F", () => {
+  const items = [
+    { id: 1, name: "a.jpg", mime: "image/jpeg" },
+    { id: 2, name: "b.jpg", mime: "image/jpeg", motion: true },
+    { id: 3, name: "c.mp4", mime: "video/mp4" }
+  ];
+  const none = new Set(), fav = new Set([1, 3]);
+  assert.deepEqual(plain(C.filterItems(items, "", "fav", none, new Map(), false, fav).map((x) => x.id)), [1, 3]);
+  assert.deepEqual(plain(C.filterItems(items, "", "fav", none, new Map()).map((x) => x.id)), [], "bez množiny obľúbených nič");
+  assert.deepEqual(plain(C.filterItems(items, "", "motion", none, new Map(), false, fav).map((x) => x.id)), [2]);
+  // skryté označené platia aj pri obľúbených
+  assert.deepEqual(plain(C.filterItems(items, "", "fav", new Set([1]), new Map(), true, fav).map((x) => x.id)), [3]);
+  assert.deepEqual(plain(C.filterOrder(false, false)), ["all", "new", "synced", "marked", "images", "videos"]);
+  assert.deepEqual(plain(C.filterOrder(true, true)).slice(-2), ["fav", "motion"]);
+  assert.deepEqual(plain(C.filterOrder(false, true)).slice(-1), ["motion"]);
+});
+
+test("Obľúbené: dávka (výber naraz, inak kurzor), po 2000, Ctrl+Z len zmenené", () => {
+  const fav = new Set([2]);
+  assert.deepEqual(plain(C.favPlan([], 5, fav)), { ids: [5], fav: true });
+  assert.deepEqual(plain(C.favPlan([], 2, fav)), { ids: [2], fav: false });
+  assert.deepEqual(plain(C.favPlan([1, 2, 3], 9, fav)), { ids: [1, 2, 3], fav: true }, "výber má prednosť, nie všetky obľúbené → pridať");
+  assert.deepEqual(plain(C.favPlan([2], 9, fav)), { ids: [2], fav: false }, "všetky vybrané obľúbené → odobrať");
+  assert.deepEqual(plain(C.favPlan([], null, fav)), { ids: [], fav: false });
+  assert.equal(C.FAV_MAX, 2000);
+  const ch = C.favChunks(Array.from({ length: 4500 }, (_, i) => i));
+  assert.deepEqual(plain(ch.map((c) => c.length)), [2000, 2000, 500]);
+  // odpoveď servera: changed = len tie, ktorým sa stav naozaj zmenil (a len z poslaných)
+  assert.deepEqual(plain(C.favChanged([1, 2, 3], { changed: [3, 1, 99], fav: true, gen: 5 })), [3, 1]);
+  assert.deepEqual(plain(C.favChanged([1, 2], { changed: ["2"] })), [2], "id ako text");
+  assert.deepEqual(plain(C.favChanged([1, 2], {})), [1, 2], "bez changed = všetky poslané");
+  assert.deepEqual(plain(C.favPrev([1, 3], true)), { 1: false, 3: false });
+  assert.deepEqual(plain(C.revertMarks(C.favPrev([1, 3], false))), { on: [1, 3], off: [] }, "Ctrl+Z odobratia = znova pridať");
+});
+
+test("Obľúbené: zo zoznamu (pole fav chýba = nie je obľúbená) a kedy treba /api/favorites", () => {
+  const s = new Set([1, 2, 9]);
+  C.absorbFav(s, [{ id: 1 }, { id: 2, fav: true }, { id: 3, fav: true }], false);
+  assert.deepEqual([...s].sort(), [2, 3, 9], "delta mení len svoje položky");
+  C.absorbFav(s, [{ id: 4, fav: true }], true);
+  assert.deepEqual([...s], [4], "celý zoznam = nová množina");
+  const known = { favGen: 10, gen: 7 };
+  assert.equal(C.favNeedsFetch({ favGen: 10, gen: 7 }, known), false);
+  assert.equal(C.favNeedsFetch({ favGen: 11, gen: 8 }, known), false, "zmena z telefónu posunie aj gen → stačí delta zoznamu");
+  assert.equal(C.favNeedsFetch({ favGen: 11, gen: 7 }, known), true, "favGen bez zmeny zoznamu → /api/favorites");
+  assert.equal(C.favNeedsFetch({ gen: 7 }, known), false, "server bez favGen");
+  assert.equal(C.favNeedsFetch({ favGen: 3, gen: 7 }, { favGen: null, gen: 7 }), true);
+});
+
+test("živé fotky: zo zoznamu hneď, inak podľa /api/meta (motion.len)", () => {
+  const jpg = { id: 1, mime: "image/jpeg" };
+  assert.equal(C.liveState(Object.assign({ motion: true }, jpg), undefined), true);
+  assert.equal(C.liveState(jpg, undefined), null, "meta ešte nie je");
+  assert.equal(C.liveState(jpg, null), false, "meta načítaná bez údajov");
+  assert.equal(C.liveState(jpg, { format: "JPEG" }), false);
+  assert.equal(C.liveState(jpg, { motion: { len: 2345678 } }), true);
+  assert.equal(C.liveState(jpg, { motion: { len: 0 } }), false);
+  assert.equal(C.liveState({ id: 2, mime: "video/mp4", motion: true }, undefined), false, "video nie je živá fotka");
+});
+
+test("pretiahnutie do inej aplikácie: DownloadURL = mime:meno:absolútna URL ako ⬇", () => {
+  const jpg = { id: 7, name: "IMG_7.jpg", mime: "image/jpeg" }, heic = { id: 8, name: "IMG_8.HEIC", mime: "image/heic" };
+  const vid = { id: 9, name: "VID_9.mp4", mime: "video/mp4" };
+  let d = plain(C.dragData(jpg, { origin: "http://192.168.1.20:8089" }));
+  assert.equal(d.downloadUrl, "image/jpeg:IMG_7.jpg:http://192.168.1.20:8089/api/file?id=7&dl=1");
+  assert.equal(d.url, "http://192.168.1.20:8089/api/file?id=7&dl=1");
+  d = plain(C.dragData(heic, { origin: "http://h:1", reduced: true, q: 85 }));
+  assert.equal(d.downloadUrl, "image/jpeg:IMG_8.jpg:http://h:1/api/file?id=8&dl=1&q=85&max=2048", "zmenšené = JPEG 2048 px s kvalitou, prípona .jpg");
+  assert.equal(C.dragData(heic, { origin: "http://h:1" }).downloadUrl, "image/heic:IMG_8.HEIC:http://h:1/api/file?id=8&dl=1", "originál bez prekódovania");
+  assert.equal(C.dragData(vid, { origin: "http://h:1", reduced: true }).downloadUrl, "video/mp4:VID_9.mp4:http://h:1/api/file?id=9&dl=1", "video sa nezmenšuje");
+  assert.equal(C.dragData(jpg, { origin: "http://h:1", token: "123456" }).url, "http://h:1/api/file?id=7&dl=1&token=123456", "bez cookie token v adrese ako pri priamom odkaze");
+  assert.equal(C.dragData({ id: 1, name: "a:b/c\\d.jpg", mime: "image/png" }, { origin: "" }).name, "a_b_c_d.jpg", "dvojbodka by rozbila formát");
+  assert.equal(C.dragData({ id: 1, name: "", mime: "" }, {}).downloadUrl, "application/octet-stream:foto:/api/file?id=1&dl=1");
+  // rovnaké parametre ako sťahovanie tlačidlom ⬇ (dlJob)
+  assert.deepEqual(plain(C.fileParams(jpg, true, 70)), { id: 7, dl: 1, q: 70, max: 2048 });
+  assert.deepEqual(plain(C.fileParams(vid, true, 70)), { id: 9, dl: 1 });
+  assert.equal(C.query({ id: 1, a: null, b: "x y" }, "t"), "?id=1&b=x%20y&token=t");
+  assert.equal(C.query({}, ""), "");
+  assert.match(C.DRAG_MULTI_TXT, /^Do inej aplikácie sa dá z prehliadača pretiahnuť len 1 fotka naraz\. Viac fotiek: 📁 Uložiť do priečinka \(cez USB\)/);
+});
+
+test("schránka (Ctrl+C): čo sa načíta, tip chrome://flags", () => {
+  const jpg = { id: 7, name: "a.jpg", mime: "image/jpeg", w: 4000, h: 3000, mtime: 5 };
+  const heic = { id: 8, name: "b.heic", mime: "image/heic", w: 8160, h: 6120, orient: 90, mtime: 6 };
+  assert.deepEqual(plain(C.clipSrc(jpg, false)), { path: "/api/file", params: { id: 7 } });
+  assert.deepEqual(plain(C.clipSrc(jpg, true, 85)), { path: "/api/file", params: { id: 7, q: 85, max: 2048 } });
+  assert.deepEqual(plain(C.clipSrc(heic, false)), { path: "/api/thumb", params: { id: 8, max: C.FULL_MAX, v: 6 } }, "HEIC ako JPEG v plnom rozlíšení (strop)");
+  assert.match(C.flagsTip("http://192.168.1.20:8089"), /chrome:\/\/flags\/#unsafely-treat-insecure-origin-as-secure.*\(http:\/\/192\.168\.1\.20:8089\).*Uložiť do priečinka/);
+  assert.match(C.flagsTip(""), /voliteľné, platí len pre tento počítač/);
+  assert.match(C.CLIP_INSECURE_TXT, /chrome:\/\/flags/);
+});
+
+test("kontextové menu: Obľúbené (dávkovo), ▶ Prehrať, Kopírovať obrázok", () => {
+  const base = { sel: 0, inSel: false, selected: false, marked: false, selMarked: false, image: true, range: null };
+  const ids = (c) => plain(C.ctxItems(Object.assign({}, base, c)).map((x) => x.id));
+  assert.deepEqual(ids({ where: "grid", favs: true, canClip: true }), ["mark", "fav", "sel", "selall", "selnone", "with", "preview", "dl", "copyimg", "copy"]);
+  assert.deepEqual(ids({ where: "viewer", favs: true, live: true }), ["mark", "fav", "play", "with", "preview", "dl", "copy"]);
+  assert.ok(!ids({ where: "grid", canClip: true, image: false }).includes("copyimg"), "video do schránky nejde");
+  const lab = (c) => C.ctxItems(Object.assign({}, base, c)).find((x) => x.id === "fav").label;
+  assert.equal(lab({ where: "grid", favs: true }), "★ Pridať do obľúbených");
+  assert.equal(lab({ where: "grid", favs: true, fav: true }), "☆ Odobrať z obľúbených");
+  assert.equal(lab({ where: "grid", favs: true, sel: 3, inSel: true }), "★ Pridať do obľúbených (3)");
+  assert.equal(lab({ where: "grid", favs: true, sel: 3, inSel: true, selFav: true }), "☆ Odobrať z obľúbených (3)");
+});
+
+test("ZIP: najviac 2 naraz (server inak odpovie 503 busy)", () => {
+  assert.equal(C.ZIP_PARALLEL, 2);
+  assert.equal(C.zipFree([], 1000), 2);
+  assert.equal(C.zipFree([1000], 2000), 1);
+  assert.equal(C.zipFree([1000, 1500], 2000), 0);
+  assert.equal(C.zipFree([1000, 1500], 1000 + 60000), 2, "staré ZIP-y sa už nerátajú");
+});
