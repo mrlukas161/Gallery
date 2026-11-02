@@ -296,3 +296,109 @@ test("hromadné: náhodný test invariantu", () => {
     assert.equal(new Set(p.all).size, p.all.length);
   }
 });
+
+// ---- 0.67.1: ovládanie (mriežka, výber intervalu, Do chatu, ★ neistá) ----
+test("mriežka: pohyb kurzora šípkami, Home/End, hranice", () => {
+  assert.equal(C.gridMove(-1, "ArrowLeft", 5, 20), 0, "bez kurzora prvá fotka");
+  assert.equal(C.gridMove(7, "ArrowRight", 5, 20), 8);
+  assert.equal(C.gridMove(7, "ArrowLeft", 5, 20), 6);
+  assert.equal(C.gridMove(7, "ArrowDown", 5, 20), 12);
+  assert.equal(C.gridMove(7, "ArrowUp", 5, 20), 2);
+  assert.equal(C.gridMove(2, "ArrowUp", 5, 20), 0, "hore sa zastaví na prvej");
+  assert.equal(C.gridMove(18, "ArrowDown", 5, 20), 19, "dole na poslednej");
+  assert.equal(C.gridMove(7, "Home", 5, 20), 0);
+  assert.equal(C.gridMove(7, "End", 5, 20), 19);
+  assert.equal(C.gridMove(7, "x", 5, 20), -1);
+  assert.equal(C.gridMove(0, "ArrowDown", 5, 0), -1, "prázdna mriežka");
+});
+
+test("výber intervalu: od kotvy po kliknutú, v oboch smeroch, vrátane krajných", () => {
+  const view = [10, 11, 12, 13, 14, 15].map((id) => ({ id }));
+  assert.deepEqual(plain(C.rangeIds(view, 1, 3)), [11, 12, 13]);
+  assert.deepEqual(plain(C.rangeIds(view, 4, 2)), [12, 13, 14]);
+  assert.deepEqual(plain(C.rangeIds(view, 2, 2)), [12]);
+  assert.deepEqual(plain(C.rangeIds(view, -5, 99)), [10, 11, 12, 13, 14, 15]);
+  assert.deepEqual(plain(C.rangeIds([], 0, 3)), []);
+});
+
+test("Shift+šípky: výber sa rozširuje a pri pohybe späť zmenšuje, doterajší výber ostane", () => {
+  const view = [1, 2, 3, 4, 5, 6, 7].map((id) => ({ id }));
+  const sel = new Set([7]); // vybrané skôr (Ctrl+klik)
+  const added = new Set();
+  C.extendSelection(sel, added, C.rangeIds(view, 2, 2)); // kotva = kurzor (index 2)
+  assert.deepEqual([...sel].sort(), [3, 7]);
+  C.extendSelection(sel, added, C.rangeIds(view, 2, 4));
+  assert.deepEqual([...sel].sort(), [3, 4, 5, 7]);
+  C.extendSelection(sel, added, C.rangeIds(view, 2, 3)); // späť o jedna
+  assert.deepEqual([...sel].sort(), [3, 4, 7]);
+  C.extendSelection(sel, added, C.rangeIds(view, 2, 0)); // za kotvu na druhú stranu
+  assert.deepEqual([...sel].sort(), [1, 2, 3, 7]);
+  assert.ok(sel.has(7), "pôvodný výber sa nikdy nezmenšil");
+});
+
+test("Do chatu: názov s predponou Claude_ a príponou .jpg, len fotky, nad 20 sa pýta", () => {
+  assert.equal(C.chatName("IMG_001.HEIC"), "Claude_IMG_001.jpg");
+  assert.equal(C.chatName("foto.v2.png"), "Claude_foto.v2.jpg");
+  assert.equal(C.chatName(""), "Claude_foto.jpg");
+  const imgs = Array.from({ length: 21 }, (_, i) => ({ id: i, mime: "image/jpeg" }));
+  const p = C.chatPlan(imgs.concat([{ id: 99, mime: "video/mp4" }]));
+  assert.equal(p.send.length, 21);
+  assert.equal(p.skipped, 1);
+  assert.equal(p.tooMany, true);
+  const p2 = C.chatPlan(imgs.slice(0, 20));
+  assert.equal(p2.tooMany, false, "presne 20 sa nepýta");
+  assert.equal(C.chatPlan([{ id: 1, mime: "video/mp4" }]).send.length, 0);
+  assert.equal(C.CHAT_MAX, 20);
+});
+
+test("zoznam percent: 2, 3 a veľa fotiek", () => {
+  assert.equal(C.pctList([91, 90]), "91 % a 90 %");
+  assert.equal(C.pctList([91, 90, 87]), "91 %, 90 % a 87 %");
+  assert.equal(C.pctList([88]), "88 %");
+  assert.equal(C.pctList([9, 8, 7, 6, 5, 4]), "9 %, 8 %, 7 %, 6 %, 5 % …");
+});
+
+test("★ neistá: percentá všetkých fotiek a vysvetlenie, prečo ju dostala", () => {
+  const g = {
+    kind: "similar", quality: true, uncertain: true, best: 1,
+    qscores: {
+      1: { percent: 91, rank: 0, details: [{ code: "older_file" }] },
+      2: { percent: 90, rank: 1, details: [] }
+    }
+  };
+  const n = C.starNote(g, "IMG_1.jpg");
+  assert.equal(n.warn, true);
+  assert.equal(n.head, "★ neistá: IMG_1.jpg");
+  assert.ok(n.text.includes("Skóre sú takmer rovnaké (91 % a 90 %), ★ dostala staršia fotka ako pravdepodobný originál – kvalitou sa nelíšia, rozhodni sám."), n.text);
+  // tri fotky, ★ z priečinka Fotoaparát
+  const g3 = {
+    kind: "burst", quality: true, uncertain: true, best: 5,
+    qscores: { 5: { percent: 80, rank: 0, details: [{ code: "original_folder" }] }, 6: { percent: 79, rank: 1 }, 7: { percent: 74, rank: 2 } }
+  };
+  assert.ok(C.starNote(g3, "a.jpg").text.includes("(80 %, 79 % a 74 %), ★ dostala fotka z priečinka Fotoaparát ako pravdepodobný originál – kvalitou sa nelíšia"));
+  // ★ vyhrala skutočným (malým) rozdielom, nie rozhodnutím pri zhode
+  const gs = {
+    kind: "similar", quality: true, uncertain: true, best: 1,
+    qscores: { 1: { percent: 70, rank: 0, details: [{ code: "sharper", value: 3 }] }, 2: { percent: 68, rank: 1 } }
+  };
+  const ns = C.starNote(gs, "b.jpg");
+  assert.ok(ns.text.includes("(70 % a 68 %), ★ dostala fotka s o niečo vyšším skóre – rozdiel v kvalite je malý, rozhodni sám."), ns.text);
+  // percentá z `score`, ak server `percent` nepošle
+  const gp = { kind: "similar", quality: true, uncertain: true, best: 1, qscores: { 1: { score: 0.913, rank: 0 }, 2: { score: 0.9, rank: 1 } } };
+  assert.ok(C.starNote(gp, "c.jpg").text.includes("(91 % a 90 %)"));
+});
+
+test("★ istá: bez poplašnej vety; presné kópie: sú to rovnaké fotky; bez skóre ticho", () => {
+  const ok = { kind: "similar", quality: true, uncertain: false, best: 1, qscores: { 1: { percent: 92, rank: 0, text: "ostrejšia o 18 %" }, 2: { percent: 60, rank: 1 } } };
+  const n = C.starNote(ok, "x.jpg");
+  assert.equal(n.warn, false);
+  assert.equal(n.head, "★ najlepšia: x.jpg");
+  assert.equal(n.text, " · ostrejšia o 18 %");
+  const ex = C.starNote({ kind: "exact", ids: [1, 2] }, "y.jpg");
+  assert.ok(ex.text.includes("sú to rovnaké fotky"));
+  assert.equal(ex.warn, false);
+  assert.equal(C.starNote({ kind: "similar", best: 1, uncertain: false }, "z"), null);
+  assert.equal(C.starNote(null, ""), null);
+  const cached = C.starNote({ kind: "similar", best: 1, uncertain: true }, "z.jpg");
+  assert.ok(cached.warn && cached.text.includes("rozhodni sám"));
+});
