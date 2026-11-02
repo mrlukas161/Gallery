@@ -51,7 +51,7 @@
 </div>
 
 <div class="ver">
-  <h2><span class="v">0.67.2</span> <span class="d">web Galéria+ Sync — Obľúbené, živé fotky, ťahanie do aplikácií, náhľad, „Porovnať s…“, plná kvalita, ZIP</span></h2>
+  <h2><span class="v">0.67.2</span> <span class="d">rýchlejší Server pre PC a web Galéria+ Sync — Obľúbené, živé fotky, ťahanie do aplikácií, náhľad, „Porovnať s…“, plná kvalita, ZIP</span></h2>
   <ul>
     <li><span class="tag t-new">NOVÉ</span> <b>Obľúbené aj z PC</b> – tie isté ako v Galérii+ v telefóne: ★ na miniatúre (klik na ☆ pri prejdení myšou), prepínač v prehliadači, náhľade aj porovnávačoch, <b>Shift + F</b> (F ostáva filter / prispôsobiť), v pravom menu a v lište výberu celý výber jednou požiadavkou. Filter „★ Len obľúbené“ (pamätá sa) a Ctrl+Z vráti celú dávku. Čo pridáš v telefóne, web ukáže sám.</li>
     <li><span class="tag t-new">NOVÉ</span> <b>Živé (pohyblivé) fotky so zvukom</b> (Xiaomi/HyperOS, Samsung, Pixel): odznak <b>ŽIVÁ</b> a <b>▶ Prehrať</b> v prehliadači, náhľade aj porovnávačoch (kláves P, v porovnávačoch Shift + P). Video hrá so zvukom cez fotku, s hlasitosťou (pamätá sa); medzerník pauza, Esc, koniec videa alebo listovanie vráti fotku. Filter „Živé fotky“.</li>
@@ -67,6 +67,10 @@
     <li><span class="tag t-new">NOVÉ</span> <b>Označené na zmazanie sú skryté</b> (H prepína, pamätá sa): zmiznú z mriežky, náhľadu aj „Porovnať s…“, nič sa nemaže. V hlavičke počítadlo „Na zmazanie: N (X MB)“ otvorí prehľad. Delete / X označí celý výber jednou požiadavkou, Ctrl+Z vráti celú dávku.</li>
     <li><span class="tag t-new">NOVÉ</span> <b>Interval sa dá aj odznačiť:</b> Shift + klik (aj Shift + medzerník) od kotvy vyberie interval, keď je kotva vybraná, inak ho odznačí; Shift + X rovnako pre značky na zmazanie. Ctrl+Z vráti celý interval. Ctrl + D zruší výber.</li>
     <li><span class="tag t-fix">OPRAVA</span> <b>Sťahovanie:</b> vybrané fotky ako jeden ZIP, jasné hlásenie, kam sa súbory uložili (Stiahnuté súbory, Ctrl+J) a prečo nie (prihlásenie, súbor zmizol, sieť). Nikdy viac ako jedno sťahovanie naraz, takže náhľady nestoja; cez localhost aj „Uložiť do priečinka…“.</li>
+    <li><span class="tag t-fix">ZRÝCHLENIE</span> <b>Server pre PC už „z ničoho nič“ nespomalí:</b> spracovanie knižnice (tváre, text, duplikáty…) počas sťahovania do PC počká a pokračuje po 30 s ticha (notifikácia: „čaká – PC práve sťahuje“). Otvorená karta v Chrome ho neblokuje. Počas prenosu telefón nezaspí (procesor aj Wi-Fi), potom sa hneď uvoľní.</li>
+    <li><span class="tag t-fix">ZRÝCHLENIE</span> <b>Náhľady rýchlejšie:</b> cache v pamäti aj na disku (prežije reštart servera), veľké fotky sa dekódujú priamo na potrebnú veľkosť a najviac 2 naraz; pri preťažení web náhľad sám skúsi znova. HEIC v Plnej kvalite až do 8192 px.</li>
+    <li><span class="tag t-new">NOVÉ</span> <b>PIN ostáva rovnaký</b>, aj keď systém server reštartuje – netreba sa znova prihlasovať.</li>
+    <li><span class="tag t-new">NOVÉ</span> <b>Nastavenia → Server pre PC:</b> keď HyperOS Galériu+ obmedzuje kvôli batérii, ukáže sa riadok „Pre rýchly prenos povoľ Galérii+ beh bez obmedzení“ – ťuk otvorí nastavenie. V pomocníkovi webu „Diagnostika servera“ ukáže, čo je pomalé.</li>
     <li><span class="tag t-fix">OPRAVA</span> <b>Opravené čierne čiary pri približovaní fotky</b> – fotka sa kreslí len vo viditeľnom výreze na celé pixely. Prednačíta sa len ďalšia fotka, až keď je aktuálna hotová, a pri listovaní sa zruší.</li>
   </ul>
   <div class="test">🔎 <b>Vyskúšaj:</b> v prehliadači fotky toč kolieskom (listuje) a s Ctrl (približuje); v mriežke Ctrl + koliesko; klávesy V, C, O a pravé tlačidlo na miniatúre; vyber 3 fotky a stlač D. Shift + F na fotke a pozri ★ v telefóne; živú fotku z Xiaomi otvor a stlač P; miniatúru pretiahni do chatu Claude.</div>
