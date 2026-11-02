@@ -86,6 +86,12 @@ object SpecialPhoto {
             seen.add(path)
         }
 
+        // server-rychlost: záznamy s daným druhom (cesta -> čas zmeny ms, veľkosť) — Server pre PC podľa
+        // nich označí pohyblivé fotky v zozname bez čítania súborov
+        @Synchronized
+        fun entriesWith(kind: Kind): Map<String, Pair<Long, Long>> =
+            entries.filterValues { kind in it.kinds }.mapValues { it.value.modified to it.value.size }
+
         // pruneUnseen = skenom prešla celá knižnica, takže záznamy o zmazaných fotkách sa zahodia
         @Synchronized
         fun save(pruneUnseen: Boolean) {
@@ -151,7 +157,12 @@ object SpecialPhoto {
             // zmena rozpoznávania (nový druh, iný prah) = zvýšiť verziu, stará cache sa zahodí
             private const val HEADER = "#special-v1"
 
-            fun open(context: Context): ScanCache = ScanCache(File(context.cacheDir, "special_scan_cache.tsv"))
+            private const val FILE_NAME = "special_scan_cache.tsv"
+
+            fun open(context: Context): ScanCache = ScanCache(File(context.cacheDir, FILE_NAME))
+
+            // čas poslednej zmeny súboru cache (0 = neexistuje) — čitateľ ju načíta znova len po zmene
+            fun stamp(context: Context): Long = File(context.cacheDir, FILE_NAME).lastModified()
         }
     }
 

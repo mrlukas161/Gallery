@@ -14,6 +14,8 @@ import org.fossify.gallery.helpers.BackgroundPriority
 import org.fossify.gallery.helpers.HeavyGate
 import org.fossify.gallery.helpers.HeavySlot
 import java.io.File
+import org.fossify.gallery.helpers.ServerYield
+import org.fossify.gallery.services.IndexingService
 
 // E1 — lenivé doplnenie nových stĺpcov faces.db v3 starým tváram (Room migrácia ich len pridala s NULL/0,
 // lebo nevie čítať súbory ani EXIF). Spúšťa ho IndexingService (TASK_FACE_META) pri nabíjaní
@@ -102,6 +104,7 @@ object FaceMetaBackfill {
         val dates = FaceTakenAt.batch(app, metaPaths.filter { File(it).isFile })
         for (path in metaPaths) {
             if (!isRunning) return false
+            ServerYield.SHARED.pause(IndexingService.TASK_FACE_META, { isRunning }) // PC práve sťahuje
             if (File(path).isFile) fillMeta(dao, spaces, path, dates[path] ?: FaceTakenAt.UNKNOWN)
             done++
             onProgress(done, total)
@@ -109,6 +112,7 @@ object FaceMetaBackfill {
         // kvalita až po priestore rámčekov (preklopené v1 → v2 sú už na správnom mieste)
         for (path in dao.getPathsNeedingQuality()) {
             if (!isRunning) return false
+            ServerYield.SHARED.pause(IndexingService.TASK_FACE_META, { isRunning }) { models.close() }
             if (File(path).isFile) fillQuality(dao, models, path)
             done++
             onProgress(done, total)

@@ -28,6 +28,8 @@ import org.fossify.gallery.helpers.IndexProgress
 import org.fossify.gallery.helpers.MemoryPressure
 import org.fossify.gallery.helpers.PendingCounter
 import org.fossify.gallery.helpers.ProcessingPolicy
+import org.fossify.gallery.helpers.ServerActivity
+import org.fossify.gallery.helpers.ServerYield
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
 
@@ -83,9 +85,25 @@ class IndexingService : Service() {
 
     private val memoryListener: () -> Unit = { onMemoryCritical() }
 
+    // server-rychlost: úloha ustupuje LAN serveru pre PC (ServerYield) — v notifikácii „čaká – PC práve sťahuje“
+    private val pcListener = object : ServerYield.Listener {
+        override fun onPause(task: String) {
+            if (stopped || task !in launched) return
+            progressState.getOrPut(task) { IndexProgress(taskName(task)) }.markWaitingForPc(true)
+            prog(task, describe(task))
+        }
+
+        override fun onResume(task: String) {
+            val p = progressState[task] ?: return
+            p.markWaitingForPc(false)
+            if (!stopped && task in launched) prog(task, describe(task))
+        }
+    }
+
     override fun onCreate() {
         super.onCreate()
         MemoryPressure.addCriticalListener(memoryListener)
+        ServerYield.SHARED.addListener(pcListener)
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -190,6 +208,12 @@ class IndexingService : Service() {
     // „Nové fotky hneď…“ sa počas behu sledujú (batéria, nabíjanie).
     // Pri AUTO volať mimo hlavného vlákna (PendingCounter číta MediaStore a Room).
     private fun applyPolicy(tasks: List<String>, trigger: ProcessingPolicy.Trigger): List<String> {
+        // server-rychlost: PC práve sťahuje cez LAN server — automatické spracovanie počká (čas auto-skenu
+        // sa nezapíše, takže ho autoScanIfStale spustí pri ďalšom otvorení appky); ručné beží vždy
+        if (!ServerActivity.autoStartAllowed(trigger == ProcessingPolicy.Trigger.MANUAL)) {
+            autoRan = false
+            return emptyList()
+        }
         val profile = currentProfile()
         val newFirst = config.processNewPhotosFirst
         val battery = IndexPerf.battery(this)
@@ -292,6 +316,7 @@ class IndexingService : Service() {
 
     override fun onDestroy() {
         MemoryPressure.removeCriticalListener(memoryListener)
+        ServerYield.SHARED.removeListener(pcListener)
         unregisterBatteryWatch()
         super.onDestroy()
     }
@@ -333,20 +358,6 @@ class IndexingService : Service() {
 
     private fun maybeFinish() {
         if (active.get() <= 0) finish()
-    }
-
-    private fun isTaskRunning(task: String): Boolean = when (task) {
-        TASK_FACES -> FaceIndexer.isRunning
-        TASK_GEO -> GeoIndexer.isRunning
-        TASK_QR -> QrIndexer.isRunning
-        TASK_OCR -> OcrIndexer.isRunning
-        TASK_PHASH -> PhashIndexer.isRunning
-        TASK_CLIP -> ClipIndexer.isRunning
-        TASK_CLIP_ML -> org.fossify.gallery.clip.ClipMlModels.isRunning
-        TASK_REEMBED -> org.fossify.gallery.faces.RefreshFaces.isRunning
-        TASK_FACE_V2 -> org.fossify.gallery.faces.FaceReembedV2.isRunning
-        TASK_FACE_META -> org.fossify.gallery.faces.FaceMetaBackfill.isRunning
-        else -> false
     }
 
     private fun runOne(task: String, auto: Boolean, finished: () -> Unit) {
@@ -612,6 +623,7 @@ class IndexingService : Service() {
         val p = progressState[key] ?: return progressMap[key] ?: ""
         val name = progressPhase[key]?.let { "${p.name} – $it" } ?: p.name
         return when {
+            p.waitingForPc -> getString(R.string.srv_prog_waiting_pc, name)
             p.waiting -> getString(R.string.lk_prog_waiting, name)
             !p.started -> getString(R.string.nt_preparing, name)
             else -> {
@@ -858,6 +870,26 @@ class IndexingService : Service() {
             TASK_FACE_META -> ProcessingPolicy.Indexer.FACE_META
             else -> ProcessingPolicy.Indexer.OTHER
         }
+
+        private fun isTaskRunning(task: String): Boolean = when (task) {
+            TASK_FACES -> FaceIndexer.isRunning
+            TASK_GEO -> GeoIndexer.isRunning
+            TASK_QR -> QrIndexer.isRunning
+            TASK_OCR -> OcrIndexer.isRunning
+            TASK_PHASH -> PhashIndexer.isRunning
+            TASK_CLIP -> ClipIndexer.isRunning
+            TASK_CLIP_ML -> org.fossify.gallery.clip.ClipMlModels.isRunning
+            TASK_REEMBED -> org.fossify.gallery.faces.RefreshFaces.isRunning
+            TASK_FACE_V2 -> org.fossify.gallery.faces.FaceReembedV2.isRunning
+            TASK_FACE_META -> org.fossify.gallery.faces.FaceMetaBackfill.isRunning
+            else -> false
+        }
+
+        // server-rychlost: práve bežiace spracovanie knižnice (diagnostika /api/stats)
+        fun runningTasks(): List<String> = listOf(
+            TASK_FACES, TASK_GEO, TASK_QR, TASK_OCR, TASK_PHASH, TASK_CLIP, TASK_CLIP_ML, TASK_REEMBED,
+            TASK_FACE_V2, TASK_FACE_META,
+        ).filter { isTaskRunning(it) }
 
         fun startAutoOnce(context: Context) {
             if (autoStarted) return

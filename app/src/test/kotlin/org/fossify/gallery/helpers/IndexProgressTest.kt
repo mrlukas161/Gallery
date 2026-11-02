@@ -48,6 +48,20 @@ class IndexProgressTest {
         assertEquals(60_000L, p.remainingMs())
     }
 
+    // server-rychlost: „čaká – PC práve sťahuje“ zmizne, len čo úloha pokročí
+    @Test
+    fun waitingForPcClearsOnProgress() {
+        val p = progress()
+        p.update(5, 200)
+        p.markWaitingForPc(true)
+        assertEquals(true, p.waitingForPc)
+        p.update(6, 200)
+        assertEquals(false, p.waitingForPc)
+        p.markWaitingForPc(true)
+        p.markWaitingForPc(false)
+        assertEquals(false, p.waitingForPc)
+    }
+
     @Test
     fun formatEta() {
         val f = { ms: Long -> IndexProgress.formatEta(ms, "<1 min", { "~$it min" }, { h, m -> "~$h h $m min" }) }

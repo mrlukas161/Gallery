@@ -18,6 +18,8 @@ import org.fossify.gallery.helpers.HeavySlot
 import org.fossify.gallery.helpers.IdleCloser
 import org.fossify.gallery.helpers.TextNormalizer
 import java.io.File
+import org.fossify.gallery.helpers.ServerYield
+import org.fossify.gallery.services.IndexingService
 
 // OCR indexovanie: prejde fotky a uloží rozpoznaný text (ocr.db). Pomalé (Tesseract) -> beží na pozadí,
 // resumovateľné (preskočí už spracované), s priebehovou notifikáciou. Spúšťa Lukáš (najlepšie pri nabíjaní).
@@ -66,6 +68,12 @@ object OcrIndexer {
                     total = todo.size
                     for (path in todo) {
                         if (!isRunning) break
+                        // server-rychlost: PC práve sťahuje -> počkaj; naliehavej úlohe uvoľni Tesseract aj miesto
+                        ServerYield.SHARED.pause(IndexingService.TASK_OCR, { isRunning }) {
+                            engine?.close()
+                            engine = null
+                            slot.close()
+                        }
                         val eng = engine ?: loadEngine(appCtx, slot).also { engine = it }
                         indexPhoto(appCtx, eng, qrDecoder, path)
                         done++

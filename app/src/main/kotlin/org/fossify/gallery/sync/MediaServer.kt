@@ -5,25 +5,31 @@ import android.content.Context
 import android.content.SharedPreferences
 import android.net.Uri
 import android.os.Build
-import android.os.StatFs
 import android.provider.MediaStore
 import android.util.Base64
 import androidx.exifinterface.media.ExifInterface
 import org.json.JSONArray
 import org.json.JSONObject
 import fi.iki.elonen.NanoHTTPD
+import fi.iki.elonen.NanoHTTPD.ClientHandler
 import fi.iki.elonen.NanoHTTPD.IHTTPSession
 import fi.iki.elonen.NanoHTTPD.Method
 import fi.iki.elonen.NanoHTTPD.Response
 import fi.iki.elonen.NanoHTTPD.Response.Status
 import java.io.File
 import java.io.InputStream
-import java.net.URLDecoder
+import java.net.Socket
 import java.security.SecureRandom
+import java.util.concurrent.Executors
+import java.util.concurrent.RejectedExecutionException
+import java.util.concurrent.ScheduledExecutorService
+import java.util.concurrent.ScheduledFuture
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 import org.fossify.commons.extensions.getSharedPrefs
-import org.fossify.commons.helpers.ensureBackgroundThread
 import org.fossify.gallery.extensions.config
 import org.fossify.gallery.faces.IndexScope
+import org.fossify.gallery.helpers.ServerActivity
 import org.fossify.gallery.helpers.EXCLUDED_FOLDERS
 import org.fossify.gallery.helpers.INCLUDED_FOLDERS
 
@@ -33,10 +39,15 @@ import org.fossify.gallery.helpers.INCLUDED_FOLDERS
 // za session cookie (HttpOnly, SameSite=Strict). Zmeny len cez POST z rovnakého pôvodu (Origin).
 // Popis API pre PC: docs/api/server-pre-pc.md.
 // onTooManyBadPins: volá sa (raz, z vlákna požiadavky), keď sa server zamkol po hádaní PIN-u.
+// server-rychlost: epoch dodá služba (po reštarte služby ten istý, HttpSyncService), resumed = reštart
+// služby (START_STICKY) -> prihlásenia prehliadačov sa obnovia z prefs. Prenos: TunedSocketFactory
+// (TCP_NODELAY, bufferovaný výstup) a LimitedRunner (limit spojení), viď ServerTransport.kt.
 class MediaServer(
     private val appContext: Context,
     private val pin: String,
     port: Int = DEFAULT_PORT,
+    private val epoch: String = newEpoch(),
+    resumed: Boolean = false,
     private val onTooManyBadPins: () -> Unit = {},
 ) : NanoHTTPD(null, port) {
 
@@ -49,27 +60,48 @@ class MediaServer(
         val FEATURES = listOf(
             "session", "sinceGen", "etag", "range", "groupsV2", "groupState", "meta", "markBatch",
             "syncedBatch", "deleteDryRun", "bin", "restore", "thumbMax", "dlMark", "quality",
+            // server-rychlost: /api/state?since=, /api/stats, ZIP, obľúbené, pohyblivé fotky, plné rozlíšenie
+            "stateSince", "stats", "zip", "favorites", "motion", "thumbFull",
         )
-        private const val SAVE_SUBDIR = "Galéria"
 
         // po toľkých RÔZNYCH zlých tokenoch sa server zamkne (šanca uhádnuť 6-miestny PIN ~ 20 : 900 000)
         private const val MAX_BAD_PINS = 20
         private const val BAD_PIN_KEEP = 64
 
-        // strop na jeden nahrávaný súbor a rezerva voľného miesta — upload nesmie zaplniť telefón
-        private const val MAX_UPLOAD_BYTES = 4L * 1024 * 1024 * 1024
-        private const val FREE_SPACE_RESERVE = 200L * 1024 * 1024
-        private const val FREE_SPACE_CHECK_EVERY = 64L * 1024 * 1024
-        private const val COPY_BUFFER = 64 * 1024
-
         // strop na telo JSON požiadaviek — parseBody inak načíta celé telo do pamäte
         private const val MAX_BODY_BYTES = 64L * 1024
+
+        // formulár /api/zip: 500 id po ~12 znakov + token
+        private const val MAX_FORM_BYTES = 64L * 1024
 
         private const val MAX_META_IDS = 8
         private const val NONCE_BYTES = 16
         private const val EPOCH_BYTES = 6
         private const val ERROR_MAX = 200
         private const val MS = 1000L
+
+        // server-rychlost: obnova indexu po zmenách v MediaStore (debounce), dávka „✓ v PC“, generácia
+        private const val REBUILD_QUIET_MS = 2_500L
+        private const val REBUILD_MAX_MS = 10_000L
+        private const val SYNCED_FLUSH_MS = 3_000L
+        private const val KEY_LIST_GEN = "server_list_gen"
+        private const val KEY_SESSIONS = "server_sessions"
+        private const val GEN_NEW_RUN_GAP = 100L
+        private const val NS_PER_MS = 1_000_000L
+        private const val DESCRIBE_MAX = 160
+        private const val FP_SIZE = 31L
+        private const val FP_TAKEN = 17L
+        private const val FP_W = 7L
+        private const val FP_H = 3L
+
+        // náhodné id behu servera (klient podľa neho spozná nový beh a načíta zoznam celý)
+        fun newEpoch(): String = randomToken(EPOCH_BYTES)
+
+        private fun randomToken(bytes: Int): String {
+            val b = ByteArray(bytes)
+            SecureRandom().nextBytes(b)
+            return Base64.encodeToString(b, Base64.NO_WRAP or Base64.URL_SAFE or Base64.NO_PADDING)
+        }
     }
 
     // w/h = rozmery uložených pixelov (pred otočením), orient = EXIF/MediaStore otočenie v stupňoch,
@@ -95,13 +127,14 @@ class MediaServer(
     // index a generácia sa menia naraz (inak by /api/list?sinceGen videl novú generáciu so starým indexom)
     private class Snapshot(val index: Map<Long, Item>, val gen: Long, val newest: Long)
 
+    private val syncPrefs get() = appContext.getSharedPreferences(SyncStore.PREFS, Context.MODE_PRIVATE)
+
+    // generácia pokračuje od poslednej uloženej + rezerva: epoch je po reštarte služby rovnaký, takže
+    // klient nesmie vidieť tú istú generáciu s iným obsahom
     @Volatile
-    private var snap = Snapshot(emptyMap(), 0L, 0L)
+    private var snap = Snapshot(emptyMap(), syncPrefs.getLong(KEY_LIST_GEN, 0L) + GEN_NEW_RUN_GAP, 0L)
     private val index: Map<Long, Item> get() = snap.index
     private val genLog = GenLog()
-
-    // náhodné id behu servera: generácie začínajú po reštarte od nuly, klient podľa epoch spozná nový beh
-    private val epoch = randomToken(EPOCH_BYTES)
 
     // Ochrana PIN-u pred hádaním na LAN: rátajú sa RÔZNE zlé tokeny (otvorená stará karta v PC
     // prehliadači posiela stále ten istý starý token a server by inak zbytočne zamkla); požiadavky
@@ -115,20 +148,101 @@ class MediaServer(
     private val sessions = Sessions()
     private val media = ServerMedia(appContext)
 
+    // server-rychlost: jedno vlákno na pozadí (obnova indexu, dávka „✓ v PC“, zámky, disková cache)
+    private val bg: ScheduledExecutorService = Executors.newSingleThreadScheduledExecutor { r ->
+        Thread(r, "galeria-server-bg").apply { isDaemon = true }
+    }
+    private val stats = ServerStats()
+    private val runner = LimitedRunner(ServerTransport.MAX_CONNECTIONS) { stats.rejectedConnections.incrementAndGet() }
+    private val locks = ServerLocks(appContext, bg, { stats.inFlight.get() })
+    private val rebuildDebounce = Debounce(REBUILD_QUIET_MS, REBUILD_MAX_MS)
+    private val rebuildLock = Any()
+    private var rebuildFuture: ScheduledFuture<*>? = null
+    private val flushScheduled = AtomicBoolean(false)
+    private val startedAt = System.currentTimeMillis()
+
     private val marks = ServerMarks(appContext) { snap.index }
-    private val cleanup = ServerCleanup(appContext, { snap.let { it.index to it.gen } }) { rebuildIndex() }
+    private val cleanup = ServerCleanup(
+        appContext,
+        { snap.let { it.index to it.gen } },
+        onDeleted = { ids -> removeIds(ids) },
+        requestRebuild = { requestRebuild() },
+    )
+    private val groups = ServerGroups(appContext, epoch) { snap.let { it.index to it.gen } }
     private val quality = ServerQuality(appContext) { snap.index }
+    private val favorites = ServerFavorites(appContext, { snap.index }) { ids -> touchIds(ids) }
+    private val motion = ServerMotion(appContext)
+    private val zip = ServerZip(appContext, { snap.index }) { paths -> markSynced(paths) }
+    private val upload = ServerUpload(appContext) { id, isVideo -> indexOne(id, isVideo) }
+
+    // cesty API -> obsluha (po prihlásení a kontrole zmien)
+    private val routes: Map<String, (IHTTPSession) -> Response> = mapOf(
+        "/api/ping" to { _ -> handlePing() },
+        "/api/stats" to { s -> handleStats(s) },
+        "/api/logout" to { s -> handleLogout(s) },
+        "/api/list" to { s -> handleList(s) },
+        "/api/file" to { s -> handleFile(s) },
+        "/api/thumb" to { s -> handleThumb(s) },
+        "/api/meta" to { s -> handleMeta(s) },
+        "/api/upload" to { s -> upload.handle(s) },
+        "/api/delete" to { s -> cleanup.delete(s) },
+        "/api/groups" to { s -> groups.groups(s) },
+        "/api/quality" to { s -> quality.handle(s) },
+        "/api/groupstate" to { s -> marks.groupState(s) },
+        "/api/state" to { s -> marks.state(s) },
+        "/api/mark" to { s -> marks.mark(s) },
+        "/api/synced" to { s -> marks.synced(s) },
+        "/api/clearmarks" to { _ -> marks.clearMarks() },
+        "/api/bin" to { _ -> cleanup.bin() },
+        "/api/restore" to { s -> cleanup.restore(s) },
+        "/api/favorites" to { _ -> favorites.get() },
+        "/api/favorite" to { s -> favorites.post(s) },
+        "/api/motion" to { s -> motion.handle(s, itemOf(s)) },
+    )
 
     @Volatile
     private var html: String? = null
 
     private val resolver: ContentResolver get() = appContext.contentResolver
-    private val syncPrefs get() = appContext.getSharedPreferences(SyncStore.PREFS, Context.MODE_PRIVATE)
+
+    init {
+        setServerSocketFactory(TunedSocketFactory())
+        setAsyncRunner(runner)
+        if (resumed) sessions.restore(syncPrefs.getString(KEY_SESSIONS, null), System.currentTimeMillis())
+    }
 
     fun itemCount(): Int = index.size
 
-    // volá HttpSyncService po zmene v MediaStore (nová / zmazaná fotka) — mimo hlavného vlákna
-    fun refreshIndex() = rebuildIndex()
+    // volá HttpSyncService po zmene v MediaStore (nová / zmazaná fotka); obnova ide na pozadí po
+    // REBUILD_QUIET_MS ticha (najneskôr REBUILD_MAX_MS) — séria zmien = jedna prestavba
+    fun refreshIndex() = requestRebuild()
+
+    fun requestRebuild(immediate: Boolean = false) {
+        val delay = if (immediate) 0L else rebuildDebounce.onEvent(System.currentTimeMillis())
+        synchronized(rebuildLock) {
+            rebuildFuture?.cancel(false)
+            rebuildFuture = try {
+                bg.schedule({ runRebuild() }, delay, TimeUnit.MILLISECONDS)
+            } catch (ignored: RejectedExecutionException) {
+                null
+            }
+        }
+    }
+
+    private fun runRebuild() {
+        rebuildDebounce.onRun()
+        try {
+            rebuildIndex()
+        } catch (ignored: RuntimeException) {
+        }
+    }
+
+    // NanoHTTPD vytvára handler spojenia na prijímacom vlákne — LimitedRunner potrebuje jeho socket
+    override fun createClientHandler(finalAccept: Socket, inputStream: InputStream): ClientHandler {
+        val h = super.createClientHandler(finalAccept, inputStream)
+        runner.register(h, finalAccept)
+        return h
+    }
 
     // Zamknutie/odomknutie priečinka PIN-om a vylúčené/zahrnuté priečinky MediaStore nezmenia, takže
     // ContentObserver služby index neprepočíta a PC by videl fotky práve zamknutého priečinka.
@@ -136,13 +250,8 @@ class MediaServer(
     private val prefsListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
         // key == null = prefs sa vyčistili (clear) -> radšej prepočítať
         if (key == null || IndexDiff.isScopeKey(key)) {
-            ensureBackgroundThread {
-                try {
-                    cleanup.invalidateBin()
-                    rebuildIndex()
-                } catch (ignored: Throwable) {
-                }
-            }
+            cleanup.invalidateBin()
+            requestRebuild(immediate = true)
         }
     }
 
@@ -150,59 +259,119 @@ class MediaServer(
         // najprv listener, potom index: zmena nastavení počas prvého prepočtu sa tak nestratí
         appContext.getSharedPrefs().registerOnSharedPreferenceChangeListener(prefsListener)
         try {
+            SyncStore.startNewRun(syncPrefs)
             rebuildIndex()
+            bg.execute { media.cache.init() }
             super.start(timeout, daemon)
         } catch (e: Throwable) {
             appContext.getSharedPrefs().unregisterOnSharedPreferenceChangeListener(prefsListener)
+            bg.shutdownNow()
             throw e
         }
     }
 
     override fun stop() {
         appContext.getSharedPrefs().unregisterOnSharedPreferenceChangeListener(prefsListener)
-        media.clearCache()
-        quality.stop()
-        super.stop()
+        try {
+            super.stop()
+        } finally {
+            // „✓ v PC“ z poslednej dávky sa nesmie stratiť; zámky a čakajúce indexery pustiť hneď
+            flushSynced()
+            bg.shutdownNow()
+            locks.release()
+            ServerActivity.SHARED.reset()
+            media.cache.clear()
+            quality.stop()
+        }
     }
 
+    // Každá požiadavka: normálna priorita vlákna, počítadlá (ServerActivity pre spracovanie knižnice,
+    // ServerStats pre /api/stats), zámky WakeLock/WifiLock a hlavička Server-Timing. Koniec požiadavky
+    // = zatvorenie tela odpovede po odoslaní (FinishStream).
     override fun serve(session: IHTTPSession): Response {
-        val resp = try {
-            val uri = session.uri
-            when {
-                uri == "/" || uri == "/index.html" -> handleRoot()
-                uri == "/favicon.ico" -> NanoHTTPD.newFixedLengthResponse(Status.NO_CONTENT, "text/plain", "")
-                uri == "/api/login" -> handleLogin(session)
-                !authorized(session) -> Http.error(Status.FORBIDDEN, if (locked) "locked" else "forbidden")
-                else -> {
-                    checkMutation(session)
-                    when (uri) {
-                        "/api/ping" -> handlePing()
-                        "/api/logout" -> handleLogout(session)
-                        "/api/list" -> handleList(session)
-                        "/api/file" -> handleFile(session)
-                        "/api/thumb" -> handleThumb(session)
-                        "/api/meta" -> handleMeta(session)
-                        "/api/upload" -> handleUpload(session)
-                        "/api/delete" -> cleanup.delete(session)
-                        "/api/groups" -> cleanup.groups(session)
-                        "/api/quality" -> quality.handle(session)
-                        "/api/groupstate" -> marks.groupState(session)
-                        "/api/state" -> marks.state()
-                        "/api/mark" -> marks.mark(session)
-                        "/api/synced" -> marks.synced(session)
-                        "/api/clearmarks" -> marks.clearMarks()
-                        "/api/bin" -> cleanup.bin()
-                        "/api/restore" -> cleanup.restore(session)
-                        else -> Http.error(Status.NOT_FOUND, "not_found")
-                    }
-                }
-            }
-        } catch (e: HttpError) {
-            Http.error(e.status, e.code).also { if (e.close) it.closeConnection(true) }
-        } catch (e: Exception) {
-            Http.error(Status.INTERNAL_ERROR, (e.message ?: "error").take(ERROR_MAX))
+        ServerTransport.normalPriority()
+        val startNs = System.nanoTime()
+        val uri = session.uri ?: "/"
+        val work = ServerActivity.countsAsWork(uri)
+        val via = ClientKind.of(session.headers["remote-addr"])
+        // ping z otvorenej karty v PC (každé 2–4 s) zámky nedrží — inak by telefón nezaspal nikdy
+        if (work) {
+            ServerActivity.SHARED.begin()
+            locks.onRequest()
         }
-        return Http.secure(resp)
+        stats.begin(via)
+        val timing = RequestTiming.begin(startNs)
+        val resp = try {
+            Http.secure(route(session, uri))
+        } catch (e: Throwable) {
+            if (work) ServerActivity.SHARED.end()
+            stats.abort()
+            throw e
+        } finally {
+            RequestTiming.end()
+        }
+        val endNs = System.nanoTime()
+        resp.addHeader("Server-Timing", timing.header(endNs))
+        val handlerMs = (endNs - startNs) / NS_PER_MS
+        val status = resp.status?.requestStatus ?: 0
+        val path = describe(session, uri)
+        val finish: (Long) -> Unit = { bytes ->
+            if (work) ServerActivity.SHARED.end()
+            val totalMs = (System.nanoTime() - startNs) / NS_PER_MS
+            val entry = SlowLog.Entry(System.currentTimeMillis(), path, status, handlerMs, totalMs, bytes, via)
+            stats.end(if (uri in routes || uri == "/") uri else LatencyStats.OTHER, entry)
+        }
+        val data = resp.data
+        if (data == null) finish(0L) else resp.data = FinishStream(data, finish)
+        return resp
+    }
+
+    // cesty, ktoré sa overujú samy (stránka bez dát, prihlásenie, ZIP s PIN-om vo formulári)
+    private val openRoutes: Map<String, (IHTTPSession) -> Response> = mapOf(
+        "/" to { _ -> handleRoot() },
+        "/index.html" to { _ -> handleRoot() },
+        "/favicon.ico" to { _ -> NanoHTTPD.newFixedLengthResponse(Status.NO_CONTENT, "text/plain", "") },
+        "/api/login" to { s -> handleLogin(s) },
+        "/api/zip" to { s -> handleZip(s) },
+    )
+
+    private fun route(session: IHTTPSession, uri: String): Response = try {
+        val open = openRoutes[uri]
+        when {
+            open != null -> open(session)
+            !authorized(session) -> Http.error(Status.FORBIDDEN, if (locked) "locked" else "forbidden")
+            else -> {
+                checkMutation(session)
+                routes[uri]?.invoke(session) ?: Http.error(Status.NOT_FOUND, "not_found")
+            }
+        }
+    } catch (e: HttpError) {
+        Http.error(e.status, e.code).also { if (e.close) it.closeConnection(true) }
+    } catch (e: Exception) {
+        Http.error(Status.INTERNAL_ERROR, (e.message ?: "error").take(ERROR_MAX))
+    }
+
+    // cesta s parametrami pre zoznam pomalých požiadaviek — bez PIN-u (token)
+    private fun describe(session: IHTTPSession, uri: String): String {
+        val q = session.parameters.orEmpty().filterKeys { it != "token" }.entries
+            .joinToString("&") { (k, v) -> "$k=${v.firstOrNull().orEmpty()}" }
+        return (if (q.isEmpty()) uri else "$uri?$q").take(DESCRIBE_MAX)
+    }
+
+    private fun handleStats(session: IHTTPSession): Response {
+        val s = snap
+        val o = ServerDiag.base(stats, runner.open, session.headers["remote-addr"])
+            .put("epoch", epoch)
+            .put("uptimeMs", System.currentTimeMillis() - startedAt)
+            .put("index", ServerDiag.index(stats, s.index.size, s.gen))
+            .put("thumbs", media.stats())
+            .put("groups", groups.cacheStats())
+            .put("synced", JSONObject().put("pending", SyncedStore.pendingSynced()))
+            .put("processing", ServerDiag.processing())
+            .put("device", ServerDiag.device(appContext))
+            .put("wifi", ServerDiag.wifi(appContext) ?: JSONObject.NULL)
+            .put("locks", locks.json())
+        return Http.json(Status.OK, o)
     }
 
     // zmeny stavu: len POST (upload aj PUT) a z rovnakého pôvodu — cudzia stránka v prehliadači nič nezmení
@@ -210,7 +379,7 @@ class MediaServer(
         val uri = session.uri
         val write = when (uri) {
             "/api/mark", "/api/synced", "/api/clearmarks", "/api/delete", "/api/restore", "/api/upload",
-            "/api/logout", "/api/quality",
+            "/api/logout", "/api/quality", "/api/favorite", "/api/zip",
             -> true
             "/api/groupstate" -> session.method != Method.GET && session.method != Method.HEAD
             else -> false
@@ -270,6 +439,27 @@ class MediaServer(
         return false
     }
 
+    // POST /api/zip (formulár ids=1,2,3[&token=PIN]): prehliadač sťahuje jeden súbor namiesto stoviek.
+    // Telo treba prečítať pred overením — klient bez cookie posiela PIN v ňom (overí sa bez počítania
+    // do ochrany pred hádaním, ako hasPinToken). Zmena stavu („✓ v PC“) -> POST a rovnaký pôvod.
+    private fun handleZip(session: IHTTPSession): Response {
+        if (session.method != Method.POST) throw HttpError(Status.METHOD_NOT_ALLOWED, "use POST")
+        val preAuth = authorized(session)
+        val form = Http.readForm(session, MAX_FORM_BYTES)
+        val bodyTok = form["token"]?.firstOrNull()
+        val ok = !locked && (preAuth || (bodyTok != null && constantTimeEquals(bodyTok, pin)))
+        if (!ok) return Http.error(Status.FORBIDDEN, if (locked) "locked" else "forbidden")
+        checkMutation(session)
+        return when (val ids = ZipRequest.parseIds(form["ids"])) {
+            is ZipRequest.Ids.Ok -> zip.handle(ids.ids, java.time.LocalDateTime.now())
+            ZipRequest.Ids.TooMany -> Http.json(
+                Status.BAD_REQUEST,
+                JSONObject().put("error", "too_many").put("max", ZipRequest.MAX_IDS),
+            )
+            ZipRequest.Ids.Bad -> Http.error(Status.BAD_REQUEST, "bad ids")
+        }
+    }
+
     // prehliadač: PIN -> session cookie, PIN potom nemusí byť v adrese (história, kopírovanie odkazu)
     private fun handleLogin(session: IHTTPSession): Response {
         val err = when {
@@ -284,6 +474,7 @@ class MediaServer(
             return Http.error(Status.FORBIDDEN, if (locked) "locked" else "bad_pin")
         }
         val token = sessions.create(System.currentTimeMillis())
+        saveSessions()
         val r = Http.json(Status.OK, JSONObject().put("ok", true))
         r.addHeader("Set-Cookie", RequestGuard.sessionCookie(token))
         return r
@@ -291,9 +482,15 @@ class MediaServer(
 
     private fun handleLogout(session: IHTTPSession): Response {
         sessions.remove(RequestGuard.cookie(session.headers["cookie"]))
+        saveSessions()
         val r = Http.json(Status.OK, JSONObject().put("ok", true))
         r.addHeader("Set-Cookie", RequestGuard.clearCookie())
         return r
+    }
+
+    // prihlásenia prehliadačov prežijú reštart služby (START_STICKY); nový ručný štart ich zahodí
+    private fun saveSessions() {
+        syncPrefs.edit().putString(KEY_SESSIONS, sessions.export()).apply()
     }
 
     private fun param(session: IHTTPSession, name: String): String? = Http.param(session, name)
@@ -313,6 +510,7 @@ class MediaServer(
             .put("count", s.index.size)
             .put("gen", s.gen)
             .put("stateGen", SyncStore.stateGen(syncPrefs))
+            .put("favGen", favorites.gen())
             .put("newest", s.newest)
             .put("allFiles", PcDeleter.canDelete())
             .put("recycleBin", appContext.config.useRecycleBin)
@@ -330,7 +528,7 @@ class MediaServer(
         val etag = ETags.of("l", epoch, s.gen, stateGen, sinceGen ?: "a", since ?: "a")
         if (ETags.matches(session.headers["if-none-match"], etag)) return Http.notModified(etag)
         val marked = SyncStore.markedPaths(syncPrefs)
-        val synced = SyncStore.syncedMap(syncPrefs)
+        val synced = SyncedStore.syncedMap(syncPrefs)
         val toJson = { list: Collection<Item> ->
             JSONArray().also { a -> list.forEach { a.put(itemJson(it, marked, synced)) } }
         }
@@ -369,14 +567,38 @@ class MediaServer(
             .put("marked", it.path in marked)
             .put("synced", synced[it.path] ?: 0L)
         if (it.dur > 0) o.put("dur", it.dur)
+        // len keď platí (bez čítania súborov): obľúbená v appke, pohyblivá podľa cache skenu
+        if (favorites.isFav(it.path)) o.put("fav", true)
+        if (motion.isMotion(it)) o.put("motion", true)
         return o
     }
 
     private fun handleFile(session: IHTTPSession): Response {
         val item = itemOf(session)
         return media.file(session, item) {
-            // „✓ v PC" až po odoslaní celého originálu (prerušené sťahovanie sa nezapíše)
-            if (item.path.isNotEmpty()) SyncStore.addSynced(syncPrefs, listOf(item.path))
+            // „✓ v PC" až po odoslaní celého originálu (prerušené sťahovanie sa nezapíše); do pamäti hneď,
+            // do prefs dávkou o SYNCED_FLUSH_MS — posledné read() originálu nič nezdrží
+            if (item.path.isNotEmpty()) markSynced(listOf(item.path))
+        }
+    }
+
+    private fun markSynced(paths: List<String>) {
+        SyncedStore.queueSynced(syncPrefs, paths)
+        if (!flushScheduled.compareAndSet(false, true)) return
+        try {
+            bg.schedule({
+                flushScheduled.set(false)
+                flushSynced()
+            }, SYNCED_FLUSH_MS, TimeUnit.MILLISECONDS)
+        } catch (ignored: RejectedExecutionException) {
+            flushScheduled.set(false)
+        }
+    }
+
+    private fun flushSynced() {
+        try {
+            SyncedStore.flushSynced(syncPrefs)
+        } catch (ignored: RuntimeException) {
         }
     }
 
@@ -393,60 +615,28 @@ class MediaServer(
         val o = JSONObject()
         for (id in RequestGuard.parseIdList(param(session, "ids"), MAX_META_IDS)) {
             val item = index[id] ?: continue
-            o.put(id.toString(), MediaMeta.of(resolver, item))
+            o.put(id.toString(), MediaMeta.of(resolver, item).also { motion.metaInto(it, item) })
         }
         return Http.json(Status.OK, o)
     }
 
-    private fun handleUpload(session: IHTTPSession): Response {
-        val ctype = session.headers["content-type"].orEmpty().lowercase()
-        return if (ctype.startsWith("multipart/form-data")) {
-            uploadMultipart(session)
+    private fun indexOne(id: Long, isVideo: Boolean) {
+        val base = if (isVideo) {
+            MediaStore.Video.Media.EXTERNAL_CONTENT_URI
         } else {
-            uploadRaw(session)
+            MediaStore.Images.Media.EXTERNAL_CONTENT_URI
         }
+        val one = LinkedHashMap<Long, Item>()
+        val sel = "${MediaStore.MediaColumns._ID}=?"
+        if (!collect(base, isVideo, one, IndexScope(appContext), sel, arrayOf(id.toString()))) return
+        val item = one[id] ?: return
+        synchronized(this) { install(snap.index + (id to item)) }
     }
 
-    // Hlavná cesta (PC nástroj): multipart/form-data -> parseBody spooluje časť do dočasného súboru.
-    private fun uploadMultipart(session: IHTTPSession): Response {
-        val declared = session.headers["content-length"]?.toLongOrNull()
-            ?: return Http.error(Status.LENGTH_REQUIRED, "missing Content-Length")
-        // parseBody najprv celé telo zapíše do dočasného súboru, potom sa kopíruje do MediaStore
-        rejectUpload(declared, copies = 2)?.let { return it }
-        val files = HashMap<String, String>()
-        session.parseBody(files)
-        val firstPart = files.entries.firstOrNull()
-            ?: return Http.error(Status.BAD_REQUEST, "no file part")
-        val tmpPath = firstPart.value
-        val name = session.parameters[firstPart.key]?.firstOrNull()
-            ?: ("upload_" + System.currentTimeMillis())
-        val mime = guessMime(name)
-        val tmp = File(tmpPath)
-        val saved = saveMediaScoped(appContext, name, mime, SAVE_SUBDIR) { out ->
-            tmp.inputStream().use { it.copyTo(out) }
-        } ?: return Http.error(Status.INTERNAL_ERROR, "save failed")
-        rebuildIndex()
-        return Http.json(Status.OK, JSONObject().put("saved", saved.first).put("uri", saved.second))
-    }
-
-    // Fallback: surové bajty v tele + X-Filename hlavička (názov je URL-kódovaný).
-    private fun uploadRaw(session: IHTTPSession): Response {
-        val rawName = session.headers["x-filename"]
-            ?: return Http.error(Status.BAD_REQUEST, "missing X-Filename")
-        val name = try {
-            URLDecoder.decode(rawName, "UTF-8")
-        } catch (e: Exception) {
-            rawName
-        }
-        val mime = session.headers["x-mime"] ?: guessMime(name)
-        val lenHdr = session.headers["content-length"]?.toLongOrNull() ?: -1L
-        rejectUpload(lenHdr, copies = 1)?.let { return it }
-        val body = session.inputStream
-        val saved = saveMediaScoped(appContext, name, mime, SAVE_SUBDIR) { out ->
-            copyExactly(body, out, lenHdr)
-        } ?: return Http.error(Status.INTERNAL_ERROR, "save failed")
-        rebuildIndex()
-        return Http.json(Status.OK, JSONObject().put("saved", saved.first).put("uri", saved.second))
+    // zmazané z PC zmiznú z indexu hneď (bez prestavby); obnova po zmene v MediaStore to len potvrdí
+    private fun removeIds(ids: Collection<Long>) {
+        if (ids.isEmpty()) return
+        synchronized(this) { install(snap.index - ids.toSet()) }
     }
 
     // stránka sa servíruje aj bez prihlásenia (neobsahuje dáta; PIN formulár) — s jednorazovým CSP nonce
@@ -461,17 +651,15 @@ class MediaServer(
         val r = NanoHTTPD.newFixedLengthResponse(Status.OK, "text/html; charset=utf-8", body)
         r.addHeader("Content-Security-Policy", RequestGuard.csp(nonce))
         r.addHeader("Cache-Control", "no-store")
+        // stránka posiela formulár /api/zip: pri no-referrer by Chrome poslal Origin: null (odmietnutý);
+        // same-origin = Referer len na vlastný server (rovnako ako <meta name="referrer"> v gallery.html)
+        r.addHeader("Referrer-Policy", RequestGuard.PAGE_REFERRER_POLICY)
         return r
-    }
-
-    private fun randomToken(bytes: Int): String {
-        val b = ByteArray(bytes)
-        SecureRandom().nextBytes(b)
-        return Base64.encodeToString(b, Base64.NO_WRAP or Base64.URL_SAFE or Base64.NO_PADDING)
     }
 
     @Synchronized
     private fun rebuildIndex() {
+        val t0 = System.nanoTime()
         val all = LinkedHashMap<Long, Item>()
         // zamknuté a vylúčené priečinky PC nevidí (rozhodnutie Lukáša 20.10.2026)
         val scope = IndexScope(appContext)
@@ -479,20 +667,49 @@ class MediaServer(
         // inak by PC uvidel prázdnu knižnicu a ponúkol všetko ako nové
         if (!collect(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, false, all, scope)) return
         if (!collect(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, true, all, scope)) return
-        // jeden zoznam podľa dátumu (fotky aj videá premiešané), najnovšie prvé
+        install(all)
+        // obľúbené (zmenené v appke) a pohyblivé fotky (cache skenu) — zmenené položky dostanú novú generáciu
+        val touched = HashSet(favorites.reload())
+        val motionPaths = motion.reload()
+        if (motionPaths.isNotEmpty()) snap.index.values.forEach { if (it.path in motionPaths) touched.add(it.id) }
+        touchIds(touched)
+        stats.rebuilt((System.nanoTime() - t0) / NS_PER_MS, System.currentTimeMillis())
+    }
+
+    // položky sa zmenili mimo MediaStore (obľúbené, pohyblivá fotka): nová generácia s nimi ako upserts
+    @Synchronized
+    private fun touchIds(ids: Collection<Long>) {
+        val old = snap
+        val present = ids.filter { it in old.index }
+        if (present.isEmpty()) return
+        val gen = old.gen + 1
+        genLog.record(gen, present, emptyList())
+        syncPrefs.edit().putLong(KEY_LIST_GEN, gen).apply()
+        snap = Snapshot(old.index, gen, old.newest)
+    }
+
+    // nový obsah indexu: jeden zoznam podľa dátumu (fotky aj videá premiešané), najnovšie prvé; pri zmene
+    // nová generácia (aj uložená — ďalší beh servera pokračuje nad ňou)
+    @Synchronized
+    private fun install(all: Map<Long, Item>) {
         val map = LinkedHashMap<Long, Item>()
         all.values.sortedWith(compareByDescending<Item> { it.taken }.thenByDescending { it.id })
             .forEach { map[it.id] = it }
         val old = snap
-        val delta = GenLog.diff(
-            old.index.mapValues { it.value.mtime to it.value.size },
-            map.mapValues { it.value.mtime to it.value.size },
-        )
+        val delta = GenLog.diff(old.index.mapValues { fingerprint(it.value) }, map.mapValues { fingerprint(it.value) })
         val changed = delta.upserts.isNotEmpty() || delta.removed.isNotEmpty()
         val gen = if (changed) old.gen + 1 else old.gen
-        if (changed) genLog.record(gen, delta.upserts, delta.removed)
+        if (changed) {
+            genLog.record(gen, delta.upserts, delta.removed)
+            syncPrefs.edit().putLong(KEY_LIST_GEN, gen).apply()
+        }
         snap = Snapshot(map, gen, map.values.maxOfOrNull { it.mtime } ?: 0L)
     }
+
+    // zmena položky pre /api/list?sinceGen: čas a veľkosť súboru, ale aj údaje, ktoré MediaStore doplní
+    // až po skene (rozmery, dátum snímania) — inak by PC po nahratí videl navždy w=0
+    private fun fingerprint(i: Item): Pair<Long, Long> =
+        i.mtime to (i.size * FP_SIZE + i.taken * FP_TAKEN + i.w * FP_W + i.h * FP_H + i.orient)
 
     // stĺpce, ktoré nemusia existovať na každej verzii Androidu (video ORIENTATION až od API 29)
     private fun projection(isVideo: Boolean): Array<String> {
@@ -515,8 +732,15 @@ class MediaServer(
     }
 
     // true = dotaz prebehol (aj prázdny výsledok), false = provider nevrátil kurzor
-    private fun collect(base: Uri, isVideo: Boolean, into: MutableMap<Long, Item>, scope: IndexScope): Boolean {
-        val cursor = resolver.query(base, projection(isVideo), null, null, null) ?: return false
+    private fun collect(
+        base: Uri,
+        isVideo: Boolean,
+        into: MutableMap<Long, Item>,
+        scope: IndexScope,
+        selection: String? = null,
+        args: Array<String>? = null,
+    ): Boolean {
+        val cursor = resolver.query(base, projection(isVideo), selection, args, null) ?: return false
         cursor.use { c ->
             val cols = Cols(c)
             while (c.moveToNext()) {
@@ -564,69 +788,6 @@ class MediaServer(
                 uri = Uri.withAppendedPath(base, itemId.toString()), path = path, takenReal = takenRaw > 0,
                 w = num(width).toInt(), h = num(height).toInt(), orient = num(orient).toInt(), dur = num(dur),
             )
-        }
-    }
-
-    private fun guessMime(name: String): String = when (name.substringAfterLast('.', "").lowercase()) {
-        "jpg", "jpeg" -> "image/jpeg"
-        "png" -> "image/png"
-        "webp" -> "image/webp"
-        "heic", "heif" -> "image/heic"
-        "gif" -> "image/gif"
-        "mp4" -> "video/mp4"
-        "mkv" -> "video/x-matroska"
-        "mov" -> "video/quicktime"
-        "3gp" -> "video/3gpp"
-        else -> "application/octet-stream"
-    }
-
-    // null = upload smie pokračovať, inak odpoveď s dôvodom; copies = koľkokrát dáta zaberú miesto
-    private fun rejectUpload(length: Long, copies: Int): Response? {
-        if (length > MAX_UPLOAD_BYTES) {
-            return Http.error(Status.PAYLOAD_TOO_LARGE, "file too large")
-        }
-        val free = freeBytes()
-        if (free >= 0 && free < length.coerceAtLeast(0) * copies + FREE_SPACE_RESERVE) {
-            return Http.error(Status.PAYLOAD_TOO_LARGE, "not enough free space")
-        }
-        return null
-    }
-
-    // voľné miesto na primárnom úložisku (tam zapisuje saveMediaScoped); -1 = nedá sa zistiť
-    private fun freeBytes(): Long = try {
-        StatFs((appContext.getExternalFilesDir(null) ?: appContext.filesDir).path).availableBytes
-    } catch (e: Throwable) {
-        -1L
-    }
-
-    private fun copyExactly(input: InputStream, out: java.io.OutputStream, len: Long) {
-        if (len < 0) {
-            // bez Content-Length najviac MAX_UPLOAD_BYTES a priebežne kontroluj voľné miesto —
-            // inak by klient vedel zaplniť úložisko; výnimka = saveMediaScoped položku zmaže
-            val buf = ByteArray(COPY_BUFFER)
-            var copied = 0L
-            var nextCheck = FREE_SPACE_CHECK_EVERY
-            while (true) {
-                val n = input.read(buf)
-                if (n < 0) break
-                copied += n
-                if (copied > MAX_UPLOAD_BYTES) throw java.io.IOException("upload too large")
-                if (copied >= nextCheck) {
-                    nextCheck += FREE_SPACE_CHECK_EVERY
-                    val free = freeBytes()
-                    if (free in 0L until FREE_SPACE_RESERVE) throw java.io.IOException("not enough free space")
-                }
-                out.write(buf, 0, n)
-            }
-            return
-        }
-        val buf = ByteArray(COPY_BUFFER)
-        var remaining = len
-        while (remaining > 0) {
-            val n = input.read(buf, 0, minOf(buf.size.toLong(), remaining).toInt())
-            if (n < 0) break
-            out.write(buf, 0, n)
-            remaining -= n
         }
     }
 

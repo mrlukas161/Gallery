@@ -12,7 +12,9 @@ import kotlin.concurrent.withLock
 // - Čakanie sa dá kedykoľvek zastaviť: `active()` sa kontroluje každých pollMs; zastavená úloha
 //   miesto nedostane a acquire vráti null.
 // - Reentrantné v rámci vlákna (indexer volaný priamo z iného indexera na tom istom vlákne sa nezasekne).
-// - Čakajúci dostávajú miesto v poradí príchodu (lístky), nie náhodne.
+// - Čakajúci dostávajú miesto v poradí príchodu (lístky), nie náhodne. Výnimka (server-rychlost):
+//   naliehavá úloha (urgent — porovnávač a /api/quality čakajú na odpoveď) sa zaradí pred bežné
+//   čakajúce a indexer, ktorý práve ustupuje serveru (ServerYield), jej miesto uvoľní.
 class HeavyGate(private val pollMs: Long = DEFAULT_POLL_MS) {
     private val lock = ReentrantLock()
     private val changed = lock.newCondition()
@@ -21,6 +23,7 @@ class HeavyGate(private val pollMs: Long = DEFAULT_POLL_MS) {
     private var owner: Thread? = null
     private var holds = 0
     private val queue = ArrayDeque<Any>()
+    private val urgentTickets = HashSet<Any>()
 
     // vyhodí sa, keď úlohu zastavili počas čakania na miesto (nie je to chyba, len koniec práce)
     class Stopped : RuntimeException("stopped while waiting for heavy slot")
@@ -46,8 +49,17 @@ class HeavyGate(private val pollMs: Long = DEFAULT_POLL_MS) {
     val isBusy: Boolean
         get() = lock.withLock { owner != null }
 
-    // onWait sa zavolá najviac raz, len keď treba čakať (priebeh v notifikácii „čaká…“)
-    fun acquire(active: () -> Boolean, onWait: () -> Unit = {}): Lease? {
+    // čaká na miesto naliehavá úloha? (ustupujúci indexer potom uvoľní svoj model)
+    val hasUrgentWaiter: Boolean
+        get() = lock.withLock { urgentTickets.isNotEmpty() }
+
+    // počet čakajúcich (diagnostika /api/stats)
+    val waiting: Int
+        get() = lock.withLock { queue.size }
+
+    // onWait sa zavolá najviac raz, len keď treba čakať (priebeh v notifikácii „čaká…“);
+    // urgent = zaradiť pred bežné čakajúce (za skôr prišlé naliehavé)
+    fun acquire(active: () -> Boolean, urgent: Boolean = false, onWait: () -> Unit = {}): Lease? {
         val me = Thread.currentThread()
         val ticket = Any()
         lock.withLock {
@@ -57,10 +69,21 @@ class HeavyGate(private val pollMs: Long = DEFAULT_POLL_MS) {
             }
             if (!active()) return null
             if (owner == null && queue.isEmpty()) return take(me)
-            queue.addLast(ticket)
+            enqueue(ticket, urgent)
         }
         onWait()
         return waitFor(me, ticket, active)
+    }
+
+    // volať pod zámkom
+    private fun enqueue(ticket: Any, urgent: Boolean) {
+        if (!urgent) {
+            queue.addLast(ticket)
+            return
+        }
+        val firstNormal = queue.indexOfFirst { it !in urgentTickets }
+        if (firstNormal < 0) queue.addLast(ticket) else queue.add(firstNormal, ticket)
+        urgentTickets.add(ticket)
     }
 
     private fun waitFor(me: Thread, ticket: Any, active: () -> Boolean): Lease? = lock.withLock {
@@ -69,6 +92,7 @@ class HeavyGate(private val pollMs: Long = DEFAULT_POLL_MS) {
             while (lease == null && active()) {
                 if (owner == null && queue.firstOrNull() === ticket) {
                     queue.removeFirst()
+                    urgentTickets.remove(ticket)
                     lease = take(me)
                 } else {
                     changed.await(pollMs, TimeUnit.MILLISECONDS)
@@ -90,6 +114,7 @@ class HeavyGate(private val pollMs: Long = DEFAULT_POLL_MS) {
     // volať pod zámkom: zastavená úloha uvoľní svoje miesto v poradí ďalšej
     private fun giveUp(ticket: Any): Lease? {
         queue.remove(ticket)
+        urgentTickets.remove(ticket)
         changed.signalAll()
         return null
     }
@@ -109,6 +134,7 @@ class HeavySlot(
     private val onWait: () -> Unit = {},
     private val onResume: () -> Unit = {},
     private val gate: HeavyGate = HeavyGate.SHARED,
+    private val urgent: Boolean = false,
 ) : AutoCloseable {
     private var lease: HeavyGate.Lease? = null
 
@@ -119,7 +145,7 @@ class HeavySlot(
     fun ensure(): Boolean {
         if (lease != null) return true
         var waited = false
-        lease = gate.acquire(active) {
+        lease = gate.acquire(active, urgent) {
             waited = true
             onWait()
         } ?: return false

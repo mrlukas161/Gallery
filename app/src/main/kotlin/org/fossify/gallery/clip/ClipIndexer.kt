@@ -16,6 +16,8 @@ import org.fossify.gallery.helpers.BackgroundPriority
 import org.fossify.gallery.helpers.HeavyGate
 import org.fossify.gallery.helpers.HeavySlot
 import java.io.File
+import org.fossify.gallery.helpers.ServerYield
+import org.fossify.gallery.services.IndexingService
 
 // CLIP indexovanie: stiahne modely (ak treba) a pre každú fotku spočíta 512-dim vektor (clip.db).
 // Resumovateľné. Vizuál enkodér beží ~50-150 ms/fotka na výkonnom telefóne.
@@ -74,6 +76,12 @@ object ClipIndexer {
                     total = todo.size
                     for (path in todo) {
                         if (!isRunning) break
+                        // server-rychlost: PC práve sťahuje -> počkaj; naliehavej úlohe uvoľni model aj miesto
+                        ServerYield.SHARED.pause(IndexingService.TASK_CLIP, { isRunning }) {
+                            encoder?.close()
+                            encoder = null
+                            slot.close()
+                        }
                         val enc = encoder ?: loadEncoder(appCtx, slot).also { encoder = it }
                         try {
                             val bmp = decode(path)

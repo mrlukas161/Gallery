@@ -156,6 +156,7 @@ class SettingsActivity : SimpleActivity() {
         setupClip()
         setupClipMl()
         setupPcServer()
+        setupPcServerBattery()
         setupFamilyPairing()
         setupPeopleBackup()
         setupCheckForUpdates()
@@ -1682,6 +1683,32 @@ class SettingsActivity : SimpleActivity() {
             if (org.fossify.gallery.services.HttpSyncService.isRunning) copyServerLink(silent = false)
             true
         }
+    }
+
+    // server-rychlost: pri aktívnej optimalizácii batérie systém pri zhasnutej obrazovke brzdí CPU aj sieť
+    // a Server pre PC je pomalý — krátka pomoc s cestou do nastavení batérie (bez povolenia
+    // REQUEST_IGNORE_BATTERY_OPTIMIZATIONS: detail appky, náhradne zoznam optimalizácie batérie)
+    private fun setupPcServerBattery() {
+        val pm = getSystemService(android.content.Context.POWER_SERVICE) as? android.os.PowerManager
+        val restricted = pm != null && !pm.isIgnoringBatteryOptimizations(packageName)
+        binding.settingsPcServerBatteryHolder.beVisibleIf(restricted)
+        binding.settingsPcServerBatteryHolder.setOnClickListener { openBatterySettings() }
+    }
+
+    private fun openBatterySettings() {
+        val details = Intent(
+            android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+            android.net.Uri.fromParts("package", packageName, null),
+        )
+        val list = Intent(android.provider.Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
+        for (intent in listOf(details, list)) {
+            try {
+                startActivity(intent)
+                return
+            } catch (ignored: android.content.ActivityNotFoundException) {
+            }
+        }
+        toast(org.fossify.commons.R.string.system_service_disabled, android.widget.Toast.LENGTH_LONG)
     }
 
     // Rodinné prepojenie (F2): párovanie a prepojené telefóny na samostatnej obrazovke

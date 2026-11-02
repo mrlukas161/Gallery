@@ -30,18 +30,26 @@ class ServerMarks(private val appContext: Context, private val index: () -> Map<
 
     private val prefs get() = SyncStore.prefs(appContext)
 
-    // aktuálny stav značiek pre klienta: marked=[id...], synced={id: čas_ms}
-    fun state(): Response {
+    // aktuálny stav značiek pre klienta: marked=[id...], synced={id: čas_ms}, full=true.
+    // server-rychlost: ?since=<stateGen> vráti len zmeny od tej generácie: marked/unmarked = id so
+    // zmenenou značkou, synced = nové „✓ v PC“, full=false; keď história nestačí, celý stav (full=true)
+    fun state(session: IHTTPSession): Response {
         val p = prefs
+        val gen = SyncStore.stateGen(p)
+        val since = Http.param(session, "since")?.toLongOrNull()
+        val changed = since?.let { SyncStore.changedSince(p, it) }
         val marked = SyncStore.markedPaths(p)
-        val synced = SyncStore.syncedMap(p)
+        val synced = SyncedStore.syncedMap(p)
         val mArr = JSONArray()
+        val uArr = JSONArray()
         val sObj = JSONObject()
         for (it in index().values) {
-            if (it.path in marked) mArr.put(it.id)
+            if (changed != null && it.path !in changed) continue
+            if (it.path in marked) mArr.put(it.id) else if (changed != null) uArr.put(it.id)
             synced[it.path]?.let { ts -> sObj.put(it.id.toString(), ts) }
         }
-        val o = JSONObject().put("marked", mArr).put("synced", sObj).put("stateGen", SyncStore.stateGen(p))
+        val o = JSONObject().put("marked", mArr).put("synced", sObj).put("stateGen", gen).put("full", changed == null)
+        if (changed != null) o.put("unmarked", uArr).put("since", since)
         return Http.json(Status.OK, o)
     }
 
@@ -77,7 +85,7 @@ class ServerMarks(private val appContext: Context, private val index: () -> Map<
         val legacy = Http.param(session, "id")?.toLongOrNull()
         val paths = pathsOf(idsFrom(session, legacy).first)
         if (legacy != null && paths.isEmpty()) return Http.error(Status.NOT_FOUND, "unknown id")
-        SyncStore.addSynced(prefs, paths)
+        SyncedStore.addSynced(prefs, paths)
         return Http.json(Status.OK, JSONObject().put("ok", true).put("count", paths.size))
     }
 
@@ -112,11 +120,14 @@ class ServerMarks(private val appContext: Context, private val index: () -> Map<
     }
 }
 
-// Upratovanie: skupiny (série a duplikáty), mazanie do Koša, Kôš Galérie+ a obnova z neho.
+// Upratovanie: mazanie do Koša, Kôš Galérie+ a obnova z neho (skupiny: ServerGroups).
+// server-rychlost: po zmazaní sa fotky z indexu len vyradia (onDeleted), po obnove sa požiada o obnovu
+// indexu na pozadí (requestRebuild) — žiadna synchrónna prestavba celej knižnice v požiadavke.
 class ServerCleanup(
     private val appContext: Context,
     private val snapshot: () -> Pair<Map<Long, MediaServer.Item>, Long>,
-    private val rebuild: () -> Unit,
+    private val onDeleted: (Collection<Long>) -> Unit,
+    private val requestRebuild: () -> Unit,
 ) {
     companion object {
         // strop na počet fotiek v jednej požiadavke na zmazanie (PC posiela dávky po desiatkach)
@@ -124,8 +135,6 @@ class ServerCleanup(
         const val MAX_BODY_BYTES = 64L * 1024
         private const val MAX_BIN_ITEMS = 3000
         private const val BIN_CACHE_MS = 15_000L
-        private const val CONFIDENCE_SCALE = 100.0
-        private const val MS = 1000L
     }
 
     // jedno mazanie / obnova naraz: NanoHTTPD obsluhuje každé spojenie vo vlastnom vlákne a dve súbežné
@@ -173,84 +182,12 @@ class ServerCleanup(
             }
             if (batchId != null) SyncExtras.addBinBatch(prefs, batchId, gonePaths)
             binCache = null
-            rebuild()
+            onDeleted(gone.map { it.id })
             val o = JSONObject().put("deleted", JSONArray(r.deleted)).put("failed", failed)
                 .put("recycleBin", r.toRecycleBin).put("freedBytes", gone.sumOf { it.size })
                 .put("batchId", batchId ?: JSONObject.NULL)
             return Http.json(Status.OK, o)
         }
-    }
-
-    // ?v=2: {gen, groups:[{key, kind, ids, keeper, bytes, reclaim, from, to, bucket, best, confidence,
-    // reasons, uncertain, keep}]};
-    // bez v: pôvodný formát {burst:[[id]], similar:[[id]]}. Skupiny sú TIE ISTÉ ako v mobile
-    // (CompareRepository; skryté cez „Ponechať všetky“ / „Nie sú to duplikáty“ sa vynechajú).
-    fun groups(session: IHTTPSession): Response {
-        val (index, gen) = snapshot()
-        val groups = currentGroups(index)
-        val body = if (Http.param(session, "v") == "2") {
-            JSONObject().put("gen", gen).put("groups", GroupBuilder.toJson(groups)).toString()
-        } else {
-            val burst = JSONArray()
-            val similar = JSONArray()
-            groups.forEach { g -> (if (g.kind == GroupBuilder.KIND_BURST) burst else similar).put(JSONArray(g.ids)) }
-            JSONObject().put("burst", burst).put("similar", similar).toString()
-        }
-        val etag = ETags.of("g", ETags.hash(body))
-        if (ETags.matches(session.headers["if-none-match"], etag)) return Http.notModified(etag)
-        val r = Http.json(Status.OK, body)
-        r.addHeader("ETag", etag)
-        return r
-    }
-
-    // CompareRepository drží výsledok v cache, kým sa nezmení MediaStore, pHash index ani rozsah
-    private fun currentGroups(index: Map<Long, MediaServer.Item>): List<GroupBuilder.Group> {
-        val snap = CompareRepository.load(appContext)
-        val hidden = CompareHiddenStore.get(appContext)
-        val items = HashMap<String, MediaServer.Item>(index.size)
-        index.values.forEach { items[it.path] = it }
-        val src = snap.groups.filter { !hidden.isHidden(it.paths) }.map { g ->
-            val kind = when (g.kind) {
-                CompareKind.BURST -> GroupBuilder.KIND_BURST
-                CompareKind.EXACT -> GroupBuilder.KIND_EXACT
-                CompareKind.SIMILAR -> GroupBuilder.KIND_SIMILAR
-            }
-            val scores = cachedScores(g.paths)
-            val verdict = scores?.let { CompareBulk.verdict(it) }
-            val best = verdict?.best
-            // presné kópie: jednoznačné pravidlo (bez skóre), inak ★, ak nie je neistá
-            val keep = when {
-                g.kind == CompareKind.EXACT -> CompareBulk.exactKeeper(g.paths.mapNotNull { measureOf(items[it]) })
-                verdict != null && !verdict.uncertain -> best
-                else -> null
-            }
-            GroupBuilder.Src(
-                kind = kind,
-                paths = g.paths,
-                keeper = g.keeper,
-                best = best,
-                confidence = verdict?.takeIf { it.second != null }
-                    ?.let { Math.round(it.confidence.coerceIn(0.0, 1.0) * CONFIDENCE_SCALE) / CONFIDENCE_SCALE },
-                reasons = best?.let { scores[it] }?.reasons?.map { it.code }.orEmpty(),
-                uncertain = verdict?.uncertain,
-                keep = keep,
-            )
-        }
-        val byPath = HashMap<String, GroupBuilder.Member>(index.size)
-        index.values.forEach { byPath[it.path] = GroupBuilder.Member(it.id, it.bucket, it.taken, it.size) }
-        return GroupBuilder.fromPaths(src, byPath)
-    }
-
-    // skóre porovnávača LEN z cache CompareAnalysis (server tu nič nepočíta, na to je /api/quality)
-    private fun cachedScores(paths: List<String>): Map<String, PhotoScore>? = try {
-        CompareAnalysis.cachedScores(appContext, paths)
-    } catch (ignored: Throwable) {
-        null
-    }
-
-    // údaje pre pravidlo presných kópií z indexu servera (rozlíšenie, cesta, čas zmeny)
-    private fun measureOf(item: MediaServer.Item?): PhotoMeasure? = item?.let {
-        PhotoMeasure(it.path, 0.0, 0.0, width = it.w, height = it.h, modified = it.mtime * MS)
     }
 
     // Kôš Galérie+ (bez zamknutých/vylúčených priečinkov), najnovšie zmazané prvé
@@ -296,8 +233,132 @@ class ServerCleanup(
             keys.filter { it !in bin }.forEach { failed.put(it, "not in bin") }
             r.failed.forEach { (k, msg) -> failed.put(k, msg) }
             binCache = null
-            rebuild()
+            // obnovené súbory dostanú v MediaStore nové id až po skene — index sa obnoví na pozadí
+            requestRebuild()
             return Http.json(Status.OK, JSONObject().put("restored", JSONArray(r.restored)).put("failed", failed))
         }
+    }
+}
+
+// Skupiny pre /api/groups (série a duplikáty) — TIE ISTÉ ako v mobile (CompareRepository).
+// server-rychlost: hotové telo v cache podľa GroupsKey; ETag z kľúča -> 304 bez výpočtu.
+class ServerGroups(
+    private val appContext: Context,
+    private val epoch: String,
+    private val snapshot: () -> Pair<Map<Long, MediaServer.Item>, Long>,
+) {
+    companion object {
+        private const val CONFIDENCE_SCALE = 100.0
+        private const val MS = 1000L
+
+        // výsledok CompareRepository sa pri nezmenenom indexe overuje najviac raz za toľko (stamp číta MediaStore)
+        private const val REPO_CHECK_MS = 15_000L
+    }
+
+    private val groupsCache = GroupsCache()
+    private val repoVersion = IdentityVersion()
+    private val hiddenVersion = IdentityVersion()
+    private val repoLock = Any()
+    private var repoSnap: CompareRepository.Snapshot? = null
+    private var repoGen = Long.MIN_VALUE
+    private var repoCheckedAt = 0L
+
+    // ?v=2: {gen, groups:[{key, kind, ids, keeper, bytes, reclaim, from, to, bucket, best, confidence,
+    // reasons, uncertain, keep}]};
+    // bez v: pôvodný formát {burst:[[id]], similar:[[id]]}. Skupiny sú TIE ISTÉ ako v mobile
+    // (CompareRepository; skryté cez „Ponechať všetky“ / „Nie sú to duplikáty“ sa vynechajú).
+    // server-rychlost: ETag z kľúča (index, CompareRepository, skryté skupiny, cache skóre) — keď sedí,
+    // 304 bez výpočtu; inak telo z vlastnej cache alebo nový výpočet (stat súborov len pri ňom)
+    fun groups(session: IHTTPSession): Response {
+        val (index, gen) = snapshot()
+        val v2 = Http.param(session, "v") == "2"
+        val repo = repoSnapshot(gen)
+        val hidden = CompareHiddenStore.get(appContext)
+        val scores = CompareAnalysis.cacheVersion
+        val key = GroupsKey(epoch, gen, repoVersion.of(repo), hiddenVersion.of(hidden), scores, v2)
+        val etag = key.etag()
+        if (ETags.matches(session.headers["if-none-match"], etag)) return Http.notModified(etag)
+        val body = groupsCache.get(key) ?: groupsBody(currentGroups(index, repo, hidden), gen, v2).also {
+            groupsCache.put(key, it)
+        }
+        val r = Http.json(Status.OK, body)
+        r.addHeader("ETag", etag)
+        return r
+    }
+
+    private fun groupsBody(groups: List<GroupBuilder.Group>, gen: Long, v2: Boolean): String {
+        if (v2) return JSONObject().put("gen", gen).put("groups", GroupBuilder.toJson(groups)).toString()
+        val burst = JSONArray()
+        val similar = JSONArray()
+        groups.forEach { g -> (if (g.kind == GroupBuilder.KIND_BURST) burst else similar).put(JSONArray(g.ids)) }
+        return JSONObject().put("burst", burst).put("similar", similar).toString()
+    }
+
+    // CompareRepository.load overí stamp (dotaz na MediaStore + pHash index): pri nezmenenom indexe
+    // servera najviac raz za REPO_CHECK_MS, inak hneď
+    private fun repoSnapshot(gen: Long): CompareRepository.Snapshot = synchronized(repoLock) {
+        val now = System.currentTimeMillis()
+        val cur = repoSnap
+        if (cur != null && gen == repoGen && now - repoCheckedAt < REPO_CHECK_MS) return cur
+        val fresh = CompareRepository.load(appContext)
+        repoSnap = fresh
+        repoGen = gen
+        repoCheckedAt = now
+        fresh
+    }
+
+    fun cacheStats(): JSONObject =
+        JSONObject().put("hits", groupsCache.hits.get()).put("misses", groupsCache.misses.get())
+
+    // CompareRepository drží výsledok v cache, kým sa nezmení MediaStore, pHash index ani rozsah
+    private fun currentGroups(
+        index: Map<Long, MediaServer.Item>,
+        snap: CompareRepository.Snapshot,
+        hidden: org.fossify.gallery.helpers.HiddenGroups,
+    ): List<GroupBuilder.Group> {
+        val items = HashMap<String, MediaServer.Item>(index.size)
+        index.values.forEach { items[it.path] = it }
+        val src = snap.groups.filter { !hidden.isHidden(it.paths) }.map { g ->
+            val kind = when (g.kind) {
+                CompareKind.BURST -> GroupBuilder.KIND_BURST
+                CompareKind.EXACT -> GroupBuilder.KIND_EXACT
+                CompareKind.SIMILAR -> GroupBuilder.KIND_SIMILAR
+            }
+            val scores = cachedScores(g.paths)
+            val verdict = scores?.let { CompareBulk.verdict(it) }
+            val best = verdict?.best
+            // presné kópie: jednoznačné pravidlo (bez skóre), inak ★, ak nie je neistá
+            val keep = when {
+                g.kind == CompareKind.EXACT -> CompareBulk.exactKeeper(g.paths.mapNotNull { measureOf(items[it]) })
+                verdict != null && !verdict.uncertain -> best
+                else -> null
+            }
+            GroupBuilder.Src(
+                kind = kind,
+                paths = g.paths,
+                keeper = g.keeper,
+                best = best,
+                confidence = verdict?.takeIf { it.second != null }
+                    ?.let { Math.round(it.confidence.coerceIn(0.0, 1.0) * CONFIDENCE_SCALE) / CONFIDENCE_SCALE },
+                reasons = best?.let { scores[it] }?.reasons?.map { it.code }.orEmpty(),
+                uncertain = verdict?.uncertain,
+                keep = keep,
+            )
+        }
+        val byPath = HashMap<String, GroupBuilder.Member>(index.size)
+        index.values.forEach { byPath[it.path] = GroupBuilder.Member(it.id, it.bucket, it.taken, it.size) }
+        return GroupBuilder.fromPaths(src, byPath)
+    }
+
+    // skóre porovnávača LEN z cache CompareAnalysis (server tu nič nepočíta, na to je /api/quality)
+    private fun cachedScores(paths: List<String>): Map<String, PhotoScore>? = try {
+        CompareAnalysis.cachedScores(appContext, paths)
+    } catch (ignored: Throwable) {
+        null
+    }
+
+    // údaje pre pravidlo presných kópií z indexu servera (rozlíšenie, cesta, čas zmeny)
+    private fun measureOf(item: MediaServer.Item?): PhotoMeasure? = item?.let {
+        PhotoMeasure(it.path, 0.0, 0.0, width = it.w, height = it.h, modified = it.mtime * MS)
     }
 }

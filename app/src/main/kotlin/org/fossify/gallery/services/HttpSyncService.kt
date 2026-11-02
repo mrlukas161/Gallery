@@ -20,12 +20,14 @@ import org.fossify.commons.helpers.ensureBackgroundThread
 import org.fossify.gallery.R
 import org.fossify.gallery.sync.MediaServer
 import org.fossify.gallery.sync.NetUtil
-import fi.iki.elonen.NanoHTTPD
+import org.fossify.gallery.sync.ServerTransport
 import java.security.SecureRandom
 
 // Foreground služba (typ specialUse) bežiaca lokálny HTTP server pre PC sync cez WiFi LAN.
-// Štandardne VYPNUTÁ; spúšťa ju používateľ v Nastaveniach. Chránená 6-miestnym PIN-om (nový pri každom štarte);
-// po 20 rôznych zlých PIN-och sa server sám zastaví (ochrana pred hádaním na LAN).
+// Štandardne VYPNUTÁ; spúšťa ju používateľ v Nastaveniach. Chránená 6-miestnym PIN-om (nový pri každom
+// ručnom štarte); po 20 rôznych zlých PIN-och sa server sám zastaví (ochrana pred hádaním na LAN).
+// server-rychlost: PIN a epoch sú v prefs — keď systém službu reštartuje (START_STICKY), server beží
+// s tými istými (web ani PC sa neodhlásia). Výslovné zastavenie (aj zámok po hádaní PIN-u) ich zmaže.
 // specialUse zvolené zámerne: nepodlieha 6h/24h limitu typu dataSync (Android 15) -> neumrie pri zhasnutej obrazovke.
 class HttpSyncService : Service() {
     @Volatile
@@ -39,26 +41,17 @@ class HttpSyncService : Service() {
     @Volatile
     private var stopped = false
 
-    // zmeny v MediaStore (nová fotka z Fotoaparátu, zmazanie) -> po 1 s ticha obnov zoznam servera,
-    // aby PC videlo novú fotku hneď (bez toho server poznal len fotky spred svojho spustenia)
+    // zmeny v MediaStore (nová fotka z Fotoaparátu, zmazanie) -> obnov zoznam servera, aby PC videlo
+    // novú fotku hneď (bez toho server poznal len fotky spred svojho spustenia). Server sériu zmien
+    // spojí (debounce 2,5 s, najviac 10 s) a prepočíta na pozadí.
     private val mainHandler = Handler(Looper.getMainLooper())
     private var mediaObserver: ContentObserver? = null
-    private val refreshRunnable = Runnable {
-        val s = server ?: return@Runnable
-        ensureBackgroundThread {
-            try {
-                s.refreshIndex()
-            } catch (ignored: Throwable) {
-            }
-        }
-    }
 
     private fun registerMediaObserver() {
         if (mediaObserver != null) return
         val o = object : ContentObserver(mainHandler) {
             override fun onChange(selfChange: Boolean) {
-                mainHandler.removeCallbacks(refreshRunnable)
-                mainHandler.postDelayed(refreshRunnable, 1000)
+                server?.requestRebuild()
             }
         }
         try {
@@ -70,7 +63,6 @@ class HttpSyncService : Service() {
     }
 
     private fun unregisterMediaObserver() {
-        mainHandler.removeCallbacks(refreshRunnable)
         mediaObserver?.let {
             try {
                 contentResolver.unregisterContentObserver(it)
@@ -89,7 +81,14 @@ class HttpSyncService : Service() {
             return START_NOT_STICKY
         }
         ensureChannel()
-        val pin = intent?.getStringExtra(EXTRA_PIN) ?: currentPin ?: newPin()
+        // ručný štart nesie nový PIN; reštart systémom (intent null) vezme uložený PIN aj epoch
+        val explicit = intent?.getStringExtra(EXTRA_PIN)
+        val stored = if (explicit == null) Persisted.load(this) else null
+        val pin = explicit ?: currentPin ?: stored?.pin ?: newPin()
+        val epoch = stored?.let { st -> st.epoch.takeIf { pin == st.pin } } ?: currentEpoch ?: MediaServer.newEpoch()
+        val resumed = explicit == null && stored != null && pin == stored.pin
+        currentEpoch = epoch
+        Persisted.save(this, pin, epoch)
         val port = MediaServer.DEFAULT_PORT
         val ip = NetUtil.getWifiIpv4(this)
         currentPin = pin
@@ -104,12 +103,12 @@ class HttpSyncService : Service() {
             ensureBackgroundThread {
                 try {
                     // hádanie PIN-u na sieti -> server sa zamkne a tu sa zastaví s viditeľným dôvodom
-                    val s = MediaServer(applicationContext, pin, port) {
+                    val s = MediaServer(applicationContext, pin, port, epoch, resumed) {
                         Handler(Looper.getMainLooper()).post {
                             failWith(getString(R.string.c1_pc_server_locked))
                         }
                     }
-                    s.start(NanoHTTPD.SOCKET_READ_TIMEOUT, false)
+                    s.start(ServerTransport.READ_TIMEOUT_MS, false)
                     // štart trvá sekundy (prvý prepočet indexu) — medzitým sa služba mohla zastaviť (Štart -> Stop);
                     // server vtedy nepriraďovať ani nič nehlásiť, inak by osirel na porte a rušil nový beh
                     if (stopped) {
@@ -124,12 +123,7 @@ class HttpSyncService : Service() {
                         if (server === s && !stopped) {
                             registerMediaObserver()
                             // fotka nasnímaná medzi prvým prepočtom a registráciou observera by sa inak neukázala
-                            ensureBackgroundThread {
-                                try {
-                                    s.refreshIndex()
-                                } catch (ignored: Throwable) {
-                                }
-                            }
+                            s.refreshIndex()
                         } else {
                             // služba sa medzičasom zastavila (ACTION_STOP / zámok) -> server nenechať bežať osirelý
                             try {
@@ -187,6 +181,9 @@ class HttpSyncService : Service() {
         isRunning = false
         currentUrl = null
         currentPin = null
+        currentEpoch = null
+        // výslovné zastavenie (alebo zámok po hádaní PIN-u): ďalší štart = nový PIN a nový epoch
+        Persisted.clear(this)
         stopForegroundCompat()
         stopSelf()
     }
@@ -256,6 +253,32 @@ class HttpSyncService : Service() {
         }
     }
 
+    // PIN a epoch bežiaceho servera v súkromných prefs (len kým ho používateľ nezastaví)
+    private object Persisted {
+        private const val PREFS = "galeria_pcserver"
+        private const val KEY_PIN = "pin"
+        private const val KEY_EPOCH = "epoch"
+
+        class State(val pin: String, val epoch: String)
+
+        private fun prefs(c: Context) = c.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+
+        fun load(c: Context): State? {
+            val p = prefs(c)
+            val pin = p.getString(KEY_PIN, null) ?: return null
+            val epoch = p.getString(KEY_EPOCH, null) ?: return null
+            return State(pin, epoch)
+        }
+
+        fun save(c: Context, pin: String, epoch: String) {
+            prefs(c).edit().putString(KEY_PIN, pin).putString(KEY_EPOCH, epoch).apply()
+        }
+
+        fun clear(c: Context) {
+            prefs(c).edit().clear().apply()
+        }
+    }
+
     companion object {
         private const val ACTION_STOP = "stop"
         private const val EXTRA_PIN = "pin"
@@ -279,6 +302,9 @@ class HttpSyncService : Service() {
         var currentUrl: String? = null
             private set
 
+        @Volatile
+        private var currentEpoch: String? = null
+
         // hotová adresa pre PC prehliadač — stačí prilepiť (Ctrl+V), token je v nej
         fun shareUrl(): String? {
             val u = currentUrl ?: return null
@@ -294,6 +320,7 @@ class HttpSyncService : Service() {
         fun start(context: Context) {
             val pin = newPin()
             currentPin = pin
+            currentEpoch = MediaServer.newEpoch()
             try {
                 ContextCompat.startForegroundService(
                     context,

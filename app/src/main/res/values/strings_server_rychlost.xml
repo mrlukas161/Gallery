@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Vetva server-rychlost: Server pre PC ustupuje spracovaniu knižnice a naopak -->
+    <string name="srv_prog_waiting_pc">%1$s: čaká – PC práve sťahuje</string>
+    <!-- Nastavenia → Server pre PC: pomoc, keď je aktívna optimalizácia batérie -->
+    <string name="srv_battery_hint_title">Pre rýchly prenos povoľ Galérii+ beh bez obmedzení</string>
+    <string name="srv_battery_hint_action">Ťukni a v nastaveniach batérie zvoľ „Bez obmedzení“ — pri zhasnutej obrazovke sa inak prenos spomalí</string>
+</resources>

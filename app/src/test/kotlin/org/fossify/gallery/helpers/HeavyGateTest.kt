@@ -186,6 +186,46 @@ class HeavyGateTest {
         blocker.close()
     }
 
+    // server-rychlost: naliehavá úloha (porovnávač, /api/quality) predbehne bežné čakajúce indexery
+    @Test
+    fun urgentWaiterGoesBeforeNormalWaiters() {
+        val gate = HeavyGate(POLL)
+        val first = gate.acquire(always)!!
+        val order = Collections.synchronizedList(ArrayList<String>())
+        val normalWaiting = CountDownLatch(1)
+        val normal = thread { gate.acquire(always) { normalWaiting.countDown() }?.use { order.add("indexer") } }
+        assertTrue(normalWaiting.await(1, TimeUnit.SECONDS))
+        assertFalse(gate.hasUrgentWaiter)
+        val urgentWaiting = CountDownLatch(1)
+        val urgent = thread {
+            gate.acquire(always, urgent = true) { urgentWaiting.countDown() }?.use { order.add("quality") }
+        }
+        assertTrue(urgentWaiting.await(1, TimeUnit.SECONDS))
+        assertTrue(gate.hasUrgentWaiter)
+        assertEquals(2, gate.waiting)
+        first.close()
+        urgent.join(JOIN_MS)
+        normal.join(JOIN_MS)
+        assertEquals(listOf("quality", "indexer"), order.toList())
+        assertFalse(gate.hasUrgentWaiter)
+        assertEquals(0, gate.waiting)
+    }
+
+    @Test
+    fun stoppedUrgentWaiterIsForgotten() {
+        val gate = HeavyGate(POLL)
+        val first = gate.acquire(always)!!
+        val running = AtomicBoolean(true)
+        val waiting = CountDownLatch(1)
+        val t = thread { gate.acquire({ running.get() }, urgent = true) { waiting.countDown() } }
+        assertTrue(waiting.await(1, TimeUnit.SECONDS))
+        assertTrue(gate.hasUrgentWaiter)
+        running.set(false)
+        t.join(JOIN_MS)
+        assertFalse(gate.hasUrgentWaiter)
+        first.close()
+    }
+
     private companion object {
         const val POLL = 20L
         const val JOIN_MS = 5_000L
