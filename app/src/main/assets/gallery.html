@@ -1135,6 +1135,14 @@ var GCore = (function () {
   // JPEG zo servera s max = dlhá strana originálu (strop servera 4096 px). fullFirst = „Plná kvalita“ zapnutá:
   // plné rozlíšenie sa načíta hneď, nie až pri priblížení. full = null: náhľad už má plné rozlíšenie.
   var PREVIEW_MAX = 2560, FULL_MAX = 4096;
+  // server s feature "thumbFull" vie HEIC/DNG ako JPEG až do 8192 px (starší najviac 4096)
+  function setFullMax(thumbFull) { FULL_MAX = thumbFull ? 8192 : 4096; return FULL_MAX; }
+  // ďalší pokus o náhľad po chybe (503 busy pri preťažení servera): najviac 2 pokusy, len /api/thumb;
+  // vráti URL s parametrom r=<pokus> (obíde cache chybnej odpovede) alebo "" = vzdať
+  function thumbRetry(u, n) {
+    if (!(n < 2) || !/^\/api\/thumb\?/.test(u || "")) return "";
+    return u.replace(/&r=\d+$/, "") + "&r=" + (n + 1);
+  }
   function fmtOf(it) {
     var n = (it && it.name) || "", i = n.lastIndexOf(".");
     if (i > 0 && i < n.length - 1) return n.slice(i + 1).toUpperCase();
@@ -1529,7 +1537,8 @@ var GCore = (function () {
     CHAT_MAX: CHAT_MAX, pctList: pctList, starNote: starNote, HELP: HELP,
     drawRect: drawRect, THUMBS: THUMBS, thumbClamp: thumbClamp, thumbKey: thumbKey, thumbReq: thumbReq,
     wheelAction: wheelAction, wheelPx: wheelPx, wheelZoom: wheelZoom, wheelStep: wheelStep,
-    PREVIEW_MAX: PREVIEW_MAX, FULL_MAX: FULL_MAX, fmtOf: fmtOf, srcPlan: srcPlan, qualLabel: qualLabel,
+    PREVIEW_MAX: PREVIEW_MAX, FULL_MAX: FULL_MAX, setFullMax: setFullMax, thumbRetry: thumbRetry,
+    fmtOf: fmtOf, srcPlan: srcPlan, qualLabel: qualLabel,
     markPlan: markPlan, anchorIndex: anchorIndex, rangePlan: rangePlan,
     freeList: freeList, reindex: reindex, listMove: listMove, ctrlAllowed: ctrlAllowed, ctxItems: ctxItems,
     ZIP_MAX: ZIP_MAX, dlPlan: dlPlan, zipChunks: zipChunks, dlViaFetch: dlViaFetch, dlHoldMs: dlHoldMs,
@@ -2141,6 +2150,7 @@ if (typeof module !== "undefined" && module.exports) module.exports = GCore;
   function hasMotion() { return serverHas("motion"); }
   // bez funkcie servera sa UI obľúbených a živých fotiek neukáže; volá sa pri načítaní a po každom ping (mení len pri zmene)
   function applyFeatures(force) {
+    C.setFullMax(serverHas("thumbFull"));
     var f = (hasFav() ? "fav" : "") + "," + (hasMotion() ? "motion" : "");
     if (!force && f === S.feats) return;
     var changed = S.feats && S.feats !== f;
@@ -2295,7 +2305,15 @@ if (typeof module !== "undefined" && module.exports) module.exports = GCore;
     var img = el("img");
     img.alt = ""; img.decoding = "async"; img.draggable = false;
     img.addEventListener("load", function () { img.classList.add("on"); });
-    img.addEventListener("error", function () { img.classList.add("on"); img.style.opacity = ".25"; });
+    img.addEventListener("error", function () {
+      var src = img.getAttribute("src") || "", n = Number(img.dataset.retry) || 0, next = C.thumbRetry(src, n);
+      if (next) {
+        img.dataset.retry = n + 1;
+        setTimeout(function () { if (img.isConnected && img.getAttribute("src") === src) img.src = next; }, 1200 * (n + 1));
+        return;
+      }
+      img.classList.add("on"); img.style.opacity = ".25";
+    });
     thumbSrc(img, it, px || GV.thumb);
     c.appendChild(img);
     if (!C.isImage(it.mime)) c.appendChild(el("span", "vid", "▶ " + (it.dur ? C.fmtDur(it.dur) : "video")));
@@ -2614,7 +2632,9 @@ if (typeof module !== "undefined" && module.exports) module.exports = GCore;
     v.label = function () { return hd.textContent; };
     // rozpracované načítania sa pri listovaní zrušia (mobil nemusí dekódovať fotky, ktoré už nik nechce)
     function cancelPending() { pend.forEach(function (im) { im.onload = im.onerror = null; im.removeAttribute("src"); }); pend = []; }
-    function fetchImg(u, ok, bad) {
+    // /api/thumb môže pri preťažení vrátiť 503 busy (Retry-After) – <img> stav nevidí, preto 2 pokusy navyše
+    function fetchImg(u, ok, bad, tries) {
+      var tok0 = v.token, n = tries || 0;
       var im = new Image();
       im.decoding = "async";
       var off = function () { pend = pend.filter(function (x) { return x !== im; }); };
@@ -2622,7 +2642,14 @@ if (typeof module !== "undefined" && module.exports) module.exports = GCore;
         // dekódovať mimo hlavného vlákna, aby prvé vykreslenie veľkej fotky nezaseklo stránku
         (im.decode ? im.decode() : Promise.resolve()).catch(function () { }).then(function () { if (pend.indexOf(im) >= 0) { off(); ok(im); } });
       };
-      im.onerror = function () { off(); bad(im); };
+      im.onerror = function () {
+        off();
+        if (C.thumbRetry(u, n) && tok0 === v.token) {
+          setTimeout(function () { if (tok0 === v.token) fetchImg(C.thumbRetry(u, n), ok, bad, n + 1); }, 1200 * (n + 1));
+          return;
+        }
+        bad(im);
+      };
       pend.push(im);
       im.src = u;
     }

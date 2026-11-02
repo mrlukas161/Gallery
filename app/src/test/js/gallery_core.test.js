@@ -823,3 +823,20 @@ test("ZIP: najviac 2 naraz (server inak odpovie 503 busy)", () => {
   assert.equal(C.zipFree([1000, 1500], 2000), 0);
   assert.equal(C.zipFree([1000, 1500], 1000 + 60000), 2, "staré ZIP-y sa už nerátajú");
 });
+
+test("náhľady: opakovanie pri 503 busy a plné rozlíšenie podľa thumbFull", () => {
+  assert.equal(C.thumbRetry("/api/thumb?id=5&s=1024&v=1", 0), "/api/thumb?id=5&s=1024&v=1&r=1");
+  assert.equal(C.thumbRetry("/api/thumb?id=5&s=1024&v=1&r=1", 1), "/api/thumb?id=5&s=1024&v=1&r=2");
+  assert.equal(C.thumbRetry("/api/thumb?id=5&s=1024&v=1&r=2", 2), "", "najviac 2 pokusy navyše");
+  assert.equal(C.thumbRetry("/api/file?id=5", 0), "", "originály sa neopakujú");
+  assert.equal(C.thumbRetry("", 0), "");
+  const heic = { id: 9, mime: "image/heic", name: "a.heic", w: 8160, h: 6120, mtime: 1 };
+  try {
+    assert.equal(C.setFullMax(true), 8192);
+    assert.equal(C.srcPlan(heic, true).full.params.max, 8160, "nový server: HEIC v plnom rozlíšení");
+    assert.equal(C.setFullMax(false), 4096);
+    assert.equal(C.srcPlan(heic, true).full.params.max, 4096, "starší server: strop 4096");
+  } finally {
+    C.setFullMax(false);
+  }
+});

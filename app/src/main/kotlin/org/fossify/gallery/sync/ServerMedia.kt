@@ -210,6 +210,23 @@ class ServerMedia(private val appContext: Context) {
 
     private fun renderThumb(session: IHTTPSession, item: MediaServer.Item, px: Int): ServerDecoder.Result {
         val video = item.mime.startsWith("video/")
+        // Mriežka so zväčšenými miniatúrami (s= nad 512 px, web pri Ctrl + koliesku): najprv systémový náhľad
+        // (MediaProvider, mimo pamäte appky) v malej fronte. Inak by stránka plná miniatúr zahltila veľkú frontu
+        // (2 + 6 miest) a väčšina z nich by dostala 503 busy. Až keď systém náhľad nedá, dekóduje sa ako doteraz.
+        if (!video && px > ServerThumbCache.SMALL_MAX && Http.param(session, "max") == null) {
+            // systémový náhľad môže byť menší než žiadané px; ak má aspoň polovicu, stačí (bunka ho orezáva)
+            val sys = decoder.decode(session, px, small = true) {
+                ImageDecode.systemThumb(resolver, item.uri, px)?.let { b ->
+                    if (maxOf(b.width, b.height) * 2 >= px) {
+                        ImageDecode.scaleToMax(b, px)
+                    } else {
+                        b.recycle()
+                        null
+                    }
+                }
+            }
+            if (!ServerDecoder.isDecodeMiss(sys)) return sys
+        }
         return decoder.decode(session, px) {
             val small = px <= ServerThumbCache.SMALL_MAX
             val sys = if (small || video) ImageDecode.systemThumb(resolver, item.uri, px) else null
@@ -308,6 +325,10 @@ class ServerDecoder {
         private const val SMALL_WAITING = 64
         private const val RETRY_AFTER_S = "1"
         private const val NS_PER_MS = 1_000_000.0
+
+        // dekóder nevrátil obrázok (nie fronta ani zrušenie) – volajúci môže skúsiť inú cestu
+        // (decode() pri null vracia 404 „decode failed“)
+        fun isDecodeMiss(r: Result): Boolean = r is Result.Fail && r.response.status == Status.NOT_FOUND
     }
 
     sealed class Result {
@@ -319,8 +340,9 @@ class ServerDecoder {
     private val largeQueue = DecodeQueue(LARGE_PARALLEL, LARGE_WAITING)
     private val smallQueue = DecodeQueue(SMALL_PARALLEL, SMALL_WAITING)
 
-    fun decode(session: IHTTPSession, px: Int, block: () -> Bitmap?): Result {
-        val queue = if (px > ServerThumbCache.SMALL_MAX) largeQueue else smallQueue
+    // small = true: lacný systémový náhľad aj pre väčšie px (beží v MediaProvider, nie v pamäti appky)
+    fun decode(session: IHTTPSession, px: Int, small: Boolean = false, block: () -> Bitmap?): Result {
+        val queue = if (px > ServerThumbCache.SMALL_MAX && !small) largeQueue else smallQueue
         val t0 = System.nanoTime()
         val outcome = queue.run({ ClientConn.gone(session) }, exclusive = px > ThumbSize.EXCLUSIVE) {
             RequestTiming.current()?.add("q", (System.nanoTime() - t0) / NS_PER_MS)
