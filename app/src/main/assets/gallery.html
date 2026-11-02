@@ -4,7 +4,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="color-scheme" content="dark">
-<meta name="referrer" content="no-referrer">
+<!-- same-origin: cudzím stránkam sa adresa nikdy neposiela; vlastnému serveru áno, inak by formulár POST /api/zip
+     dostal „Origin: null“ a server by ho odmietol (kontrola Origin pri zmenách) -->
+<meta name="referrer" content="same-origin">
 <title>Galéria+ Sync</title>
 <style>
   :root{
@@ -13,8 +15,12 @@
     --line:#262a33; --accent:#4c8dff; --accent2:#2e6ad1; --danger:#ff5d5d;
     --ok:#3ecf8e; --warn:#f5b941; --chip:#20242e;
     --p1:#1976D2; --p2:#FB8C00; --p3:#43A047; --p4:#AB47BC;
+    /* veľkosti miniatúr (Ctrl + koliesko); nastavuje ich skript, každé miesto zvlášť */
+    --thumb:140px; --lthumb:120px; --gthumb:60px; --sthumb:72px; --hdr:52px; --selh:0px;
   }
   *{box-sizing:border-box}
+  /* atribút hidden vždy skryje (inak by ho prebilo display:flex, napr. pri posuvníku kvality alebo priebehu) */
+  [hidden]{display:none !important}
   html,body{margin:0;min-height:100%}
   body{background:var(--bg);color:var(--fg);
     font:14px/1.4 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;-webkit-text-size-adjust:100%}
@@ -39,6 +45,14 @@
   header input[type=search]{min-width:130px;max-width:240px;flex:1 1 130px}
   .qbox{display:flex;align-items:center;gap:.35rem;color:var(--mut);font-size:.8rem}
   .qbox input[type=range]{width:90px;accent-color:var(--accent)}
+  .qbox small{font-size:.72rem;color:var(--mut)}
+  .seg{display:inline-flex}
+  .seg button{border-radius:0}
+  .seg button:first-child{border-radius:999px 0 0 999px}
+  .seg button:last-child{border-radius:0 999px 999px 0;margin-left:-1px}
+  .tbox{display:inline-flex;align-items:center;gap:.25rem;color:var(--mut);font-size:.8rem}
+  .tbox input[type=range]{width:84px;accent-color:var(--accent)}
+  .tbox button{padding:.15rem .5rem;border-radius:999px;line-height:1.2}
   .chipbtn{border-radius:999px;padding:.35rem .7rem;font-size:.82rem}
   .chipbtn.del{border-color:var(--danger)}
   .chipbtn.del b{color:var(--danger)}
@@ -64,6 +78,9 @@
   .cell .mark{position:absolute;left:6px;bottom:30px;background:rgba(70,20,20,.9);color:var(--danger);
     border-radius:6px;padding:0 5px;font-size:.72rem;display:none}
   .cell.ismark .mark{display:block}
+  /* zobrazené označené (prepínač „Skryť označené“ vypnutý): stlmené so značkou */
+  .cell.ismark img.on{filter:brightness(.45) saturate(.4)}
+  .cell.shown{outline:3px solid #fff;outline-offset:-3px}
   .cell.cur{outline:3px dashed #fff;outline-offset:-3px}
   .cell.cur.sel{outline-color:var(--accent)}
   .cell.cur.ismark{outline-color:var(--danger)}
@@ -78,7 +95,7 @@
   .ov{position:fixed;inset:0;z-index:50;background:rgba(6,7,10,.98);display:none;flex-direction:column}
   .ov.on{display:flex}
   .ov:focus{outline:none}
-  #cmp{z-index:60} #viewer{z-index:70} #marked,#bin{z-index:65} #help{z-index:90} #login{z-index:95} #ask{z-index:96} #work{z-index:97}
+  #cmp{z-index:60} #viewer{z-index:70} #fcmp{z-index:72} #marked,#bin{z-index:65} #help{z-index:90} #login{z-index:95} #ask{z-index:96} #work{z-index:97}
   .card .wbar{height:6px;background:var(--chip);border-radius:3px;overflow:hidden;margin:.6rem 0}
   .card .wbar i{display:block;height:100%;background:var(--accent);width:0;transition:width .3s}
   .bar{display:flex;gap:.45rem;align-items:center;padding:.45rem .7rem;border-bottom:1px solid var(--line);flex-wrap:wrap}
@@ -94,9 +111,15 @@
   .progress .pbar i{display:block;height:100%;background:var(--ok);width:0}
 
   .stage{flex:1;overflow:hidden;position:relative;touch-action:none;min-height:0;user-select:none}
-  .stage img.vimg{position:absolute;left:50%;top:50%;transform-origin:center;max-width:none;-webkit-user-drag:none;transition:opacity .15s}
+  /* fotka sa kreslí do canvasu veľkosti plochy (žiadny obrovský <img> so scale → žiadne čiary na hranách dlaždíc) */
+  .stage canvas.vimg{position:absolute;left:0;top:0;width:100%;height:100%;display:block}
+  .stage canvas.vimg[hidden]{display:none}
   .stage video{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);max-width:96%;max-height:96%}
-  .stage .hd{position:absolute;right:8px;top:8px;font-size:.68rem;color:var(--mut);background:rgba(0,0,0,.5);border-radius:5px;padding:0 5px;z-index:3}
+  .stage .hd{position:absolute;right:8px;top:8px;font-size:.72rem;color:#dfe5ee;background:rgba(0,0,0,.62);border-radius:5px;padding:1px 7px;z-index:3;pointer-events:none;max-width:calc(100% - 16px);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .stage .hd.full{color:var(--ok)}
+  .stage .hd.busy{color:var(--warn)}
+  .stage.zoomable{cursor:zoom-in}
+  .stage.zoomable.zoomed{cursor:zoom-out}
   .stage .hd:empty{display:none}
   .stage .vmsg{position:absolute;inset:auto 0 45% 0;text-align:center;color:var(--mut);z-index:2}
   .navbtn{position:absolute;top:50%;transform:translateY(-50%);z-index:5;font-size:1.6rem;padding:.6rem .8rem;background:rgba(20,22,28,.7)}
@@ -130,9 +153,9 @@
   .pane .pf{font-size:.74rem;color:var(--mut);padding:.25rem .45rem;border-top:1px solid var(--line);line-height:1.45}
   .pane .pf .row{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .pane .pf .diff{color:var(--warn);font-weight:600}
-  #cmp.noexif .pf .ex{display:none}
-  #strip{display:flex;gap:6px;overflow-x:auto;padding:.45rem .6rem;border-top:1px solid var(--line);background:var(--bg2);min-height:84px}
-  .sthumb{position:relative;flex:0 0 auto;width:72px;height:72px;border-radius:8px;overflow:hidden;padding:0;border:0;
+  #cmp.noexif .pf .ex,#fcmp.noexif .pf .ex{display:none}
+  #strip{display:flex;gap:6px;overflow-x:auto;padding:.45rem .6rem;border-top:1px solid var(--line);background:var(--bg2);min-height:calc(var(--sthumb) + 12px)}
+  .sthumb{position:relative;flex:0 0 auto;width:var(--sthumb);height:var(--sthumb);border-radius:8px;overflow:hidden;padding:0;border:0;
     outline:2px solid transparent;outline-offset:-2px;background:var(--bg)}
   .sthumb img{width:100%;height:100%;object-fit:cover;display:block}
   .sthumb .sb{position:absolute;left:3px;top:3px;display:flex;gap:2px}
@@ -155,13 +178,13 @@
   .grow:hover,.grow:focus-visible{border-color:var(--accent)}
   .grow.done{opacity:.6}
   .grow .th{display:flex;gap:4px;flex:0 1 auto;overflow:hidden}
-  .grow img{width:60px;height:60px;object-fit:cover;border-radius:6px;flex:0 0 auto;background:var(--bg)}
+  .grow img{width:var(--gthumb);height:var(--gthumb);object-fit:cover;border-radius:6px;flex:0 0 auto;background:var(--bg)}
   .grow .gi{margin-left:auto;color:var(--mut);font-size:.78rem;padding:0 .4rem;text-align:right;flex:0 0 auto;max-width:48%}
   .grow .gi b{color:var(--fg)}
   .grow .gi .tags{display:flex;gap:4px;justify-content:flex-end;margin-top:3px;flex-wrap:wrap}
 
   /* marked / bin */
-  .mgrid{flex:1;overflow:auto;padding:.7rem;display:grid;gap:8px;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));align-content:start}
+  .mgrid{flex:1;overflow:auto;padding:.7rem;display:grid;gap:8px;grid-template-columns:repeat(auto-fill,minmax(var(--thumb),1fr));align-content:start}
   .mcell{background:var(--bg2);border:1px solid var(--line);border-radius:10px;overflow:hidden;display:flex;flex-direction:column}
   .mcell .mimg{padding:0;border:0;border-radius:0;aspect-ratio:1/1;background:var(--bg)}
   .mcell .mimg img{width:100%;height:100%;object-fit:cover;display:block}
@@ -170,6 +193,39 @@
   .mcell .ma{display:flex;gap:4px;padding:0 .4rem .4rem}
   .mcell .ma button{flex:1;padding:.25rem .3rem;font-size:.78rem}
   .mcell.picked{border-color:var(--accent);box-shadow:inset 0 0 0 2px var(--accent)}
+
+  /* režim náhľadu: zoznam (vľavo alebo dole) + veľká fotka; pod 900 px vždy zoznam dole */
+  body.pmode{overflow:hidden}
+  body.pmode main#main{display:none}
+  #pv{position:fixed;left:0;right:0;top:var(--hdr);bottom:var(--selh);display:grid;grid-template-columns:clamp(220px,26vw,480px) minmax(0,1fr);min-height:0}
+  #pv[hidden]{display:none}
+  .vt{position:relative;overflow:auto;padding:6px;background:var(--bg);min-height:0;min-width:0;user-select:none;-webkit-user-select:none}
+  .vt .vtin{position:relative}
+  #pList{border-right:1px solid var(--line)}
+  #pv.bottom{grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(0,1fr) auto}
+  #pv.bottom #pList{order:2;height:calc(var(--lthumb) + 26px);overflow-y:hidden;border-right:0;border-top:1px solid var(--line)}
+  @media(max-width:899px){
+    #pv{grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(0,1fr) auto}
+    #pList{order:2;height:calc(var(--lthumb) + 26px);overflow-y:hidden;border-right:0;border-top:1px solid var(--line)}
+  }
+  .pvmain{display:flex;flex-direction:column;min-width:0;min-height:0}
+  .pvmain .bar .t{min-width:4rem}
+
+  /* „Porovnať s…“: pás miniatúr pravej strany hore */
+  #fStrip{flex:0 0 auto;height:calc(var(--sthumb) + 26px);overflow-x:auto;overflow-y:hidden;border-bottom:1px solid var(--line);background:var(--bg2)}
+  #fcmp .pane .ph .role{font-size:.7rem;font-weight:700;border-radius:5px;padding:0 6px;color:#fff;background:var(--chip)}
+  #fcmp .pane[data-p="0"] .ph .role{background:var(--p1)}
+  #fcmp .pane[data-p="1"] .ph .role{background:var(--p2)}
+  .fcempty{display:flex;align-items:center;justify-content:center;color:var(--mut);padding:1rem;text-align:center}
+
+  /* vlastné kontextové menu (pravé tlačidlo; Shift + pravé = menu prehliadača) */
+  #ctx{position:fixed;z-index:120;min-width:240px;max-width:calc(100vw - 16px);background:var(--bg2);border:1px solid var(--line);border-radius:10px;
+    padding:4px;box-shadow:0 8px 28px rgba(0,0,0,.6);display:flex;flex-direction:column}
+  #ctx[hidden]{display:none}
+  #ctx button{background:none;border:0;border-radius:6px;text-align:left;padding:.42rem .7rem;white-space:nowrap}
+  #ctx button:hover,#ctx button:focus{background:var(--accent2);outline:none}
+  #ctx button:disabled:hover{background:none}
+  #ctx .sep{border-top:1px solid var(--line);margin:3px 2px}
 
   /* help */
   #help .hb{overflow:auto;padding:1rem;display:flex;gap:2rem;flex-wrap:wrap}
@@ -217,20 +273,30 @@
     <option value="images">Len fotky</option>
     <option value="videos">Len videá</option>
   </select>
+  <span class="seg" role="group" aria-label="Zobrazenie (V)">
+    <button class="chipbtn" id="modeGrid" aria-pressed="true" title="Mriežka (V prepína)">▦ Mriežka</button><button class="chipbtn" id="modePrev" aria-pressed="false" title="Náhľad: zoznam a veľká fotka (V prepína)">◧ Náhľad</button>
+  </span>
+  <span class="tbox" title="Veľkosť miniatúr — aj Ctrl + koliesko nad zoznamom alebo Ctrl + + / Ctrl + −">
+    <button id="thMinus" aria-label="Menšie miniatúry (Ctrl + −)">−</button>
+    <label class="sr" for="thSize">Veľkosť miniatúr</label><input type="range" id="thSize" min="80" max="400" step="2" value="140">
+    <button id="thPlus" aria-label="Väčšie miniatúry (Ctrl + +)">+</button>
+  </span>
+  <button class="chipbtn" id="hideMarkedBtn" aria-pressed="true" title="Skryť fotky označené na zmazanie zo zoznamov (H)">Skryť označené</button>
   <span class="spacer"></span>
   <label class="sr" for="dlmode">Sťahovanie</label>
-  <select id="dlmode" title="Čo stiahnuť">
-    <option value="orig">⬇ Originál</option>
-    <option value="reduced">⬇ Zmenšené JPEG</option>
+  <select id="dlmode" title="Čo sa stiahne tlačidlom ⬇ a klávesom D">
+    <option value="orig">⬇ Sťahovať originál</option>
+    <option value="reduced">⬇ Sťahovať zmenšené JPEG (2048 px)</option>
   </select>
-  <span class="qbox" id="qbox" hidden title="Kvalita zmenšeného JPEG (dlhá strana 2048 px)">
-    <label for="quality">q</label><input type="range" id="quality" min="30" max="100" step="5" value="80">
-    <span id="qval">80%</span>
+  <span class="qbox" id="qbox" hidden title="Kvalita JPEG pri zmenšenom sťahovaní (dlhá strana 2048 px). Na zobrazenie fotiek nemá vplyv – na to je „Plná kvalita“ v prehliadači.">
+    <label for="quality">Kvalita zmenšeného JPEG</label><input type="range" id="quality" min="30" max="100" step="5" value="80">
+    <span id="qval">80 %</span>
+    <small>platí len pre zmenšené sťahovanie</small>
   </span>
   <button class="chipbtn" id="groupsBtn" title="Podobné a duplikáty (G)">Podobné a duplikáty</button>
   <button class="chipbtn" id="selBtn" aria-pressed="false" title="Výberový režim (S)">Vybrať</button>
   <button class="chipbtn" id="binBtn" title="Kôš Galérie+ (B)">Kôš</button>
-  <button class="chipbtn del" id="markedChip" hidden title="Na zmazanie (M)">🗑 <b id="markedN">0</b> na zmazanie</button>
+  <button class="chipbtn del" id="markedChip" hidden title="Prehľad označených na zmazanie (M)">🗑 Na zmazanie: <b id="markedN">0</b></button>
   <button class="chipbtn" id="helpBtn" data-help title="Klávesové skratky (?)" aria-label="Klávesové skratky">⌨ ?</button>
 </header>
 
@@ -239,15 +305,38 @@
   <div class="empty" id="empty" hidden>Žiadne položky.</div>
 </main>
 
+<!-- režim náhľadu: zoznam + veľká fotka -->
+<div id="pv" hidden>
+  <div class="vt" id="pList" role="list" aria-label="Fotky a videá (zoznam náhľadu)"></div>
+  <section class="pvmain" aria-label="Náhľad">
+    <div class="bar">
+      <span class="t" id="pTitle"></span>
+      <span class="tag" id="pState" hidden></span>
+      <button id="pFit" title="F">Prispôsobiť</button>
+      <button id="pOne" title="1">1:1</button>
+      <button class="fqbtn" id="pFq" aria-pressed="false" title="Plná kvalita: hneď originál, HEIC/DNG ako JPEG v plnom rozlíšení (O)">Plná kvalita</button>
+      <button class="warn" id="pMark" title="X / Medzerník">🗑 Označiť</button>
+      <button class="pri" id="pDl" title="D">⬇ Stiahnuť</button>
+      <button id="pWith" title="C">Porovnať s…</button>
+      <button id="pOpen" title="Enter alebo dvojklik">⛶ Celá obrazovka</button>
+      <button id="pPos" title="Zoznam vľavo / dole (L)">Zoznam dole</button>
+    </div>
+    <div class="stage zoomable" id="pStage"></div>
+    <div class="infoline" id="pInfo"></div>
+  </section>
+</div>
+
 <div id="selbar" role="toolbar" aria-label="Výber">
   <span class="info" id="selInfo">0 vybraných</span>
   <button class="pri" id="selDl">⬇ Stiahnuť</button>
   <button id="selChat" title="Shift+D — zmenšené JPEG (2048 px) s predponou Claude_ do Stiahnutých, na pretiahnutie do chatu">💬 Do chatu</button>
-  <button id="selCmp" disabled>Porovnať</button>
-  <button class="warn" id="selMark">🗑 Označiť na zmazanie</button>
-  <button id="selUnmark">↩ Zrušiť označenie</button>
-  <button id="selAll">Vybrať zobrazené</button>
-  <button id="selOff">Zrušiť výber</button>
+  <button id="selCmp" disabled title="C">Porovnať</button>
+  <button id="selWith" disabled title="C — jedna vybraná fotka vľavo, vpravo listuješ inými">Porovnať s…</button>
+  <button id="selDir" hidden title="Uloží originály vybraných fotiek priamo do zvoleného priečinka (len cez localhost / USB)">📁 Uložiť do priečinka…</button>
+  <button class="warn" id="selMark" title="X / Delete">🗑 Označiť vybrané na zmazanie</button>
+  <button id="selUnmark">↩ Zrušiť značku vybraným</button>
+  <button id="selAll" title="A / Ctrl+A">Vybrať zobrazené</button>
+  <button id="selOff" title="Esc / Ctrl+D">Zrušiť výber</button>
 </div>
 
 <!-- jedna fotka / video -->
@@ -258,6 +347,8 @@
     <span class="tag" id="vState"></span>
     <button id="vFit" title="F">Prispôsobiť</button>
     <button id="vFull" title="1">1:1</button>
+    <button class="fqbtn" id="vFq" aria-pressed="false" title="Plná kvalita: hneď originál, HEIC/DNG ako JPEG v plnom rozlíšení (O)">Plná kvalita</button>
+    <button id="vWith" title="C — táto fotka vľavo, vpravo listuješ inými">Porovnať s…</button>
     <button class="warn" id="vMark" title="X / Medzerník">🗑 Označiť</button>
     <button class="pri" id="vDl" title="D">⬇ Stiahnuť</button>
     <button id="vChat" title="Shift+D — zmenšená kópia pre chat Claude">💬 Do chatu</button>
@@ -317,6 +408,7 @@
     <label class="inl"><input type="checkbox" id="cLink" checked> Spoločné priblíženie (V)</label>
     <button id="cFit" title="F">Prispôsobiť všetky</button>
     <button id="cExif" aria-pressed="true" title="I">EXIF</button>
+    <button class="fqbtn" id="cFq" aria-pressed="false" title="Plná kvalita: hneď originál, HEIC/DNG ako JPEG v plnom rozlíšení (O)">Plná kvalita</button>
     <button id="cEval" title="Q — mobil vyhodnotí ostrosť, expozíciu a tváre a ukáže ★ so zdôvodnením">★ Vyhodnotiť skupinu</button>
     <span id="cGroupBtns">
       <button id="cPrev" title="P" aria-label="Predošlá skupina (P)">‹</button>
@@ -330,6 +422,28 @@
   <div class="qline" id="cQual" aria-live="polite" hidden></div>
   <div class="cmpwrap" data-n="2" id="cWrap"></div>
   <div id="strip" role="list" aria-label="Fotky skupiny"></div>
+</div>
+
+<!-- „Porovnať s…“: vľavo pripnutá fotka, vpravo ľubovoľná iná -->
+<div class="ov" id="fcmp" role="dialog" aria-modal="true" aria-labelledby="fTitle" tabindex="-1">
+  <div class="bar">
+    <button id="fClose" aria-label="Zavrieť (Esc)">✕</button>
+    <span class="t" id="fTitle">Porovnať s…</span>
+    <label class="inl">Vpravo <select id="fScope" title="Odkiaľ sú fotky vpravo (R)">
+      <option value="view">aktuálny filter</option>
+      <option value="all">celá knižnica</option>
+      <option value="folder">tento priečinok</option>
+      <option value="group">táto skupina</option>
+    </select></label>
+    <label class="inl"><input type="checkbox" id="fLink" checked> Spoločné priblíženie (V)</label>
+    <button id="fFit" title="F">Prispôsobiť</button>
+    <button id="fExif" aria-pressed="true" title="I">EXIF</button>
+    <button class="fqbtn" id="fFq" aria-pressed="false" title="Plná kvalita: hneď originál, HEIC/DNG ako JPEG v plnom rozlíšení (O)">Plná kvalita</button>
+    <button id="fSwap" title="T — vymení pripnutú a porovnávanú">⇄ Vymeniť strany</button>
+    <button class="hbtn" data-help title="Klávesové skratky tejto obrazovky (?)" aria-label="Klávesové skratky">⌨ ?</button>
+  </div>
+  <div class="vt" id="fStrip" role="list" aria-label="Fotky na porovnanie (pravá strana)"></div>
+  <div class="cmpwrap" data-n="2" id="fWrap"></div>
 </div>
 
 <!-- na zmazanie -->
@@ -396,11 +510,14 @@
   <div class="bar">
     <button id="hClose" aria-label="Zavrieť (Esc)">✕</button>
     <span class="t" id="hT">⌨ Klávesové skratky <small class="hint" id="hSub"></small></span>
+    <button id="hDiag" hidden aria-expanded="false" aria-controls="hDiagBox">Diagnostika servera</button>
   </div>
+  <div class="hb" id="hDiagBox" hidden></div>
   <div class="hb" id="hBody"></div>
 </div>
 
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
+<div id="ctx" role="menu" aria-label="Akcie s fotkou" hidden></div>
 
 <script nonce="__CSP_NONCE__">
 "use strict";
@@ -511,9 +628,12 @@ var GCore = (function () {
     return Array.from(m.values()).sort(byDate);
   }
   function isImage(m) { return (m || "").indexOf("image/") === 0; }
-  function filterItems(items, q, f, marked, synced) {
+  // hide = „Skryť označené na zmazanie“: označené zmiznú (okrem filtra „Na zmazanie“)
+  function filterItems(items, q, f, marked, synced, hide) {
     q = (q || "").trim().toLowerCase();
+    hide = !!hide && f !== "marked";
     return items.filter(function (it) {
+      if (hide && marked.has(it.id)) return false;
       if (q && (it.name + " " + (it.relpath || it.bucket || "")).toLowerCase().indexOf(q) < 0) return false;
       switch (f) {
         case "new": return !synced.has(it.id);
@@ -801,37 +921,355 @@ var GCore = (function () {
     };
   }
 
+  // výrez fotky na kreslenie do canvasu: a = {scale, x, y} (posun stredu fotky od stredu plochy W×H, CSS px).
+  // Cieľ je zaokrúhlený na celé pixely zariadenia a zdroj dopočítaný z neho – žiadne švy ani „skákanie“ hrán.
+  function drawRect(W, H, nw, nh, a, dpr) {
+    var s = a.scale;
+    if (!(s > 0 && nw > 0 && nh > 0 && W > 0 && H > 0)) return null;
+    dpr = dpr || 1;
+    var ix = W / 2 + a.x - nw * s / 2, iy = H / 2 + a.y - nh * s / 2; // ľavý horný roh fotky na ploche
+    var x0 = Math.max(0, ix), y0 = Math.max(0, iy), x1 = Math.min(W, ix + nw * s), y1 = Math.min(H, iy + nh * s);
+    var dx = Math.round(x0 * dpr), dy = Math.round(y0 * dpr);
+    var dw = Math.round(x1 * dpr) - dx, dh = Math.round(y1 * dpr) - dy;
+    if (dw <= 0 || dh <= 0) return null;
+    var k = 1 / (s * dpr); // pixelov fotky na pixel zariadenia
+    var sx = clamp((dx - ix * dpr) * k, 0, nw), sy = clamp((dy - iy * dpr) * k, 0, nh);
+    return { sx: sx, sy: sy, sw: Math.min(dw * k, nw - sx), sh: Math.min(dh * k, nh - sy), dx: dx, dy: dy, dw: dw, dh: dh };
+  }
+
+  // ---- veľkosť miniatúr (Ctrl + koliesko, Ctrl + + / Ctrl + −, posuvník v hlavičke) ----
+  // každé miesto si pamätá vlastnú veľkosť (px): mriežka, zoznam v režime náhľadu, riadky skupín, pásy porovnávačov
+  var THUMBS = {
+    grid: { min: 80, max: 400, def: 140 },
+    list: { min: 80, max: 400, def: 120 },
+    groups: { min: 40, max: 200, def: 60 },
+    strip: { min: 48, max: 240, def: 72 }
+  };
+  // zaokrúhlené na desatiny, aby pomalý pinch na touchpade (malé delty) veľkosť naozaj menil
+  function thumbClamp(ctx, v) {
+    var t = THUMBS[ctx] || THUMBS.grid;
+    v = Number(v);
+    if (!(v > 0) || !isFinite(v)) return t.def;
+    return clamp(Math.round(v * 10) / 10, t.min, t.max);
+  }
+  // Ctrl + + / Ctrl + − a tlačidlá −/+: o 15 %
+  function thumbKey(ctx, size, dir) { return thumbClamp(ctx, size * Math.pow(1.15, dir)); }
+  // veľkosť náhľadu zo servera (/api/thumb?s=) pre bunku cssPx pri hustote dpr. Bunka orezáva (cover), preto
+  // aj kratšia strana fotky 4:3 má mať aspoň cssPx; pevné stupne = rovnaké URL (cache), najviac 1024
+  var THUMB_REQ = [128, 192, 256, 300, 384, 512, 768, 1024];
+  function thumbReq(cssPx, dpr) {
+    var need = cssPx * (dpr || 1) * 4 / 3;
+    for (var i = 0; i < THUMB_REQ.length; i++) if (THUMB_REQ[i] >= need) return THUMB_REQ[i];
+    return THUMB_REQ[THUMB_REQ.length - 1];
+  }
+
+  // ---- koliesko: rovnaké pravidlá všade ----
+  // nad fotkou (prehliadač, porovnávač, náhľad): koliesko = listovanie, Ctrl = zoom ku kurzoru (aj pinch na
+  // touchpade – prehliadač ho posiela ako koliesko s Ctrl), Shift = posun do strany. Nad zoznamom: koliesko
+  // scrolluje, Ctrl mení veľkosť miniatúr; nad vodorovným pásom koliesko posúva pás do strany.
+  // where: "stage" | "list" | "strip" | "bar" (lišta vrstvy s fotkami) | iné = nechať prehliadaču
+  function wheelAction(e, where) {
+    var ctrl = !!(e.ctrlKey || e.metaKey);
+    switch (where) {
+      case "stage": return ctrl ? "zoom" : e.shiftKey ? "pan" : "page";
+      case "list": return ctrl ? "thumbs" : "scroll";
+      case "strip": return ctrl ? "thumbs" : e.shiftKey ? "scroll" : "hscroll";
+      case "bar": return ctrl ? "block" : "scroll";
+      default: return "native";
+    }
+  }
+  // delta v pixeloch (deltaMode 1 = riadky, 2 = strany)
+  function wheelPx(d, mode) { return mode === 1 ? d * 40 : mode === 2 ? d * 800 : (d || 0); }
+  // násobok priblíženia: zárez myši ≈ 14 %, pinch na touchpade (malé pixelové delty) sleduje prsty
+  function wheelZoom(dy, mode) {
+    var px = wheelPx(dy, mode);
+    return Math.exp(-px * (mode === 0 && Math.abs(px) < 50 ? 0.01 : 0.0015));
+  }
+  // Listovanie kolieskom: zárez myši = jedna fotka (ďalšia najskôr po 120 ms, aj pri rýchlom točení), touchpad
+  // (malé delty a zotrvačnosť) = jedna fotka za jeden pohyb prstov – ďalšia až po pauze 180 ms. st = stav ({}).
+  // Vráti -1 / 0 / 1.
+  var WHEEL_GAP = 180, WHEEL_STEP = 60, WHEEL_NOTCH = 50, WHEEL_COOL = 120;
+  function wheelStep(st, dx, dy, mode, t) {
+    var px = wheelPx(Math.abs(dx || 0) > Math.abs(dy || 0) ? dx : dy, mode);
+    var notch = mode !== 0 || Math.abs(px) >= WHEEL_NOTCH;
+    if (!(st.t != null && t - st.t <= WHEEL_GAP)) { st.acc = 0; st.lock = false; }
+    st.t = t;
+    if (!px) return 0;
+    if (st.lock) {
+      if (!notch || t - st.at < WHEEL_COOL) return 0;
+      st.lock = false; st.acc = 0;
+    }
+    if (st.acc && (st.acc > 0) !== (px > 0)) st.acc = 0;
+    st.acc = (st.acc || 0) + px;
+    if (Math.abs(st.acc) < WHEEL_STEP) return 0;
+    var dir = st.acc > 0 ? 1 : -1;
+    st.acc = 0; st.lock = true; st.at = t;
+    return dir;
+  }
+
+  // ---- „Plná kvalita“: čo načítať do prehliadača ----
+  // náhľad 2560 px (vie aj HEIC/DNG); plná kvalita = originál (/api/file bez prekódovania) alebo pri HEIC/DNG
+  // JPEG zo servera s max = dlhá strana originálu (strop servera 4096 px). fullFirst = „Plná kvalita“ zapnutá:
+  // plné rozlíšenie sa načíta hneď, nie až pri priblížení. full = null: náhľad už má plné rozlíšenie.
+  var PREVIEW_MAX = 2560, FULL_MAX = 4096;
+  function fmtOf(it) {
+    var n = (it && it.name) || "", i = n.lastIndexOf(".");
+    if (i > 0 && i < n.length - 1) return n.slice(i + 1).toUpperCase();
+    var m = /^image\/(?:x-)?([\w.+-]+)/i.exec((it && it.mime) || "");
+    return m ? m[1].toUpperCase() : "";
+  }
+  function srcPlan(it, fullQ) {
+    var d = dispDims(it), nat = browserNative(it.mime), long = Math.max(d.w, d.h), full = null, fw = d.w, fh = d.h;
+    if (nat) full = { path: "/api/file", params: { id: it.id } };
+    else if (!(long > 0) || long > PREVIEW_MAX) {
+      full = { path: "/api/thumb", params: { id: it.id, max: long > 0 ? Math.min(long, FULL_MAX) : FULL_MAX, v: it.mtime } };
+      if (long > FULL_MAX) { fw = Math.round(d.w * FULL_MAX / long); fh = Math.round(d.h * FULL_MAX / long); }
+    }
+    return {
+      preview: { path: "/api/thumb", params: { id: it.id, max: PREVIEW_MAX, v: it.mtime } }, full: full,
+      native: nat, fullW: fw, fullH: fh, origW: d.w, origH: d.h, fmt: fmtOf(it), fullFirst: !!fullQ && !!full
+    };
+  }
+  function dimsTxt(w, h) { return w + " × " + h; }
+  // čo práve vidíš v paneli: „náhľad 2560 px“, „originál 4032 × 3024“, „HEIC → JPEG v plnom rozlíšení 4032 × 3024“
+  // o = {kind: "prev"|"full", w, h (načítaný obrázok), ow, oh (originál), native, fmt, loading, failed}
+  function qualLabel(o) {
+    if (!(o.w > 0 && o.h > 0)) return o.loading ? "načítavam…" : "";
+    var long = Math.max(o.w, o.h), olong = Math.max(o.ow | 0, o.oh | 0);
+    var fullRes = olong > 0 ? long >= olong * 0.98 : o.kind === "full";
+    var s;
+    if (o.kind === "full" && o.native) s = "originál " + dimsTxt(o.w, o.h);
+    else if (!o.native && (o.kind === "full" || fullRes)) {
+      s = (o.fmt || "?") + " → JPEG " + (fullRes ? "v plnom rozlíšení " + dimsTxt(o.w, o.h) : dimsTxt(o.w, o.h) + " (originál " + dimsTxt(o.ow, o.oh) + ")");
+    } else s = "náhľad " + long + " px";
+    if (o.loading) s += o.native ? " · načítavam originál…" : " · načítavam plné rozlíšenie…";
+    else if (o.failed) s += o.native ? " · originál sa nepodarilo načítať" : " · plné rozlíšenie sa nepodarilo načítať";
+    return s;
+  }
+
+  // ---- značky na zmazanie a výber: dávky a intervaly ----
+  // Delete / X: s výberom všetky vybrané jednou požiadavkou (ak sú už všetky označené, značky zruší), bez výberu
+  // len aktuálna fotka
+  function markPlan(sel, curId, marked) {
+    var ids = sel && sel.length ? sel.slice() : (curId != null ? [curId] : []);
+    return { ids: ids, del: ids.some(function (id) { return !marked.has(id); }) };
+  }
+  // index kotvy v zobrazení; keď kotva nie je zobrazená (napr. sa práve skryla označená), miesto, kde by bola
+  // (položky aj zobrazenie majú rovnaké poradie)
+  function anchorIndex(view, items, anchorId) {
+    if (anchorId == null || !view.length) return -1;
+    for (var i = 0; i < view.length; i++) if (view[i].id === anchorId) return i;
+    var shown = new Set(view.map(function (x) { return x.id; })), n = 0;
+    for (var k = 0; k < items.length; k++) {
+      if (items[k].id === anchorId) return Math.min(n, view.length - 1);
+      if (shown.has(items[k].id)) n++;
+    }
+    return -1;
+  }
+  // Interval od kotvy po fotku (Shift + klik, Shift + medzerník, Shift + X): rovnaké pravidlo pre výber aj značky.
+  // Ak je kotva „zapnutá“ (vybraná / označená) alebo v intervale nie je nič zapnuté, interval sa zapne; inak
+  // (kotva vypnutá a v intervale je niečo zapnuté) sa celý interval vypne – ako v Prieskumníkovi.
+  // set = výber alebo značky; vráti {ids (len tie, ktoré sa zmenia), on, all (celý interval)}
+  function rangePlan(view, a, b, anchorId, set) {
+    var all = rangeIds(view, a, b);
+    var on = set.has(anchorId) || !all.some(function (id) { return set.has(id); });
+    return { ids: all.filter(function (id) { return set.has(id) !== on; }), on: on, all: all };
+  }
+
+  // ---- „Porovnať s…“ ----
+  // kandidáti na pravú stranu z poradia base (položky): len fotky, bez pripnutej, bez označených na zmazanie, keď
+  // sú skryté; start = fotka hneď za pripnutou (v poradí base), inak prvá; -1 = nie je s čím porovnať
+  function freeList(base, pinId, marked, hide) {
+    var ids = [], start = -1;
+    base.forEach(function (it) {
+      if (!it) return;
+      if (it.id === pinId) { if (start < 0) start = ids.length; return; }
+      if (!isImage(it.mime) || (hide && marked.has(it.id))) return;
+      ids.push(it.id);
+    });
+    return { ids: ids, start: ids.length ? clamp(start < 0 ? 0 : start, 0, ids.length - 1) : -1 };
+  }
+  // po zmene zoznamu (značka, iný rozsah): tá istá fotka, inak tá, ktorá sa posunula na jej miesto
+  function reindex(oldIds, oldIdx, newIds) {
+    if (!newIds.length) return -1;
+    var k = newIds.indexOf(oldIds[oldIdx]);
+    if (k >= 0) return k;
+    var before = new Set(oldIds.slice(0, Math.max(0, oldIdx)));
+    return clamp(newIds.filter(function (x) { return before.has(x); }).length, 0, newIds.length - 1);
+  }
+
+  // ---- zoznam v režime náhľadu: šípky podľa orientácie (vodorovný pás dole = ←/→ po jednej) ----
+  function listMove(cur, key, lanes, len, horiz) {
+    if (horiz) key = { ArrowLeft: "ArrowUp", ArrowRight: "ArrowDown", ArrowUp: "ArrowLeft", ArrowDown: "ArrowRight" }[key] || key;
+    return gridMove(cur, key, lanes, len);
+  }
+
+  // ---- skratky s Ctrl (Cmd), ktoré obsluhuje stránka; ostatné (Ctrl+F, Ctrl+T, Ctrl+0, zoom stránky v prehliadači
+  // fotky…) ostávajú prehliadaču. Ctrl+Z (vrátiť) platí všade a rieši ho hlavný poslucháč.
+  var THUMB_CTRL = ["+", "=", "-"];
+  var LIST_CTRL = ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End", "a", "d"].concat(THUMB_CTRL);
+  var CTRL_KEYS = { grid: LIST_CTRL, preview: LIST_CTRL, groups: THUMB_CTRL, marked: THUMB_CTRL, bin: THUMB_CTRL, cmp: THUMB_CTRL, fcmp: THUMB_CTRL };
+  function ctrlAllowed(screen, key) {
+    var k = key && key.length === 1 ? key.toLowerCase() : key;
+    return (CTRL_KEYS[screen] || []).indexOf(k) >= 0;
+  }
+
+  // ---- vlastné kontextové menu (pravé tlačidlo, kláves Menu, Shift+F10) ----
+  // c = {where, sel (počet vybraných), inSel, selected, marked, selMarked (všetky vybrané označené), image,
+  //      range: {n, selOn, selOff, markOn, markOff} = interval od kotvy po túto fotku (čo sa v ňom dá zmeniť)}
+  // where: grid (mriežka), list (zoznam náhľadu), preview (veľká fotka náhľadu), viewer, cmp, fcmp, strip
+  function ctxItems(c) {
+    var lists = c.where === "grid" || c.where === "list" || c.where === "preview";
+    var multi = lists && c.inSel && c.sel > 1, n = " (" + c.sel + ")", out = [];
+    out.push({ id: "mark", label: multi ? (c.selMarked ? "↩ Zrušiť značku vybraným" + n : "🗑 Označiť vybrané na zmazanie" + n)
+      : (c.marked ? "↩ Zrušiť značku na zmazanie" : "🗑 Označiť na zmazanie") });
+    if (lists) {
+      out.push({ id: "sel", label: c.selected ? "Zrušiť výber tejto fotky" : "Vybrať" });
+      out.push({ id: "selall", label: "Vybrať všetko" });
+      out.push({ id: "selnone", label: "Zrušiť celý výber", disabled: !c.sel });
+      var r = c.range, first = true;
+      if (r && r.n > 1) {
+        var rn = " (" + r.n + ")";
+        [["selOn", "rsel", "Vybrať interval"], ["selOff", "runsel", "Odznačiť interval"],
+          ["markOn", "rmark", "🗑 Označiť interval na zmazanie"], ["markOff", "runmark", "↩ Zrušiť značku zmazania v intervale"]].forEach(function (x) {
+          if (!r[x[0]]) return;
+          out.push({ id: x[1], label: x[2] + rn, sep: first });
+          first = false;
+        });
+      }
+    }
+    out.push({ id: "with", label: "Porovnať s…", disabled: !c.image, sep: true });
+    if (c.where === "list" || c.where === "preview") out.push({ id: "full", label: "Otvoriť na celú obrazovku" });
+    else out.push({ id: "preview", label: "Otvoriť v náhľade" });
+    out.push({ id: "dl", label: multi ? "⬇ Stiahnuť originály" + n : "⬇ Stiahnuť originál", sep: true });
+    out.push({ id: "copy", label: multi ? "Kopírovať názvy" + n : "Kopírovať názov" });
+    return out;
+  }
+
+  // ---- sťahovanie ----
+  // Viac súborov = jeden ZIP (server s funkciou „zip“, najviac 500 v jednom); zmenšené JPEG („Do chatu“) a server
+  // bez ZIP-u = po jednom, každý až po dokončení predošlého. Súbory do ~200 MB cez fetch (vieme, či a kedy sa
+  // stiahli), väčšie (videá) priamym odkazom a ďalší čaká podľa veľkosti (odhad 4 MB/s).
+  var ZIP_MAX = 500, DL_FETCH_MAX = 200 * 1024 * 1024, DL_RATE = 4 * 1024 * 1024;
+  function dlPlan(n, hasZip, reduced) {
+    if (n <= 0) return "none";
+    if (n === 1) return "single";
+    return hasZip && !reduced ? "zip" : "seq";
+  }
+  function zipChunks(ids, max) {
+    var out = [], m = max || ZIP_MAX;
+    for (var i = 0; i < ids.length; i += m) out.push(ids.slice(i, i + m));
+    return out;
+  }
+  function dlViaFetch(size) { return !(size > DL_FETCH_MAX); }
+  function dlHoldMs(size) { return clamp(Math.round(600 + (size || 0) / DL_RATE * 1000), 600, 180000); }
+  // príčina zlyhania podľa HTTP stavu (0 = sieť)
+  function dlReason(status) {
+    if (status === 403) return "prihlásenie vypršalo – zadaj PIN znova";
+    if (status === 404) return "súbor už v mobile nie je";
+    if (status === -1) return "zrušené";
+    if (!status) return "spojenie s mobilom zlyhalo";
+    return "server odmietol (HTTP " + status + ")";
+  }
+  // „Stiahnuté: 12 súborov → priečinok Stiahnuté súbory v Chrome (Ctrl+J) · nepodarilo sa 1 (súbor už v mobile nie je)“
+  function dlDoneText(ok, fails, dirName) {
+    var keys = Object.keys(fails || {}), nf = keys.reduce(function (s, k) { return s + fails[k]; }, 0);
+    var head = !ok && nf ? "Sťahovanie zlyhalo" : (dirName ? "Uložené do priečinka „" + dirName + "“: " + files(ok)
+      : "Stiahnuté: " + files(ok) + " → priečinok Stiahnuté súbory v Chrome (Ctrl+J)");
+    if (!nf) return head;
+    return head + (ok ? " · nepodarilo sa " + nf : "") + ": " + keys.map(function (k) { return k + (fails[k] > 1 ? " (" + fails[k] + "×)" : ""); }).join(", ");
+  }
+
+  // ---- diagnostika servera (/api/stats): ľubovoľný JSON ako riadky tabuľky ----
+  function statVal(v) {
+    if (typeof v === "number") return isFinite(v) ? String(Math.round(v * 100) / 100).replace(".", ",") : String(v);
+    if (typeof v === "boolean") return v ? "áno" : "nie";
+    return v == null ? "–" : String(v);
+  }
+  function statsRows(o, prefix, depth, out) {
+    out = out || [];
+    prefix = prefix || "";
+    depth = depth || 0;
+    if (o == null || typeof o !== "object") { out.push({ k: prefix || "hodnota", v: statVal(o) }); return out; }
+    if (Array.isArray(o)) {
+      if (o.every(function (x) { return x == null || typeof x !== "object"; })) out.push({ k: prefix || "hodnoty", v: o.map(statVal).join(", ") });
+      else if (depth >= 3) out.push({ k: prefix, v: JSON.stringify(o) });
+      else o.forEach(function (x, i) { statsRows(x, prefix + "[" + i + "]", depth + 1, out); });
+      return out;
+    }
+    Object.keys(o).forEach(function (k) {
+      var key = prefix ? prefix + "." + k : k, v = o[k];
+      if (v != null && typeof v === "object" && depth < 3) statsRows(v, key, depth + 1, out);
+      else out.push({ k: key, v: v != null && typeof v === "object" ? JSON.stringify(v) : statVal(v) });
+    });
+    return out;
+  }
+
   // ---- pomocník: skratky podľa obrazoviek ----
   // k = text s [kláves]; ev = hodnoty KeyboardEvent.key, ktoré riadok pokrýva (test gallery_help.test.js ich
-  // porovná s obsluhou v kóde); g = platí všade (hlavný poslucháč); mouse = bez klávesy; modifikátory
-  // (Shift, Ctrl) sa v ev neuvádzajú — riadok bez ev pokrýva kombináciu klávesy, ktorú už pokrýva iný riadok
+  // porovná s obsluhou v kóde: fn = funkcia alebo zoznam funkcií); g = platí všade (hlavný poslucháč);
+  // mouse = bez klávesy; modifikátory (Shift, Ctrl) sa v ev neuvádzajú — riadok bez ev pokrýva kombináciu
+  // klávesy, ktorú už pokrýva iný riadok
+  var CTX_ROW = { k: "pravé tlačidlo, [Menu], [Shift]+[F10]", t: "kontextové menu (označiť, vybrať, interval, Porovnať s…, stiahnuť, kopírovať názov); [Shift] + pravé tlačidlo = menu prehliadača", g: true, ev: ["ContextMenu", "F10"] };
+  var LIST_ROWS = [
+    { k: "[Medzerník]", t: "označiť / zrušiť na zmazanie (fotka pod kurzorom alebo myšou)", ev: [" "] },
+    { k: "[Ctrl]+klik", t: "vybrať / odobrať jednu fotku (stane sa kotvou intervalu)", mouse: true },
+    { k: "[Shift]+klik", t: "interval od kotvy (naposledy kliknutej): ak je kotva vybraná alebo v intervale nič nie je vybrané, interval sa vyberie, inak sa celý odznačí; rovnako [Ctrl]+[Shift]+klik", mouse: true },
+    { k: "[Shift]+[Medzerník]", t: "na kotve pridať / odobrať z výberu, inde interval od kotvy ako [Shift]+klik", ev: [] },
+    { k: "[X] / [Delete]", t: "označiť na zmazanie: celý výber naraz (ak sú už všetky označené, značky zruší), bez výberu fotku pod kurzorom", ev: ["x", "Delete"] },
+    { k: "[Shift]+[X]", t: "interval od kotvy po kurzor na zmazanie: ak je kotva označená alebo v intervale nič nie je označené, označí ho, inak značky zruší", ev: [] },
+    { k: "[D]", t: "stiahnuť (výber, inak kurzor); viac fotiek ako jeden ZIP", ev: ["d"] },
+    { k: "[Shift]+[D]", t: "💬 do chatu: zmenšené JPEG s predponou Claude_ do Stiahnutých (výber, inak kurzor)", ev: [] },
+    { k: "[Ctrl]+[D] / [Esc]", t: "zrušiť výber", ev: [] },
+    { k: "[A] / [Ctrl]+[A]", t: "vybrať zobrazené", ev: ["a"] },
+    { k: "[S]", t: "výberový režim zap/vyp", ev: ["s"] },
+    { k: "[H]", t: "skryť / ukázať fotky označené na zmazanie (skryté sú predvolene)", ev: ["h"] },
+    { k: "[V]", t: "prepnúť zobrazenie mriežka / náhľad", ev: ["v"] },
+    { k: "[G]", t: "Podobné a duplikáty", ev: ["g"] },
+    { k: "[M]", t: "prehľad Na zmazanie (aj počítadlo v hlavičke)", ev: ["m"] },
+    { k: "[B]", t: "Kôš Galérie+", ev: ["b"] },
+    { k: "[/]", t: "hľadanie", ev: ["/"] }
+  ];
+  var END_ROWS = function (esc) {
+    return [
+      { k: "[Ctrl]+[Z]", t: "vrátiť posledný krok (aj celý interval alebo dávku naraz)", g: true, ev: ["z"] },
+      { k: "[?]", t: "tento pomocník", g: true, ev: ["?"] },
+      { k: "[Esc]", t: esc, g: true, ev: ["Escape"] }
+    ];
+  };
+  var STAGE_ROWS = [
+    { k: "koliesko", t: "predošlá / ďalšia fotka (touchpad: jedna za jeden pohyb prstov)", mouse: true },
+    { k: "[Ctrl]+koliesko, pinch na touchpade", t: "priblíženie do bodu pod kurzorom (zoom stránky sa nad fotkou nespustí)", mouse: true },
+    { k: "[Shift]+koliesko, ťahanie myšou", t: "posun priblíženej fotky do strany / kamkoľvek", mouse: true }
+  ];
   var HELP = [
-    { id: "grid", title: "Mriežka", fn: "gridKeys", rows: [
+    { id: "grid", title: "Mriežka", fn: ["gridKeys", "listKeys"], rows: [
       { k: "[←][→][↑][↓]", t: "pohyb kurzora (stránka ho sleduje); funguje aj s [Ctrl]", ev: ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"] },
       { k: "[Shift]+[←][→][↑][↓]", t: "rozšíriť výber kurzorom (aj [Ctrl]+[Shift]); pohyb späť výber zmenšuje", ev: [] },
       { k: "[Home] / [End]", t: "prvá / posledná (so [Shift] výber až po ňu)", ev: ["Home", "End"] },
       { k: "[Enter]", t: "otvoriť fotku", ev: ["Enter"] },
-      { k: "[Medzerník]", t: "označiť / zrušiť na zmazanie (fotka pod kurzorom alebo myšou)", ev: [" "] },
-      { k: "[Shift]+[Medzerník]", t: "pridať / odobrať z výberu", ev: [] },
-      { k: "[Ctrl]+klik", t: "vybrať / odobrať jednu fotku bez výberového režimu", mouse: true },
-      { k: "[Shift]+klik", t: "vybrať interval od poslednej kliknutej (aj [Ctrl]+[Shift]+klik); pridá sa k výberu", mouse: true },
-      { k: "[X] / [Delete]", t: "označiť na zmazanie (výber, inak kurzor)", ev: ["x", "Delete"] },
-      { k: "[D]", t: "stiahnuť (výber, inak kurzor)", ev: ["d"] },
-      { k: "[Shift]+[D]", t: "💬 do chatu: zmenšené JPEG s predponou Claude_ do Stiahnutých (výber, inak kurzor)", ev: [] },
-      { k: "[C]", t: "porovnať výber (2–4 fotky)", ev: ["c"] },
-      { k: "[S]", t: "výberový režim zap/vyp", ev: ["s"] },
-      { k: "[A]", t: "vybrať zobrazené", ev: ["a"] },
-      { k: "[G]", t: "Podobné a duplikáty", ev: ["g"] },
-      { k: "[M]", t: "prehľad Na zmazanie", ev: ["m"] },
-      { k: "[B]", t: "Kôš Galérie+", ev: ["b"] },
-      { k: "[F]", t: "prepnúť filter", ev: ["f"] },
-      { k: "[/]", t: "hľadanie", ev: ["/"] },
-      { k: "[Ctrl]+[Z]", t: "vrátiť posledné označenie", g: true, ev: ["z"] },
-      { k: "[?]", t: "tento pomocník", g: true, ev: ["?"] },
-      { k: "[Esc]", t: "zrušiť výber a výberový režim", g: true, ev: ["Escape"] }
-    ] },
+      { k: "[C]", t: "porovnať: 2–4 vybrané spolu, inak „Porovnať s…“ (vybraná alebo pod kurzorom vľavo, vpravo listuješ inými)", ev: ["c"] },
+      { k: "[+] / [-], [Ctrl]+koliesko", t: "veľkosť miniatúr (aj s [Ctrl]; posuvník −/+ v hlavičke); obyčajné koliesko scrolluje", ev: ["+", "=", "-"] },
+      { k: "[F]", t: "prepnúť filter", ev: ["f"] }
+    ].concat(LIST_ROWS, [CTX_ROW], END_ROWS("zrušiť výber a výberový režim")) },
+    { id: "preview", title: "Náhľad (zoznam + veľká fotka)", fn: ["previewKeys", "listKeys"], rows: [
+      { k: "[←][→][↑][↓]", t: "posun v zozname (zoznam dole: [←][→] po jednej); so [Shift] rozšíri výber", ev: ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"] },
+      { k: "[Home] / [End]", t: "prvá / posledná", ev: ["Home", "End"] },
+      { k: "klik na miniatúru", t: "ukáže ju v náhľade", mouse: true },
+      { k: "klik do náhľadu", t: "prispôsobiť ↔ 1:1 v mieste kliknutia", mouse: true },
+      { k: "[Enter], dvojklik do náhľadu", t: "fotka na celú obrazovku", ev: ["Enter"] },
+      { k: "koliesko nad zoznamom", t: "scrolluje zoznam; s [Ctrl] mení veľkosť miniatúr", mouse: true }
+    ].concat(STAGE_ROWS, [
+      { k: "[F] / [1]", t: "prispôsobiť / 1:1", ev: ["f", "1"] },
+      { k: "[+] / [-]", t: "priblížiť / oddialiť; s [Ctrl] veľkosť miniatúr zoznamu", ev: ["+", "=", "-"] },
+      { k: "[O]", t: "Plná kvalita: hneď originál (HEIC/DNG ako JPEG v plnom rozlíšení)", ev: ["o"] },
+      { k: "[L]", t: "zoznam vľavo / dole (pod 900 px vždy dole)", ev: ["l"] },
+      { k: "[C]", t: "„Porovnať s…“ (2–4 vybrané: porovnať spolu)", ev: ["c"] }
+    ], LIST_ROWS, [CTX_ROW], END_ROWS("zrušiť výber")) },
     { id: "viewer", title: "Prehliadač fotky", fn: "viewerKeys", rows: [
-      { k: "[←][→]", t: "predošlá / ďalšia", ev: ["ArrowLeft", "ArrowRight"] },
+      { k: "[←][→]", t: "predošlá / ďalšia", ev: ["ArrowLeft", "ArrowRight"] }
+    ].concat(STAGE_ROWS, [
+      { k: "dvojklik", t: "priblížiť / prispôsobiť", mouse: true },
       { k: "[Medzerník]", t: "označiť / zrušiť na zmazanie 🗑", ev: [" "] },
       { k: "[X] / [Delete]", t: "označiť / zrušiť 🗑", ev: ["x", "Delete"] },
       { k: "[D]", t: "stiahnuť", ev: ["d"] },
@@ -839,57 +1277,73 @@ var GCore = (function () {
       { k: "[F]", t: "prispôsobiť", ev: ["f"] },
       { k: "[1]", t: "1:1 (pixel originálu)", ev: ["1"] },
       { k: "[+] / [-]", t: "priblížiť / oddialiť", ev: ["+", "=", "-"] },
-      { k: "koliesko, dvojklik, 2 prsty", t: "priblíženie do bodu pod kurzorom", mouse: true },
-      { k: "[Ctrl]+koliesko", t: "predošlá / ďalšia fotka", mouse: true },
-      { k: "ťahanie myšou", t: "posun priblíženej fotky", mouse: true },
-      { k: "[Ctrl]+[Z]", t: "vrátiť posledné označenie", g: true, ev: ["z"] },
-      { k: "[?]", t: "tento pomocník", g: true, ev: ["?"] },
-      { k: "[Esc]", t: "zavrieť", g: true, ev: ["Escape"] }
-    ] },
+      { k: "[O]", t: "Plná kvalita: hneď originál, HEIC/DNG ako JPEG v plnom rozlíšení (štítok vpravo hore ukáže, čo vidíš)", ev: ["o"] },
+      { k: "[C]", t: "„Porovnať s…“: táto fotka vľavo, vpravo listuješ inými", ev: ["c"] },
+      CTX_ROW
+    ], END_ROWS("zavrieť")) },
     { id: "groups", title: "Podobné a duplikáty (zoznam)", fn: "groupKeys", rows: [
       { k: "[↑][↓]", t: "pohyb po skupinách", ev: ["ArrowUp", "ArrowDown"] },
       { k: "[Home] / [End]", t: "prvá / posledná skupina", ev: ["Home", "End"] },
       { k: "[Enter]", t: "porovnať skupinu (vybraný riadok, inak naposledy otvorenú)", ev: ["Enter"] },
       { k: "[N]", t: "ďalšia nespracovaná skupina", ev: ["n"] },
       { k: "[K]", t: "★ ponechať najlepšiu vo všetkých zobrazených skupinách (návrh)", ev: ["k"] },
-      { k: "[Ctrl]+[Z]", t: "vrátiť posledný krok", g: true, ev: ["z"] },
-      { k: "[?]", t: "tento pomocník", g: true, ev: ["?"] },
-      { k: "[Esc]", t: "späť do mriežky", g: true, ev: ["Escape"] }
-    ] },
+      { k: "[+] / [-], [Ctrl]+koliesko", t: "veľkosť miniatúr v riadkoch (aj s [Ctrl])", ev: ["+", "=", "-"] }
+    ].concat(END_ROWS("späť")) },
     { id: "cmp", title: "Porovnávač", fn: "cmpKeys", rows: [
       { k: "[1]–[4]", t: "vybrať aktívny panel (na slovenskej klávesnici so [Shift] alebo na numerickej časti)", ev: ["1", "2", "3", "4"] },
       { k: "klik na panel", t: "urobí ho aktívnym (rám a štítok „aktívny“)", mouse: true },
       { k: "[←] / [→]", t: "predošlá / ďalšia fotka LEN v aktívnom paneli (fotky z iných panelov preskočí)", ev: ["ArrowLeft", "ArrowRight"] },
-      { k: "[Ctrl]+koliesko", t: "predošlá / ďalšia fotka v paneli pod kurzorom (panel sa stane aktívnym)", mouse: true },
-      { k: "koliesko", t: "priblíženie do bodu pod kurzorom (pri spoločnom priblížení vo všetkých paneloch)", mouse: true },
+      { k: "koliesko", t: "predošlá / ďalšia fotka v paneli pod kurzorom (panel sa stane aktívnym)", mouse: true },
+      { k: "[Ctrl]+koliesko, pinch", t: "priblíženie do bodu pod kurzorom (pri spoločnom priblížení vo všetkých paneloch); nad pásom veľkosť miniatúr", mouse: true },
+      { k: "[Shift]+koliesko, ťahanie", t: "posun priblíženej fotky", mouse: true },
       { k: "[Medzerník]", t: "označiť / zrušiť na zmazanie fotku aktívneho panelu", ev: [" "] },
       { k: "[X] / [Delete]", t: "označiť / zrušiť fotku v aktívnom paneli", ev: ["x", "Delete"] },
       { k: "[K]", t: "✓ ponechať len túto (ostatné označiť)", ev: ["k"] },
       { k: "[T]", t: "vymeniť s ďalším panelom", ev: ["t"] },
+      { k: "[C], 📌", t: "pripnúť túto a porovnať s inými („Porovnať s…“)", ev: ["c"] },
       { k: "[D]", t: "stiahnuť fotku v aktívnom paneli", ev: ["d"] },
       { k: "[Shift]+[D]", t: "💬 do chatu: fotka v aktívnom paneli (zmenšené JPEG, predpona Claude_)", ev: [] },
       { k: "[L]", t: "rozloženie 2 / 3 / 2×2", ev: ["l"] },
       { k: "[F] / [0]", t: "prispôsobiť všetky / 1:1 v aktívnom paneli", ev: ["f", "0"] },
-      { k: "[+] / [-]", t: "priblížiť / oddialiť aktívny panel", ev: ["+", "=", "-"] },
+      { k: "[+] / [-]", t: "priblížiť / oddialiť aktívny panel; s [Ctrl] veľkosť miniatúr pásu", ev: ["+", "=", "-"] },
       { k: "[V]", t: "spoločné priblíženie zap/vyp", ev: ["v"] },
       { k: "[I]", t: "EXIF pod panelmi zap/vyp", ev: ["i"] },
+      { k: "[O]", t: "Plná kvalita (originál hneď, HEIC/DNG v plnom rozlíšení)", ev: ["o"] },
       { k: "[Q]", t: "★ vyhodnotiť skupinu v mobile (ostrosť, oči…)", ev: ["q"] },
       { k: "[Enter]", t: "(len skupina) ✓ hotová → ďalšia nespracovaná", ev: ["Enter"] },
       { k: "[S]", t: "(len skupina) preskočiť → ďalšia", ev: ["s"] },
       { k: "[N] / [P]", t: "(len skupina) ďalšia nespracovaná / predošlá skupina", ev: ["n", "p"] },
-      { k: "miniatúra dole", t: "zobrazí tú fotku v aktívnom paneli", mouse: true },
-      { k: "[Ctrl]+[Z]", t: "vrátiť posledný krok", g: true, ev: ["z"] },
-      { k: "[?]", t: "tento pomocník", g: true, ev: ["?"] },
-      { k: "[Esc]", t: "zavrieť porovnanie", g: true, ev: ["Escape"] }
-    ] },
+      { k: "miniatúra dole", t: "zobrazí tú fotku v aktívnom paneli (označené na zmazanie tu ostávajú s červenou značkou)", mouse: true },
+      CTX_ROW
+    ].concat(END_ROWS("zavrieť porovnanie")) },
+    { id: "fcmp", title: "Porovnať s…", fn: "fcmpKeys", rows: [
+      { k: "[←] / [→], koliesko", t: "predošlá / ďalšia fotka vpravo (vľavo je pripnutá)", ev: ["ArrowLeft", "ArrowRight"] },
+      { k: "[Home] / [End]", t: "prvá / posledná vpravo", ev: ["Home", "End"] },
+      { k: "klik na miniatúru hore", t: "ukáže ju vpravo; [Alt]+klik ju pripne vľavo", mouse: true },
+      { k: "[P], 📌 Pripnúť sem", t: "pripnúť fotku zprava vľavo (vpravo príde ďalšia)", ev: ["p"] },
+      { k: "[T]", t: "vymeniť strany (pripnutá ↔ porovnávaná)", ev: ["t"] },
+      { k: "[R]", t: "fotky vpravo: aktuálny filter / celá knižnica / tento priečinok / táto skupina", ev: ["r"] },
+      { k: "[1] / [2]", t: "aktívny panel (vľavo / vpravo)", ev: ["1", "2"] },
+      { k: "[Medzerník]", t: "označiť / zrušiť na zmazanie fotku aktívneho panelu", ev: [" "] },
+      { k: "[X] / [Delete]", t: "označiť / zrušiť fotku aktívneho panelu (pri skrytých označených vpravo príde ďalšia)", ev: ["x", "Delete"] },
+      { k: "[D]", t: "stiahnuť fotku aktívneho panelu", ev: ["d"] },
+      { k: "[Shift]+[D]", t: "💬 do chatu", ev: [] },
+      { k: "[Ctrl]+koliesko, pinch", t: "priblíženie do bodu pod kurzorom (spoločné pre obe strany); nad pásom veľkosť miniatúr", mouse: true },
+      { k: "[Shift]+koliesko, ťahanie", t: "posun priblíženej fotky", mouse: true },
+      { k: "[F] / [0]", t: "prispôsobiť obe / 1:1 v aktívnom paneli", ev: ["f", "0"] },
+      { k: "[+] / [-]", t: "priblížiť / oddialiť; s [Ctrl] veľkosť miniatúr pásu", ev: ["+", "=", "-"] },
+      { k: "[V]", t: "spoločné priblíženie zap/vyp", ev: ["v"] },
+      { k: "[I]", t: "EXIF pod panelmi zap/vyp (rozdiely sú zvýraznené)", ev: ["i"] },
+      { k: "[O]", t: "Plná kvalita", ev: ["o"] },
+      CTX_ROW
+    ].concat(END_ROWS("zavrieť")) },
     { id: "marked", title: "Na zmazanie", fn: null, rows: [
       { k: "[Tab] / [Enter]", t: "pohyb po tlačidlách a ich stlačenie (fotka sa otvorí klikom na náhľad)", mouse: true },
-      { k: "[Ctrl]+[Z]", t: "vrátiť posledné označenie", g: true, ev: ["z"] },
-      { k: "[?]", t: "tento pomocník", g: true, ev: ["?"] },
-      { k: "[Esc]", t: "späť do mriežky", g: true, ev: ["Escape"] }
-    ] },
+      { k: "[Ctrl]+[+] / [Ctrl]+[-], [Ctrl]+koliesko", t: "veľkosť miniatúr", ev: ["+", "=", "-"] }
+    ].concat(END_ROWS("späť do mriežky")) },
     { id: "bin", title: "Kôš Galérie+", fn: null, rows: [
       { k: "[Tab] / [Enter]", t: "pohyb po tlačidlách a ich stlačenie (fotka sa vyberie klikom na náhľad)", mouse: true },
+      { k: "[Ctrl]+[+] / [Ctrl]+[-], [Ctrl]+koliesko", t: "veľkosť miniatúr", ev: ["+", "=", "-"] },
       { k: "[?]", t: "tento pomocník", g: true, ev: ["?"] },
       { k: "[Esc]", t: "späť do mriežky", g: true, ev: ["Escape"] }
     ] }
@@ -908,7 +1362,14 @@ var GCore = (function () {
     Undo: Undo, revertMarks: revertMarks, metaRows: metaRows, metaDiff: metaDiff,
     reasonText: reasonText, scoreLine: scoreLine, qualityChunks: qualityChunks, bulkPlan: bulkPlan, bulkSummary: bulkSummary,
     gridMove: gridMove, rangeIds: rangeIds, extendSelection: extendSelection, chatName: chatName, chatPlan: chatPlan,
-    CHAT_MAX: CHAT_MAX, pctList: pctList, starNote: starNote, HELP: HELP
+    CHAT_MAX: CHAT_MAX, pctList: pctList, starNote: starNote, HELP: HELP,
+    drawRect: drawRect, THUMBS: THUMBS, thumbClamp: thumbClamp, thumbKey: thumbKey, thumbReq: thumbReq,
+    wheelAction: wheelAction, wheelPx: wheelPx, wheelZoom: wheelZoom, wheelStep: wheelStep,
+    PREVIEW_MAX: PREVIEW_MAX, FULL_MAX: FULL_MAX, fmtOf: fmtOf, srcPlan: srcPlan, qualLabel: qualLabel,
+    markPlan: markPlan, anchorIndex: anchorIndex, rangePlan: rangePlan,
+    freeList: freeList, reindex: reindex, listMove: listMove, ctrlAllowed: ctrlAllowed, ctxItems: ctxItems,
+    ZIP_MAX: ZIP_MAX, dlPlan: dlPlan, zipChunks: zipChunks, dlViaFetch: dlViaFetch, dlHoldMs: dlHoldMs,
+    dlReason: dlReason, dlDoneText: dlDoneText, statsRows: statsRows
   };
 })();
 if (typeof module !== "undefined" && module.exports) module.exports = GCore;
@@ -926,6 +1387,21 @@ if (typeof module !== "undefined" && module.exports) module.exports = GCore;
     return e;
   }
   function store(k, v) { try { if (v === undefined) return localStorage.getItem(k); localStorage.setItem(k, v); } catch (e) { } return null; }
+
+  // ================= veľkosť miniatúr (každé miesto zvlášť, pamätá sa) =================
+  var TS = {};
+  Object.keys(C.THUMBS).forEach(function (k) {
+    var v = Number(store("gth." + k));
+    TS[k] = C.thumbClamp(k, v > 0 ? v : (k === "grid" && window.innerWidth < 500 ? 104 : C.THUMBS[k].def));
+  });
+  function applyThumbVars() {
+    var r = document.documentElement.style;
+    r.setProperty("--thumb", Math.round(TS.grid) + "px");
+    r.setProperty("--lthumb", Math.round(TS.list) + "px");
+    r.setProperty("--gthumb", Math.round(TS.groups) + "px");
+    r.setProperty("--sthumb", Math.round(TS.strip) + "px");
+  }
+  applyThumbVars();
 
   // ================= API =================
   // Prehliadač sa prihlasuje session cookie (POST /api/login). Token z adresy sa hneď odstráni
@@ -966,7 +1442,9 @@ if (typeof module !== "undefined" && module.exports) module.exports = GCore;
     gen: -1, epoch: "", stateGen: -1, ping: {},
     sel: new Set(), selMode: false, cur: -1,
     anchor: null, ext: null, // kotva Shift+kliku (id poslednej kliknutej) a rozšírenie výberu šípkami {anchor, added}
-    groups: null, groupsGen: -2, gstates: {}, glist: [], gcur: -1
+    groups: null, groupsGen: -2, gstates: {}, glist: [], gcur: -1,
+    mode: store("gmode") === "preview" ? "preview" : "grid", // mriežka alebo náhľad (zoznam + veľká fotka)
+    hideMarked: store("ghidem") !== "0" // „Skryť označené na zmazanie“ (predvolene zapnuté)
   };
   // limity POST /api/quality (server: QualityRequest)
   var QMAX_IDS = 300, QMAX_GROUPS = 50;
@@ -1009,6 +1487,9 @@ if (typeof module !== "undefined" && module.exports) module.exports = GCore;
     if (ov.onclose) ov.onclose();
     if (back && document.contains(back) && back.focus) back.focus({ preventScroll: true });
     else { var t = topOv(); if (t) t.focus({ preventScroll: true }); }
+    // fokus nesmie ostať na tlačidle v práve skrytej vrstve (Enter by ho „stlačil“ neviditeľne)
+    var a = document.activeElement;
+    if (a && a !== document.body && ov.contains(a) && a.blur) a.blur();
   }
   function trapTab(e, ov) {
     var f = $$("button,select,input,a[href],[tabindex='0']", ov).filter(function (x) { return !x.disabled && x.offsetParent !== null; });
@@ -1185,7 +1666,7 @@ if (typeof module !== "undefined" && module.exports) module.exports = GCore;
       S.gstates = gs.states || {};
       S.stateGen = Math.max(st.stateGen || 0, gs.stateGen || 0);
       updateMarkedChip();
-      if ($("#filter").value === "marked" || $("#filter").value === "new" || $("#filter").value === "synced") applyFilter(false);
+      if (S.hideMarked || $("#filter").value === "marked" || $("#filter").value === "new" || $("#filter").value === "synced") applyFilter(false, true);
       else repaintMounted();
       refreshOpenViews();
     });
@@ -1194,31 +1675,154 @@ if (typeof module !== "undefined" && module.exports) module.exports = GCore;
   // ================= nastavenia sťahovania =================
   var qEl = $("#quality"), dlSel = $("#dlmode");
   function quality() { return parseInt(qEl.value, 10) || 80; }
-  function syncDlUi() { $("#qbox").hidden = dlSel.value !== "reduced"; $("#qval").textContent = quality() + "%"; }
+  function syncDlUi() { $("#qbox").hidden = dlSel.value !== "reduced"; $("#qval").textContent = quality() + " %"; }
   qEl.addEventListener("input", function () { store("gq", qEl.value); syncDlUi(); });
   dlSel.addEventListener("change", function () { store("gdl", dlSel.value); syncDlUi(); });
   (function () { var a = store("gq"), b = store("gdl"); if (a) qEl.value = a; if (b) dlSel.value = b; syncDlUi(); })();
 
   // Predvolene originál; zmenšené JPEG (2048 px, prípona .jpg) len keď si to zvolíš.
   // „✓ v PC" zapíše server sám až po odoslaní CELÉHO originálu (prerušené sťahovanie sa nezapíše).
-  // opt (pre „Do chatu"): {reduced: true, q: kvalita, name: názov súboru}
-  function download(it, opt) {
+  // Prečo nie len <a download> naslepo: Chrome pri HTTP (adresa v LAN) súbor často zadrží ako „nezabezpečené
+  // stiahnutie“ (treba „Ponechať“), od 2. súboru blokuje „automatické sťahovanie viacerých súborov“ a bez
+  // odozvy nik nevie, či a kam sa stiahlo. Preto: viac originálov = JEDEN ZIP (POST /api/zip), inak po jednom –
+  // každý až po dokončení predošlého (náhľady, ping a API nestoja). Súbory do ~200 MB cez fetch (stav odpovede =
+  // overenie: 403 prihlásenie, 404 súbor zmizol), väčšie najprv overiť (Range 0-0) a potom priamym odkazom.
+  // Na localhoste (bezpečný kontext, USB) ide výber uložiť priamo do priečinka (showDirectoryPicker).
+  var DLQ = { queue: [], busy: false, total: 0, ok: 0, fails: {}, ctl: null, label: "", dir: null, cur: "" };
+  function dlJob(it, opt) {
     opt = opt || {};
     var reduced = (opt.reduced != null ? opt.reduced : dlSel.value === "reduced") && C.isImage(it.mime);
     var params = { id: it.id, dl: 1 };
     if (reduced) { params.q = opt.q || quality(); params.max = 2048; }
+    return { it: it, href: url("/api/file", params), name: opt.name || C.dlName(it.name, reduced), size: reduced ? 0 : (it.size || 0), dir: opt.dir || null };
+  }
+  function serverHas(f) { return !!(S.ping && S.ping.features && S.ping.features.indexOf(f) >= 0); }
+  function enqueueDl(jobs, label) {
+    if (!jobs.length) return;
+    jobs.forEach(function (j) { DLQ.queue.push(j); });
+    DLQ.total += jobs.length;
+    if (label) DLQ.label = label;
+    if (jobs[0].dir) DLQ.dir = jobs[0].dir;
+    pumpDl();
+  }
+  function pumpDl() {
+    if (DLQ.busy) return;
+    var job = DLQ.queue.shift();
+    if (!job) { dlFinish(); return; }
+    DLQ.busy = true; DLQ.cur = job.name;
+    dlProgress();
+    runDl(job).then(function (status) {
+      DLQ.busy = false;
+      if (status == null) DLQ.ok++; else { var r = C.dlReason(status); DLQ.fails[r] = (DLQ.fails[r] || 0) + 1; }
+      if (status === 403) { DLQ.queue = []; authLost("forbidden"); }
+      tickSoon(2500);
+      pumpDl();
+    });
+  }
+  function clickDownload(href, name) {
     var a = document.createElement("a");
-    a.href = url("/api/file", params);
-    a.download = opt.name || C.dlName(it.name, reduced);
+    a.href = href; a.download = name;
     document.body.appendChild(a); a.click(); a.remove();
-    tickSoon(3000);
-    return reduced;
+  }
+  // vráti Promise: null = hotové, číslo = HTTP stav chyby (0 = sieť, -1 = zrušené)
+  function runDl(job) {
+    var ctl = window.AbortController ? new AbortController() : null;
+    DLQ.ctl = ctl;
+    var opts = { credentials: "same-origin", headers: headers(false), signal: ctl ? ctl.signal : undefined };
+    var failed = function (e) { return e && e.name === "AbortError" ? -1 : 0; };
+    if (job.dir) {
+      return fetch(job.href, opts).then(function (r) {
+        if (!r.ok) return r.status;
+        return freeName(job.dir, job.name).then(function (n) { return job.dir.getFileHandle(n, { create: true }); })
+          .then(function (fh) { return fh.createWritable(); })
+          .then(function (w) { return r.body.pipeTo(w); })
+          .then(function () { return null; });
+      }).catch(failed);
+    }
+    if (C.dlViaFetch(job.it.size) && window.fetch && window.URL && URL.createObjectURL) {
+      return fetch(job.href, opts).then(function (r) {
+        if (!r.ok) return r.status;
+        return r.blob().then(function (b) {
+          var u = URL.createObjectURL(b);
+          clickDownload(u, job.name);
+          setTimeout(function () { URL.revokeObjectURL(u); }, 60000);
+          return null;
+        });
+      }).catch(failed);
+    }
+    // veľké video: overiť dostupnosť (1 bajt, rovnaké prihlásenie), potom priamy odkaz (token v adrese, ak nie je cookie)
+    var chk = { credentials: "same-origin", headers: headers(false), signal: opts.signal };
+    chk.headers.Range = "bytes=0-0";
+    return fetch(url("/api/file", { id: job.it.id }), chk).then(function (r) {
+      if (!r.ok) return r.status;
+      clickDownload(job.href, job.name);
+      return new Promise(function (res) { setTimeout(function () { res(null); }, C.dlHoldMs(job.it.size)); });
+    }).catch(failed);
+  }
+  // v priečinku nič neprepíš: „IMG_1.jpg“ → „IMG_1 (1).jpg“
+  function freeName(dir, name) {
+    var dot = name.lastIndexOf("."), base = dot > 0 ? name.slice(0, dot) : name, ext = dot > 0 ? name.slice(dot) : "";
+    var tryN = function (k) {
+      var n = k ? base + " (" + k + ")" + ext : name;
+      return dir.getFileHandle(n).then(function () { return k < 50 ? tryN(k + 1) : n; }, function () { return n; });
+    };
+    return tryN(0);
+  }
+  function cancelDl() {
+    var left = DLQ.queue.length;
+    DLQ.queue = [];
+    if (DLQ.ctl) DLQ.ctl.abort();
+    if (left) DLQ.fails["zrušené"] = (DLQ.fails["zrušené"] || 0) + left;
+  }
+  function dlProgress() {
+    toast("Sťahujem " + (DLQ.ok + Object.keys(DLQ.fails).reduce(function (s, k) { return s + DLQ.fails[k]; }, 0) + 1) + "/" + DLQ.total + "… " + DLQ.cur,
+      { action: "Zrušiť", onAction: cancelDl, ms: 600000 });
+  }
+  function dlFinish() {
+    if (!DLQ.total) return;
+    var txt = C.dlDoneText(DLQ.ok, DLQ.fails, DLQ.dir ? DLQ.dir.name : "");
+    if (DLQ.label && DLQ.ok) txt = DLQ.label + (Object.keys(DLQ.fails).length ? " · " + txt : "");
+    toast(txt, { ms: 12000 });
+    DLQ.total = DLQ.ok = 0; DLQ.fails = {}; DLQ.label = ""; DLQ.dir = null; DLQ.cur = "";
+  }
+  // viac originálov naraz: jeden ZIP – formulár POST /api/zip (prehliadač ho uloží sám, bez načítania do pamäte).
+  // Prihlásenie sa overí vopred (chyba formulára by inak nahradila stránku JSON-om).
+  function zipDownload(list) {
+    var ids = list.map(function (it) { return it.id; }), bytes = list.reduce(function (s, it) { return s + (it.size || 0); }, 0);
+    fetch("/api/ping", { credentials: "same-origin", headers: headers(false) }).then(function (r) {
+      if (!r.ok) {
+        toast("Sťahovanie zlyhalo: " + C.dlReason(r.status));
+        if (r.status === 403) authLost("forbidden");
+        return;
+      }
+      C.zipChunks(ids).forEach(function (ch, k) { setTimeout(function () { submitZip(ch); }, k * 2000); });
+      toast("Sťahujem ZIP: " + C.photos(ids.length) + " (" + C.fmtBytes(bytes) + ") → priečinok Stiahnuté súbory v Chrome (Ctrl+J). " +
+        "Ak Chrome hlási „nezabezpečené stiahnutie“, klikni Ponechať.", { ms: 15000 });
+      tickSoon(6000);
+    }).catch(function () { toast("Sťahovanie zlyhalo: " + C.dlReason(0)); });
+  }
+  function submitZip(ids) {
+    var f = document.createElement("form");
+    f.method = "POST"; f.action = "/api/zip"; f.hidden = true;
+    var add = function (n, v) { var i = document.createElement("input"); i.type = "hidden"; i.name = n; i.value = v; f.appendChild(i); };
+    add("ids", ids.join(","));
+    if (AUTH.token) add("token", AUTH.token);
+    document.body.appendChild(f);
+    f.submit();
+    f.remove();
+  }
+  // „📁 Uložiť do priečinka…“ – len v bezpečnom kontexte (localhost cez USB), inde ho prehliadač nedovolí
+  var canDir = !!(window.isSecureContext && window.showDirectoryPicker);
+  function saveToDir(list) {
+    if (!canDir || !list.length) return;
+    window.showDirectoryPicker({ mode: "readwrite", id: "galeria-plus" }).then(function (dir) {
+      enqueueDl(list.map(function (it) { return dlJob(it, { reduced: false, dir: dir }); }));
+    }).catch(function (e) { if (!e || e.name !== "AbortError") toast("Priečinok sa nepodarilo otvoriť (" + (e && e.message) + ")"); });
   }
   // „Do chatu": fotky ako zmenšené JPEG (dlhá strana 2048 px, kvalita 85) s predponou Claude_ do Stiahnutých;
   // odtiaľ ich Lukáš pretiahne do chatu Claude. Zmenšená kópia nezapíše „✓ v PC" (server to robí len pri origináli).
-  var CHAT_Q = 85, chatBusy = false;
+  var CHAT_Q = 85;
   function toChat(list) {
-    if (chatBusy) { toast("Predošlé sťahovanie pre chat ešte beží"); return; }
     var plan = C.chatPlan(list || []);
     if (!plan.send.length) { toast(plan.skipped ? "Videá sa do chatu poslať nedajú" : "Nie je čo poslať do chatu"); return; }
     var go = plan.tooMany
@@ -1226,32 +1830,21 @@ if (typeof module !== "undefined" && module.exports) module.exports = GCore;
       : Promise.resolve(true);
     go.then(function (ok) {
       if (!ok) return;
-      chatBusy = true;
-      var i = 0, n = plan.send.length;
-      toast("Sťahujem pre chat: " + C.photos(n) + " (zmenšené JPEG)…");
-      (function next() {
-        if (i >= n) {
-          chatBusy = false;
-          toast(C.photos(n) + " pre chat v Stiahnutých súboroch – pretiahni ich do Claude alebo povedz Claudovi, nech si ich vezme zo Stiahnutých." +
-            (plan.skipped ? " Videá sa preskočili: " + plan.skipped + "." : ""), { ms: 12000 });
-          return;
-        }
-        var it = plan.send[i++];
-        download(it, { reduced: true, q: CHAT_Q, name: C.chatName(it.name) });
-        setTimeout(next, 600);
-      })();
+      var n = plan.send.length;
+      enqueueDl(plan.send.map(function (it) { return dlJob(it, { reduced: true, q: CHAT_Q, name: C.chatName(it.name) }); }),
+        C.photos(n) + " pre chat v Stiahnutých súboroch – pretiahni ich do Claude alebo povedz Claudovi, nech si ich vezme zo Stiahnutých." +
+        (plan.skipped ? " Videá sa preskočili: " + plan.skipped + "." : ""));
     });
   }
-  function downloadMany(list) {
-    if (!list.length) return;
-    if (list.length === 1) { var r = download(list[0]); toast("Sťahujem " + list[0].name + (r ? " (zmenšené JPEG)" : "")); return; }
-    toast("Sťahujem " + C.files(list.length) + " (" + C.fmtBytes(list.reduce(function (s, it) { return s + it.size; }, 0)) + ")…");
-    var i = 0;
-    (function next() {
-      if (i >= list.length) { toast("Odoslané na stiahnutie: " + C.files(list.length)); return; }
-      download(list[i++]);
-      setTimeout(next, 600);
-    })();
+  // opt.reduced = false: vždy originál (kontextové menu „Stiahnuť originál“). Viac originálov = jeden ZIP.
+  function downloadMany(list, opt) {
+    opt = opt || {};
+    list = list || [];
+    var reduced = opt.reduced != null ? opt.reduced : dlSel.value === "reduced";
+    var plan = C.dlPlan(list.length, serverHas("zip"), reduced && list.some(function (it) { return C.isImage(it.mime); }));
+    if (plan === "none") return;
+    if (plan === "zip") { zipDownload(list); return; }
+    enqueueDl(list.map(function (it) { return dlJob(it, opt); }));
   }
 
   // ================= značky (návrh) s Ctrl+Z =================
@@ -1269,12 +1862,33 @@ if (typeof module !== "undefined" && module.exports) module.exports = GCore;
       }
       changed.forEach(paintItem);
       updateMarkedChip();
-      if ($("#filter").value === "marked") applyFilter(false);
+      if ($("#filter").value === "marked" || S.hideMarked) applyFilter(false, true);
       refreshOpenViews();
       return changed;
     }).catch(function (e) { toast("Označenie zlyhalo (" + e.message + ")"); throw e; });
   }
   function toggleMark(id) { return setMarks([id], !S.marked.has(Number(id))); }
+  // Delete / X: s výberom všetky vybrané jednou požiadavkou (Ctrl+Z vráti celú dávku), bez výberu len aktuálna
+  function markSelOrCur(curId) {
+    var plan = C.markPlan(Array.from(S.sel), curId, S.marked);
+    if (!plan.ids.length) return;
+    if (!S.sel.size) S.anchor = Number(curId); // kotva pre Shift+X (interval na zmazanie)
+    setMarks(plan.ids, plan.del).then(function (ch) {
+      if (S.sel.size || ch.length > 1) toast((plan.del ? "Označené na zmazanie: " : "Zrušená značka: ") + C.photos(ch.length) + " · Ctrl+Z vráti");
+    }).catch(function () { });
+  }
+  // interval od kotvy po fotku i na zmazanie: forceOn null = podľa kotvy (C.rangePlan), true/false = vždy označiť/zrušiť
+  function markRangeTo(i, forceOn) {
+    var ai = C.anchorIndex(S.view, S.items, S.anchor);
+    if (ai < 0 || i < 0 || !S.view[i]) { toast("Najprv klikni na prvú fotku intervalu alebo ju označ (X) – stane sa kotvou"); return; }
+    var plan = C.rangePlan(S.view, ai, i, S.anchor, S.marked);
+    var on = forceOn != null ? forceOn : plan.on;
+    var ids = plan.all.filter(function (id) { return S.marked.has(id) !== on; });
+    if (!ids.length) { toast(on ? "V intervale je už všetko označené" : "V intervale nie je nič označené"); return; }
+    setMarks(ids, on).then(function (ch) {
+      toast((on ? "Interval označený na zmazanie: " : "Zrušená značka v intervale: ") + C.photos(ch.length) + " · Ctrl+Z vráti");
+    }).catch(function () { });
+  }
   function setGroupState(key, state, opt) {
     var prev = (S.gstates[key] || {}).s || "";
     if (prev === state) return Promise.resolve();
@@ -1309,6 +1923,7 @@ if (typeof module !== "undefined" && module.exports) module.exports = GCore;
         jobs.push(setMarks(plan.on, true, { undo: false }));
         jobs.push(setMarks(plan.off, false, { undo: false }));
       }
+      if (p.sel) restoreSel(p.sel);
       if (p.group) jobs.push(setGroupState(p.group.key, p.group.prev, { undo: false }));
       if (p.groups) jobs.push(setGroupStates(p.groups, { undo: false }));
     });
@@ -1319,9 +1934,23 @@ if (typeof module !== "undefined" && module.exports) module.exports = GCore;
     chip.hidden = !n;
     var bytes = 0;
     S.marked.forEach(function (id) { bytes += sizeOf(id); });
-    $("#markedN").textContent = n + " · " + C.fmtBytes(bytes);
-    chip.setAttribute("aria-label", "Na zmazanie: " + C.files(n) + ", " + C.fmtBytes(bytes));
+    $("#markedN").textContent = n + " (" + C.fmtBytes(bytes) + ")";
+    chip.setAttribute("aria-label", "Na zmazanie: " + C.files(n) + ", " + C.fmtBytes(bytes) + (S.hideMarked ? ", skryté zo zoznamov" : "") + ". Otvorí prehľad.");
   }
+  // „Skryť označené na zmazanie“: zmiznú z mriežky, náhľadu aj „Porovnať s…“ (ako v Koši, nič sa nemaže)
+  var hideBtn = $("#hideMarkedBtn");
+  function setHideMarked(on, quiet) {
+    S.hideMarked = !!on;
+    store("ghidem", S.hideMarked ? "1" : "0");
+    hideBtn.setAttribute("aria-pressed", S.hideMarked ? "true" : "false");
+    updateMarkedChip();
+    if (quiet) return;
+    applyFilter(false, true);
+    refreshOpenViews();
+    toast(S.hideMarked ? "Označené na zmazanie sú skryté (nič sa nemaže, prehľad: Na zmazanie)" : "Označené na zmazanie sú viditeľné – stlmené so značkou 🗑");
+  }
+  hideBtn.addEventListener("click", function () { setHideMarked(!S.hideMarked); });
+  setHideMarked(S.hideMarked, true);
 
   // ================= mriežka (virtualizovaná) =================
   var grid = $("#grid");
@@ -1329,11 +1958,11 @@ if (typeof module !== "undefined" && module.exports) module.exports = GCore;
   function showEmpty(msg) { var e = $("#empty"); e.textContent = msg || "Žiadne položky."; e.hidden = false; }
   function layoutGrid() {
     var W = grid.clientWidth || window.innerWidth - 20;
-    var min = W < 500 ? 104 : 140;
+    var min = Math.min(TS.grid, W); // veľkosť miniatúr (Ctrl + koliesko); bunky vyplnia celý riadok
     GV.cols = Math.max(1, Math.floor((W + GV.gap) / (min + GV.gap)));
     GV.cell = (W - GV.gap * (GV.cols - 1)) / GV.cols;
     GV.rowH = GV.cell + GV.gap;
-    GV.thumb = GV.cell * (window.devicePixelRatio || 1) > 330 ? 512 : 300;
+    GV.thumb = C.thumbReq(GV.cell, window.devicePixelRatio || 1);
     var rows = Math.ceil(S.view.length / GV.cols);
     grid.style.height = Math.max(0, rows * GV.rowH - GV.gap) + "px";
   }
@@ -1344,7 +1973,24 @@ if (typeof module !== "undefined" && module.exports) module.exports = GCore;
     if (S.sel.has(it.id)) parts.push("vybraná");
     return parts.join(", ");
   }
-  function makeCell(it, i) {
+  // náhľad v miniatúre: pri zväčšení si vypýta väčší (starý ostane, kým sa nový nenačíta); it = položka alebo {bin}
+  function thumbUrl(it, px) { return it.bin ? url("/api/thumb", { bin: it.bin, s: px }) : url("/api/thumb", { id: it.id, s: px, v: it.mtime }); }
+  function thumbSrc(img, it, px) {
+    if (!it || (Number(img.dataset.px) || 0) >= px) return;
+    img.dataset.px = px;
+    var u = thumbUrl(it, px);
+    if (!img.getAttribute("src")) { img.src = u; return; }
+    var pre = new Image();
+    pre.onload = function () { if (Number(img.dataset.px) === px) img.src = u; };
+    pre.src = u;
+  }
+  // väčšie náhľady pre už zobrazené miniatúry (riadky skupín, pás porovnávača, Na zmazanie, Kôš)
+  function upgradeThumbs(root, px) {
+    $$("img[data-tid]", root).forEach(function (im) { thumbSrc(im, item(im.dataset.tid) || { id: Number(im.dataset.tid) }, px); });
+    $$("img[data-bin]", root).forEach(function (im) { thumbSrc(im, { bin: im.dataset.bin }, px); });
+  }
+  function dpr() { return window.devicePixelRatio || 1; }
+  function makeCell(it, i, px) {
     var c = el("button", "cell");
     c.type = "button";
     c.dataset.i = i; c.dataset.id = it.id;
@@ -1353,7 +1999,7 @@ if (typeof module !== "undefined" && module.exports) module.exports = GCore;
     img.alt = ""; img.decoding = "async";
     img.addEventListener("load", function () { img.classList.add("on"); });
     img.addEventListener("error", function () { img.classList.add("on"); img.style.opacity = ".25"; });
-    img.src = url("/api/thumb", { id: it.id, s: GV.thumb, v: it.mtime });
+    thumbSrc(img, it, px || GV.thumb);
     c.appendChild(img);
     if (!C.isImage(it.mime)) c.appendChild(el("span", "vid", "▶ " + (it.dur ? C.fmtDur(it.dur) : "video")));
     var nm = el("span", "nm", it.name);
@@ -1381,11 +2027,14 @@ if (typeof module !== "undefined" && module.exports) module.exports = GCore;
     c.setAttribute("aria-label", cellLabel(it));
     c.title = c.getAttribute("aria-label");
   }
+  // bunky mriežky aj zoznamu v režime náhľadu (oba zobrazujú S.view)
+  function eachMounted(fn) { GV.mounted.forEach(fn); if (PV.tiles) PV.tiles.mounted.forEach(fn); }
+  function cellsAt(i) { return [GV.mounted.get(i), PV.tiles ? PV.tiles.mounted.get(i) : null].filter(Boolean); }
   // prekreslí len bunku danej položky (ak je práve zobrazená)
   function paintItem(id) {
-    GV.mounted.forEach(function (c) { if (Number(c.dataset.id) === Number(id)) paintCell(c, item(id)); });
+    eachMounted(function (c) { if (Number(c.dataset.id) === Number(id)) paintCell(c, item(id)); });
   }
-  function repaintMounted() { GV.mounted.forEach(function (c) { var it = item(c.dataset.id); if (it) paintCell(c, it); }); }
+  function repaintMounted() { eachMounted(function (c) { var it = item(c.dataset.id); if (it) paintCell(c, it); }); }
   function renderWindow(force) {
     var r = grid.getBoundingClientRect();
     var top = -r.top, vh = window.innerHeight;
@@ -1397,6 +2046,7 @@ if (typeof module !== "undefined" && module.exports) module.exports = GCore;
     for (var i = i0; i < i1; i++) {
       var c = GV.mounted.get(i);
       if (!c) { c = makeCell(S.view[i], i); GV.mounted.set(i, c); grid.appendChild(c); }
+      else thumbSrc(c.firstChild, S.view[i], GV.thumb);
       var row = Math.floor(i / GV.cols), col = i % GV.cols;
       c.style.cssText = "left:" + (col * (GV.cell + GV.gap)) + "px;top:" + (row * GV.rowH) + "px;width:" + GV.cell + "px;height:" + GV.cell + "px";
     }
@@ -1406,7 +2056,7 @@ if (typeof module !== "undefined" && module.exports) module.exports = GCore;
     GV.raf = requestAnimationFrame(function () { GV.raf = 0; renderWindow(false); });
   }
   window.addEventListener("scroll", schedule, { passive: true });
-  window.addEventListener("resize", function () { layoutGrid(); renderWindow(true); });
+  window.addEventListener("resize", function () { layoutGrid(); renderWindow(false); });
   grid.addEventListener("click", function (e) {
     var c = e.target.closest(".cell");
     if (!c) return;
@@ -1414,7 +2064,7 @@ if (typeof module !== "undefined" && module.exports) module.exports = GCore;
     if (!it) return;
     setCursor(i, false);
     S.ext = null;
-    if (e.shiftKey) { selectRangeTo(i); return; } // Shift+klik aj Ctrl+Shift+klik: interval od kotvy, pridá sa k výberu
+    if (e.shiftKey) { selectRangeTo(i); return; } // Shift+klik aj Ctrl+Shift+klik: interval od kotvy (vyberie alebo odznačí podľa kotvy)
     S.anchor = it.id;
     if (S.selMode || e.ctrlKey || e.metaKey) { toggleSel(it.id); return; }
     openViewer(S.view, i);
@@ -1438,26 +2088,33 @@ if (typeof module !== "undefined" && module.exports) module.exports = GCore;
   });
 
   var qInput = $("#q"), fSel = $("#filter"), filterT = 0;
-  function applyFilter(resetScroll) {
-    var y = window.scrollY, curId = S.view[S.cur] ? S.view[S.cur].id : null;
-    S.view = C.filterItems(S.items, qInput.value, fSel.value, S.marked, S.synced);
-    $("#count").textContent = S.view.length + " / " + S.items.length;
+  // keepPos: keď aktuálna fotka zo zobrazenia zmizla (označená a skrytá), kurzor ostane na tom istom mieste
+  // (príde naň ďalšia fotka – v náhľade sa rovno ukáže)
+  function applyFilter(resetScroll, keepPos) {
+    var y = window.scrollY, oldCur = S.cur, curId = S.view[S.cur] ? S.view[S.cur].id : null;
+    S.view = C.filterItems(S.items, qInput.value, fSel.value, S.marked, S.synced, S.hideMarked);
+    var hidden = S.hideMarked && fSel.value !== "marked" ? S.items.filter(function (x) { return S.marked.has(x.id); }).length : 0;
+    $("#count").textContent = S.view.length + " / " + S.items.length + (hidden ? " · 🗑 skrytých " + hidden : "");
     $("#empty").hidden = S.view.length > 0;
     if (!S.view.length) showEmpty(S.items.length ? "Nič nevyhovuje filtru." : "Žiadne položky.");
     S.cur = curId != null ? S.view.findIndex(function (x) { return x.id === curId; }) : -1;
+    if (S.cur < 0 && keepPos && oldCur >= 0 && S.view.length) S.cur = Math.min(oldCur, S.view.length - 1);
     layoutGrid();
     if (!resetScroll) window.scrollTo(0, Math.min(y, document.documentElement.scrollHeight));
     renderWindow(true);
+    if (S.mode === "preview") pvRefresh(resetScroll);
   }
   qInput.addEventListener("input", function () { clearTimeout(filterT); filterT = setTimeout(function () { applyFilter(true); window.scrollTo(0, 0); }, 160); });
   fSel.addEventListener("change", function () { applyFilter(true); window.scrollTo(0, 0); });
 
   function setCursor(i, scroll) {
-    if (!S.view.length) { S.cur = -1; return; }
+    if (!S.view.length) { S.cur = -1; if (S.mode === "preview") showPreview(); return; }
     i = Math.min(Math.max(i, 0), S.view.length - 1);
     var old = S.cur;
+    PV.dir = i < old ? -1 : 1;
     S.cur = i;
-    [old, i].forEach(function (k) { var c = GV.mounted.get(k); if (c) paintCell(c, S.view[k]); });
+    [old, i].forEach(function (k) { cellsAt(k).forEach(function (c) { paintCell(c, S.view[k]); }); });
+    if (S.mode === "preview") { if (scroll !== false) PV.tiles.ensure(i); showPreview(); return; }
     if (scroll !== false) {
       var row = Math.floor(i / GV.cols), gt = grid.getBoundingClientRect().top + window.scrollY;
       var y = gt + row * GV.rowH, hdr = $("header").offsetHeight + 8;
@@ -1486,14 +2143,41 @@ if (typeof module !== "undefined" && module.exports) module.exports = GCore;
     if (S.sel.size <= 10) repaintMounted(); else paintItem(id);
     updateSelbar();
   }
-  // Shift+klik: výber intervalu od kotvy (poslednej kliknutej, inak kurzora) po kliknutú; pridá sa k výberu
-  function selectRangeTo(i) {
-    var ai = S.anchor != null ? S.view.findIndex(function (x) { return x.id === S.anchor; }) : -1;
-    if (ai < 0) { ai = i; S.anchor = S.view[i].id; } // bez kotvy (alebo mimo zobrazenia) sa vyberie aspoň kliknutá a stane sa kotvou
+  // interval výberu naraz: on = vybrať / odznačiť; Ctrl+Z vráti celý interval
+  function applySelRange(ids, on) {
+    var prev = {}, n = 0;
+    ids.forEach(function (id) {
+      if (S.sel.has(id) === on) return;
+      prev[id] = !on; n++;
+      if (on) S.sel.add(id); else S.sel.delete(id);
+    });
     S.selMode = true;
-    C.rangeIds(S.view, ai, i).forEach(function (id) { S.sel.add(id); });
     $("#selBtn").setAttribute("aria-pressed", "true");
+    if (n) undo.push({ sel: prev, label: (on ? "výber " : "odznačenie ") + C.photos(n) });
     repaintMounted(); updateSelbar();
+    return n;
+  }
+  function restoreSel(prev) {
+    var plan = C.revertMarks(prev);
+    plan.on.forEach(function (id) { S.sel.add(id); });
+    plan.off.forEach(function (id) { S.sel.delete(id); });
+    if (S.sel.size) { S.selMode = true; $("#selBtn").setAttribute("aria-pressed", "true"); }
+    repaintMounted(); updateSelbar();
+  }
+  // Shift+klik (aj Ctrl+Shift+klik) a Shift+medzerník: interval od kotvy (naposledy kliknutej) po fotku i.
+  // Kotva vybraná (alebo v intervale nič vybrané) = interval sa vyberie, inak sa celý odznačí (C.rangePlan).
+  function selectRangeTo(i, forceOn) {
+    var ai = C.anchorIndex(S.view, S.items, S.anchor);
+    if (ai < 0) { ai = i; S.anchor = S.view[i].id; } // bez kotvy sa vyberie aspoň táto a stane sa kotvou
+    var plan = C.rangePlan(S.view, ai, i, S.anchor, S.sel), on = forceOn != null ? forceOn : plan.on;
+    var n = applySelRange(plan.all, on);
+    if (!on && n) toast("Odznačené: " + C.photos(n) + " · Ctrl+Z vráti");
+  }
+  // Shift+medzerník: pri kotve (alebo bez nej) prepne jednu fotku a urobí ju kotvou, inak interval od kotvy
+  function shiftSpace(it) {
+    var ai = C.anchorIndex(S.view, S.items, S.anchor);
+    if (S.anchor == null || S.anchor === it.id || ai < 0) { S.anchor = it.id; toggleSel(it.id); return; }
+    selectRangeTo(S.cur);
   }
   // Shift+šípky: kurzor sa posunie a výber sa rozšíri o interval od miesta, kde sa Shift začal držať
   function extendSelTo(newIdx) {
@@ -1516,9 +2200,13 @@ if (typeof module !== "undefined" && module.exports) module.exports = GCore;
     selbar.classList.toggle("on", S.selMode || S.sel.size > 0);
     $("#selInfo").textContent = S.sel.size + " vybraných" + (S.sel.size ? " · " + C.fmtBytes(bytes) : "");
     $("#selDl").disabled = !S.sel.size;
+    $("#selDir").disabled = !S.sel.size;
     $("#selChat").disabled = !imgsSel(list);
     $("#selMark").disabled = !S.sel.size;
+    $("#selMark").textContent = "🗑 Označiť vybrané na zmazanie" + (S.sel.size ? " (" + S.sel.size + ")" : "");
     $("#selUnmark").disabled = !list.some(function (it) { return S.marked.has(it.id); });
+    $("#selWith").disabled = !(list.length === 1 && C.isImage(list[0].mime));
+    document.documentElement.style.setProperty("--selh", selbar.classList.contains("on") ? selbar.offsetHeight + "px" : "0px");
     var imgs = list.filter(function (it) { return C.isImage(it.mime); });
     $("#selCmp").disabled = !(imgs.length >= 2 && imgs.length <= 4 && imgs.length === list.length);
     $("#selCmp").textContent = "Porovnať" + (imgs.length >= 2 && imgs.length <= 4 ? " " + imgs.length : " 2–4");
@@ -1537,7 +2225,7 @@ if (typeof module !== "undefined" && module.exports) module.exports = GCore;
   $("#selChat").addEventListener("click", function () { toChat(selItems()); });
   $("#selMark").addEventListener("click", function () {
     var ids = Array.from(S.sel);
-    setMarks(ids, true).then(function (ch) { toast("Označené na zmazanie: " + C.photos(ch.length) + " · Ctrl+Z vráti"); });
+    setMarks(ids, true).then(function (ch) { toast("Označené na zmazanie: " + C.photos(ch.length) + " · Ctrl+Z vráti"); }).catch(function () { });
   });
   $("#selUnmark").addEventListener("click", function () {
     setMarks(Array.from(S.sel), false).then(function (ch) { toast("Zrušené označenie: " + C.photos(ch.length)); updateSelbar(); });
@@ -1545,77 +2233,158 @@ if (typeof module !== "undefined" && module.exports) module.exports = GCore;
   $("#selCmp").addEventListener("click", function () {
     if (!$("#selCmp").disabled) openCompare(Array.from(S.sel), { title: "Porovnanie výberu" });
   });
+  $("#selWith").addEventListener("click", function () { var l = selItems(); if (l.length === 1) openFree(l[0].id); });
+  $("#selDir").hidden = !canDir;
+  $("#selDir").addEventListener("click", function () { saveToDir(selItems()); });
 
   // ================= prehliadač (zoom/pan/pinch) — jeden na plochu =================
+  // Kreslí sa do <canvas> veľkosti plochy × devicePixelRatio: vždy len viditeľný výrez fotky, cieľ zaokrúhlený na
+  // celé pixely zariadenia (C.drawRect). Obrovský <img> s transform: scale() Chrome rasterizoval po dlaždiciach
+  // a na ich hranách pri neceločíselnej mierke vznikali tmavé vodorovné čiary, ktoré pri zoome „skákali“.
+  // Koliesko = listovanie (v.onpage), Ctrl + koliesko / pinch = zoom ku kurzoru, Shift + koliesko = posun do
+  // strany, ťahanie posúva. Štítok vpravo hore hovorí, čo práve vidíš (náhľad / originál / HEIC → JPEG…).
   function Viewer(stage) {
-    var img = el("img", "vimg");
-    img.alt = ""; img.draggable = false;
-    stage.appendChild(img);
+    var cv = el("canvas", "vimg"), g = cv.getContext("2d");
+    cv.setAttribute("aria-hidden", "true");
+    stage.appendChild(cv);
     var hd = el("span", "hd"), msg = el("div", "vmsg");
     stage.appendChild(hd); stage.appendChild(msg);
-    var v = { rel: { cx: 0.5, cy: 0.5, z: 1 }, nw: 0, nh: 0, fit: 1, src: null, token: 0, hi: "", onchange: null, onload: null, img: img };
+    var v = {
+      rel: { cx: 0.5, cy: 0.5, z: 1 }, nw: 0, nh: 0, fit: 1, src: null, token: 0, hi: "", kind: "prev", bmp: null, wait: false,
+      onchange: null, onload: null, onpage: null, onclick: null, ondblclick: null, img: cv, stage: stage
+    };
+    var pend = [], raf = 0, wst = {};
     function size() { var r = stage.getBoundingClientRect(); return { w: r.width, h: r.height }; }
     function zMax() {
       var s = size(), f = v.src && v.src.fullW ? C.oneToOneZ(s.w, s.h, v.src.fullW, v.src.fullH) : 1 / (v.fit || 1);
       return Math.max(8, f * 4);
     }
+    function draw() {
+      raf = 0;
+      var s = size(), d = dpr(), W = Math.max(1, Math.round(s.w * d)), H = Math.max(1, Math.round(s.h * d));
+      if (cv.width !== W || cv.height !== H) { cv.width = W; cv.height = H; }
+      g.setTransform(1, 0, 0, 1, 0, 0);
+      g.clearRect(0, 0, W, H);
+      if (!v.bmp || !v.nw) return;
+      var r = C.drawRect(s.w, s.h, v.nw, v.nh, C.absFromRel(v.rel, v.nw, v.nh, v.fit), d);
+      if (!r) return;
+      g.imageSmoothingEnabled = true;
+      g.imageSmoothingQuality = "high";
+      g.drawImage(v.bmp, r.sx, r.sy, r.sw, r.sh, r.dx, r.dy, r.dw, r.dh);
+    }
+    function schedule() { if (!raf) raf = requestAnimationFrame(draw); }
     function apply() {
-      if (!v.nw) return;
+      if (!v.nw) { schedule(); return; }
       var s = size();
       v.fit = C.fitScale(s.w, s.h, v.nw, v.nh);
       v.rel = C.clampRel(v.rel, 0.5, zMax());
-      var a = C.absFromRel(v.rel, v.nw, v.nh, v.fit);
-      img.style.width = v.nw + "px"; img.style.height = v.nh + "px";
-      img.style.transform = "translate(-50%,-50%) translate(" + a.x + "px," + a.y + "px) scale(" + a.scale + ")";
+      stage.classList.toggle("zoomed", v.rel.z > 1.01);
+      cv.dataset.z = v.rel.z.toFixed(4); cv.dataset.cx = v.rel.cx.toFixed(4); cv.dataset.cy = v.rel.cy.toFixed(4);
+      schedule();
       maybeFull();
     }
     function changed() { apply(); if (v.onchange) v.onchange(v.rel); }
-    // originál (alebo väčší náhľad pre HEIC/DNG) až keď je priblížené nad rozlíšenie náhľadu
+    function paintHd() {
+      var s = v.src;
+      if (!s) { hd.textContent = ""; hd.className = "hd"; return; }
+      hd.textContent = v.wait && !v.hi ? "načítavam…" : C.qualLabel({
+        kind: v.kind, w: v.nw, h: v.nh, ow: s.origW, oh: s.origH, native: s.native, fmt: s.fmt,
+        loading: v.hi === "loading", failed: v.hi === "failed"
+      });
+      hd.className = "hd" + (v.kind === "full" ? " full" : v.hi === "loading" || v.wait ? " busy" : "");
+    }
+    v.label = function () { return hd.textContent; };
+    // rozpracované načítania sa pri listovaní zrušia (mobil nemusí dekódovať fotky, ktoré už nik nechce)
+    function cancelPending() { pend.forEach(function (im) { im.onload = im.onerror = null; im.removeAttribute("src"); }); pend = []; }
+    function fetchImg(u, ok, bad) {
+      var im = new Image();
+      im.decoding = "async";
+      var off = function () { pend = pend.filter(function (x) { return x !== im; }); };
+      im.onload = function () {
+        // dekódovať mimo hlavného vlákna, aby prvé vykreslenie veľkej fotky nezaseklo stránku
+        (im.decode ? im.decode() : Promise.resolve()).catch(function () { }).then(function () { if (pend.indexOf(im) >= 0) { off(); ok(im); } });
+      };
+      im.onerror = function () { off(); bad(im); };
+      pend.push(im);
+      im.src = u;
+    }
+    function show(im, kind) {
+      v.bmp = im; v.nw = im.naturalWidth; v.nh = im.naturalHeight; v.kind = kind; v.wait = false;
+      cv.style.opacity = "1"; msg.textContent = "";
+      apply(); paintHd();
+      if (v.onload) v.onload(v);
+    }
+    function failMsg() { v.bmp = null; v.nw = 0; v.wait = false; cv.style.opacity = "1"; msg.textContent = "Fotku sa nepodarilo zobraziť."; schedule(); paintHd(); }
+    // plné rozlíšenie: originál, pri HEIC/DNG JPEG v plnom rozlíšení zo servera
+    function loadFull() {
+      var s = v.src;
+      if (!s || !s.full || v.hi) return;
+      v.hi = "loading"; paintHd();
+      var tok = v.token;
+      fetchImg(s.full, function (im) {
+        if (tok !== v.token) return;
+        v.hi = "done";
+        show(im, "full");
+      }, function () {
+        if (tok !== v.token) return;
+        v.hi = "failed";
+        if (v.wait && !pend.length) failMsg(); else paintHd();
+      });
+    }
+    // „Plná kvalita“ zapnutá: hneď; inak až keď je priblížené nad rozlíšenie náhľadu
     function maybeFull() {
       var s = v.src;
       if (!s || !s.full || v.hi) return;
-      if (!C.wantsFull(v.rel, v.fit, v.nw, v.nh, s.fullW, s.fullH)) return;
-      v.hi = "loading"; hd.textContent = "HD…";
-      var tok = v.token, im = new Image();
-      im.decoding = "async";
-      im.onload = function () {
-        if (tok !== v.token) return;
-        img.src = im.src; v.nw = im.naturalWidth; v.nh = im.naturalHeight; v.hi = "done"; hd.textContent = "HD";
-        apply();
-        if (v.onload) v.onload(v);
-      };
-      im.onerror = function () { if (tok === v.token) { v.hi = "failed"; hd.textContent = ""; } };
-      im.src = s.full;
+      if (!s.fullFirst && !C.wantsFull(v.rel, v.fit, v.nw, v.nh, s.fullW, s.fullH)) return;
+      loadFull();
     }
     v.load = function (src, keepRel) {
+      cancelPending();
       v.token++;
       var tok = v.token;
-      v.src = src; v.hi = ""; hd.textContent = ""; msg.textContent = "";
+      v.src = src; v.hi = ""; v.kind = "prev"; v.wait = true; msg.textContent = "";
       if (!keepRel) v.rel = { cx: 0.5, cy: 0.5, z: 1 };
-      img.style.opacity = ".3";
-      var im = new Image();
-      im.decoding = "async";
-      im.onload = function () {
-        if (tok !== v.token) return;
-        img.src = im.src; v.nw = im.naturalWidth; v.nh = im.naturalHeight;
-        img.style.opacity = "1";
-        apply();
-        if (v.onload) v.onload(v);
-      };
-      im.onerror = function () {
-        if (tok !== v.token) return;
-        if (src.full && im.src.indexOf(src.full) < 0 && src.native) { im.src = src.full; return; }
-        img.removeAttribute("src"); v.nw = 0; msg.textContent = "Fotku sa nepodarilo zobraziť.";
-      };
-      im.src = src.preview;
+      cv.style.opacity = v.bmp ? ".35" : "1";
+      fetchImg(src.preview, function (im) {
+        if (tok !== v.token || v.kind === "full") return;
+        show(im, "prev");
+      }, function () {
+        if (tok !== v.token || v.kind === "full") return;
+        if (src.full && src.native && !v.hi) { loadFull(); return; } // náhľad zlyhal: aspoň originál
+        if (v.hi === "loading") return;
+        failMsg();
+      });
+      paintHd();
+      if (src.fullFirst) loadFull();
     };
-    v.clear = function () { v.token++; v.src = null; v.nw = 0; img.removeAttribute("src"); hd.textContent = ""; msg.textContent = ""; };
+    v.clear = function () {
+      cancelPending(); v.token++;
+      v.src = null; v.bmp = null; v.nw = 0; v.hi = ""; v.kind = "prev"; v.wait = false;
+      hd.textContent = ""; msg.textContent = ""; stage.classList.remove("zoomed"); cv.style.opacity = "1";
+      schedule();
+    };
+    v.setFullFirst = function (on) {
+      if (!v.src || !v.src.full) return;
+      v.src.fullFirst = !!on;
+      if (on) loadFull();
+    };
     v.setRel = function (r) { v.rel = r; apply(); };
     v.fitView = function () { v.rel = { cx: 0.5, cy: 0.5, z: 1 }; changed(); };
+    function oneZ() {
+      var s = size(), ow = v.src && v.src.fullW || v.nw, oh = v.src && v.src.fullH || v.nh;
+      return C.oneToOneZ(s.w, s.h, ow, oh);
+    }
     v.one = function () {
       if (!v.nw) return;
-      var s = size(), ow = v.src && v.src.fullW || v.nw, oh = v.src && v.src.fullH || v.nh;
-      v.rel = { cx: v.rel.cx, cy: v.rel.cy, z: C.oneToOneZ(s.w, s.h, ow, oh) };
+      v.rel = { cx: v.rel.cx, cy: v.rel.cy, z: oneZ() };
+      changed();
+    };
+    // klik v náhľade: prispôsobiť ↔ 1:1 v mieste kliknutia (malá fotka: 2×)
+    v.toggleOne = function (p) {
+      if (!v.nw) return;
+      if (v.rel.z > 1.05) { v.fitView(); return; }
+      var z = oneZ();
+      v.rel = C.zoomAt(v.rel, v.nw, v.nh, v.fit, p.x, p.y, z > 1.05 ? z : 2, 0.5, zMax());
       changed();
     };
     v.zoomBy = function (f) {
@@ -1624,15 +2393,25 @@ if (typeof module !== "undefined" && module.exports) module.exports = GCore;
       changed();
     };
     function local(e) { var r = stage.getBoundingClientRect(); return { x: e.clientX - r.left - r.width / 2, y: e.clientY - r.top - r.height / 2 }; }
+    // koliesko: rovnaké pravidlá všade (C.wheelAction); zoom stránky prehliadača nad fotkou nikdy
     stage.addEventListener("wheel", function (e) {
-      if (e.ctrlKey || e.metaKey) { e.preventDefault(); return; } // Ctrl+koliesko: zoom stránky je zakázaný, fotky mení prehliadač / panel porovnávača
-      if (!v.nw) return;
+      var a = C.wheelAction(e, "stage");
       e.preventDefault();
-      var p = local(e);
-      v.rel = C.zoomAt(v.rel, v.nw, v.nh, v.fit, p.x, p.y, v.rel.z * Math.exp(-e.deltaY * 0.0015), 0.5, zMax());
-      changed();
+      if (a === "zoom") {
+        if (!v.nw) return;
+        var p = local(e);
+        v.rel = C.zoomAt(v.rel, v.nw, v.nh, v.fit, p.x, p.y, v.rel.z * C.wheelZoom(e.deltaY, e.deltaMode), 0.5, zMax());
+        changed();
+      } else if (a === "pan") {
+        if (!v.nw || v.rel.z <= 1) return;
+        v.rel = C.panBy(v.rel, v.nw, v.nh, v.fit, -C.wheelPx(e.deltaX || e.deltaY, e.deltaMode), 0, 0.5, zMax());
+        changed();
+      } else {
+        var d = C.wheelStep(wst, e.deltaX, e.deltaY, e.deltaMode, e.timeStamp);
+        if (d && v.onpage) v.onpage(d);
+      }
     }, { passive: false });
-    var pts = new Map(), last = null;
+    var pts = new Map(), last = null, down = null, clickT = 0;
     function pinchInfo() {
       var a = Array.from(pts.values());
       return { d: Math.hypot(a[0].x - a[1].x, a[0].y - a[1].y), x: (a[0].x + a[1].x) / 2, y: (a[0].y + a[1].y) / 2 };
@@ -1640,11 +2419,14 @@ if (typeof module !== "undefined" && module.exports) module.exports = GCore;
     stage.addEventListener("pointerdown", function (e) {
       if (e.target.closest("button,video")) return;
       try { stage.setPointerCapture(e.pointerId); } catch (_) { }
+      down = pts.size === 0 && e.button === 0 ? { x: e.clientX, y: e.clientY } : null;
       pts.set(e.pointerId, local(e));
       last = pts.size === 2 ? pinchInfo() : local(e);
     });
     stage.addEventListener("pointermove", function (e) {
-      if (!pts.has(e.pointerId) || !v.nw) return;
+      if (!pts.has(e.pointerId)) return;
+      if (down && Math.abs(e.clientX - down.x) + Math.abs(e.clientY - down.y) > 6) down = null;
+      if (!v.nw) return;
       pts.set(e.pointerId, local(e));
       if (pts.size === 1) {
         var p = local(e);
@@ -1661,14 +2443,23 @@ if (typeof module !== "undefined" && module.exports) module.exports = GCore;
       changed();
     });
     function up(e) {
+      var click = down && e.type === "pointerup" && pts.size === 1;
       pts.delete(e.pointerId);
       try { stage.releasePointerCapture(e.pointerId); } catch (_) { }
       last = pts.size === 1 ? Array.from(pts.values())[0] : null;
+      down = null;
+      if (click && v.onclick) {
+        var p = local(e);
+        clearTimeout(clickT);
+        clickT = setTimeout(function () { v.onclick(p); }, 300); // dvojklik ho zruší
+      }
     }
     stage.addEventListener("pointerup", up);
     stage.addEventListener("pointercancel", up);
     stage.addEventListener("dblclick", function (e) {
-      if (!v.nw || e.target.closest("button,video")) return;
+      if (e.target.closest("button,video")) return;
+      if (v.ondblclick) { clearTimeout(clickT); v.ondblclick(); return; }
+      if (!v.nw) return;
       var p = local(e);
       v.rel = v.rel.z > 1.05 ? { cx: 0.5, cy: 0.5, z: 1 } : C.zoomAt(v.rel, v.nw, v.nh, v.fit, p.x, p.y, 2.5, 0.5, zMax());
       changed();
@@ -1676,22 +2467,38 @@ if (typeof module !== "undefined" && module.exports) module.exports = GCore;
     if (window.ResizeObserver) new ResizeObserver(function () { apply(); }).observe(stage);
     return v;
   }
-  // zdroje pre prehliadač: najprv 2560 px JPEG zo servera (vie aj HEIC/DNG), originál až pri priblížení
+  // „Plná kvalita“ (O): originál hneď, HEIC/DNG ako JPEG v plnom rozlíšení; pamätá sa
+  var FQ = { on: store("gfq") === "1" };
   function srcFor(it) {
-    var d = C.dispDims(it), nat = C.browserNative(it.mime);
+    var p = C.srcPlan(it, FQ.on);
     return {
-      preview: url("/api/thumb", { id: it.id, max: 2560, v: it.mtime }),
-      full: nat ? url("/api/file", { id: it.id }) : url("/api/file", { id: it.id, q: 92, max: 4096 }),
-      fullW: nat ? d.w : Math.min(d.w, 4096), fullH: nat ? d.h : Math.min(d.h, 4096), native: nat
+      preview: url(p.preview.path, p.preview.params), full: p.full ? url(p.full.path, p.full.params) : null,
+      fullW: p.fullW, fullH: p.fullH, origW: p.origW, origH: p.origH, native: p.native, fmt: p.fmt, fullFirst: p.fullFirst
     };
   }
-  var preCache = [];
-  function prefetch(it) {
-    if (!it || !C.isImage(it.mime)) return;
-    var im = new Image();
-    im.src = srcFor(it).preview;
-    preCache.push(im);
-    if (preCache.length > 8) preCache.shift();
+  function allViewers() {
+    return [vv, PV.v].concat(CM.panes.map(function (P) { return P.v; }), FC.panes.map(function (P) { return P.v; }));
+  }
+  function setFQ(on) {
+    FQ.on = !!on;
+    store("gfq", FQ.on ? "1" : "0");
+    $$(".fqbtn").forEach(function (b) { b.setAttribute("aria-pressed", FQ.on ? "true" : "false"); });
+    allViewers().forEach(function (v) { v.setFullFirst(FQ.on); });
+  }
+  // prednačítanie: len ďalšia fotka v smere listovania a až keď je aktuálna načítaná; pri ďalšom listovaní sa zruší
+  var PF = { ctl: null, id: null };
+  function cancelPrefetch(keepId) {
+    if (PF.ctl && PF.id !== keepId) { PF.ctl.abort(); PF.ctl = null; }
+    if (PF.id !== keepId) PF.id = null;
+  }
+  function prefetchNext(it) {
+    cancelPrefetch(it ? it.id : null);
+    if (!it || !C.isImage(it.mime) || PF.id === it.id || !window.AbortController) return;
+    var s = srcFor(it), ctl = new AbortController();
+    PF.ctl = ctl; PF.id = it.id;
+    fetch(s.fullFirst && s.full ? s.full : s.preview, { credentials: "same-origin", headers: headers(false), signal: ctl.signal })
+      .then(function (r) { return r.blob(); }).catch(function () { })
+      .then(function () { if (PF.ctl === ctl) PF.ctl = null; });
   }
   function infoText(it, nat) {
     var d = C.dispDims(it);
@@ -1701,23 +2508,9 @@ if (typeof module !== "undefined" && module.exports) module.exports = GCore;
   }
 
   // ================= jedna fotka =================
-  var viewerOv = $("#viewer"), vStage = $("#vStage"), vv = Viewer(vStage), vList = [], vIdx = -1, video = null;
+  var viewerOv = $("#viewer"), vStage = $("#vStage"), vv = Viewer(vStage), vList = [], vIdx = -1, video = null, vDir = 1;
   function vCur() { return vList[vIdx] || null; }
-  // Ctrl + koliesko nad fotkou = predošlá / ďalšia (ako v porovnávači); koliesko bez Ctrl približuje
-  (function () {
-    var acc = 0, t = 0;
-    vStage.addEventListener("wheel", function (e) {
-      if (!(e.ctrlKey || e.metaKey)) return;
-      e.preventDefault();
-      if (e.timeStamp - t > 400) acc = 0;
-      t = e.timeStamp;
-      acc += e.deltaMode === 1 ? e.deltaY * 33 : e.deltaY;
-      if (Math.abs(acc) < 50) return;
-      var dir = acc > 0 ? 1 : -1;
-      acc = 0;
-      stepViewer(dir);
-    }, { passive: false });
-  })();
+  vv.onpage = function (d) { stepViewer(d, true); }; // koliesko nad fotkou = predošlá / ďalšia
   function viewerState() {
     var it = vCur();
     if (!it) return;
@@ -1727,19 +2520,20 @@ if (typeof module !== "undefined" && module.exports) module.exports = GCore;
     $("#vState").textContent = s.join(" · ");
     $("#vState").hidden = !s.length;
     $("#vMark").textContent = S.marked.has(it.id) ? "↩ Zrušiť 🗑" : "🗑 Označiť";
+    $("#vWith").disabled = !C.isImage(it.mime);
     $("#vInfo").textContent = infoText(it, vv.nw ? { w: vv.nw, h: vv.nh } : null) + (vList.length > 1 ? " · " + (vIdx + 1) + " / " + vList.length : "");
   }
-  vv.onload = viewerState;
+  vv.onload = function () { viewerState(); prefetchNext(vList[vIdx + vDir]); };
   function openViewer(list, i) {
     vList = list; vIdx = i;
     var it = vCur();
     if (!it) return;
+    cancelPrefetch(it.id);
     $("#vTitle").textContent = it.relpath || it.name;
     if (video) { video.pause(); video.remove(); video = null; }
     if (C.isImage(it.mime)) {
       vv.img.hidden = false;
       vv.load(srcFor(it), false);
-      prefetch(list[i + 1]); prefetch(list[i - 1]);
     } else {
       vv.clear(); vv.img.hidden = true;
       video = el("video");
@@ -1750,16 +2544,263 @@ if (typeof module !== "undefined" && module.exports) module.exports = GCore;
     viewerState();
     openOv(viewerOv);
   }
-  viewerOv.onclose = function () { if (video) { video.pause(); video.remove(); video = null; } vv.clear(); };
-  function stepViewer(d) { var n = vIdx + d; if (n >= 0 && n < vList.length) openViewer(vList, n); }
+  viewerOv.onclose = function () { if (video) { video.pause(); video.remove(); video = null; } vv.clear(); cancelPrefetch(); };
+  function stepViewer(d, wheel) {
+    var n = vIdx + d;
+    if (n >= 0 && n < vList.length) { vDir = d; openViewer(vList, n); } else if (wheel) toast(d > 0 ? "Posledná fotka" : "Prvá fotka");
+  }
   $("#vPrev").addEventListener("click", function (e) { e.stopPropagation(); stepViewer(-1); });
   $("#vNext").addEventListener("click", function (e) { e.stopPropagation(); stepViewer(1); });
   $("#vClose").addEventListener("click", function () { closeOv(viewerOv); });
   $("#vFit").addEventListener("click", function () { vv.fitView(); });
   $("#vFull").addEventListener("click", function () { vv.one(); });
+  $("#vFq").addEventListener("click", function () { setFQ(!FQ.on); });
+  $("#vWith").addEventListener("click", function () { var it = vCur(); if (it) openFree(it.id); });
   $("#vDl").addEventListener("click", function () { var it = vCur(); if (it) downloadMany([it]); });
   $("#vMark").addEventListener("click", function () { var it = vCur(); if (it) toggleMark(it.id); });
   $("#vChat").addEventListener("click", function () { var it = vCur(); if (it) toChat([it]); });
+
+  // ================= virtualizovaný zoznam miniatúr v prvku so scrollom =================
+  // (zoznam v režime náhľadu, pás „Porovnať s…“) — v DOM sú len viditeľné bunky. o = {ctx: veľkosť z TS,
+  // horiz(): vodorovne v jednom riadku, count(), make(i, px), refresh(el, i, px)}
+  function Tiles(box, o) {
+    var inner = el("div", "vtin");
+    box.appendChild(inner);
+    var T = { box: box, mounted: new Map(), lanes: 1, cell: 100, gap: 6, horiz: false, px: 192, raf: 0 };
+    var PAD = 6;
+    T.layout = function () {
+      var n = o.count(), g = T.gap;
+      T.horiz = !!(o.horiz && o.horiz());
+      if (T.horiz) {
+        T.lanes = 1;
+        T.cell = Math.max(32, box.clientHeight - 2 * PAD);
+        inner.style.width = Math.max(0, n * (T.cell + g) - g) + "px";
+        inner.style.height = T.cell + "px";
+      } else {
+        var W = Math.max(40, box.clientWidth - 2 * PAD), size = Math.min(TS[o.ctx], W);
+        T.lanes = Math.max(1, Math.floor((W + g) / (size + g)));
+        T.cell = (W - g * (T.lanes - 1)) / T.lanes;
+        inner.style.width = "";
+        inner.style.height = Math.max(0, Math.ceil(n / T.lanes) * (T.cell + g) - g) + "px";
+      }
+      T.px = C.thumbReq(T.cell, dpr());
+    };
+    T.render = function (force) {
+      var n = o.count(), step = T.cell + T.gap;
+      var pos = T.horiz ? box.scrollLeft : box.scrollTop, len = T.horiz ? box.clientWidth : box.clientHeight;
+      var l0 = Math.max(0, Math.floor(pos / step) - 2), l1 = Math.ceil((pos + len) / step) + 2;
+      var i0 = l0 * T.lanes, i1 = Math.min(n, l1 * T.lanes);
+      T.mounted.forEach(function (c, i) { if (force || i < i0 || i >= i1) { c.remove(); T.mounted.delete(i); } });
+      for (var i = i0; i < i1; i++) {
+        var c = T.mounted.get(i);
+        if (!c) { c = o.make(i, T.px); T.mounted.set(i, c); inner.appendChild(c); } else if (o.refresh) o.refresh(c, i, T.px);
+        var a = Math.floor(i / T.lanes) * step, b = (i % T.lanes) * step;
+        c.style.cssText = (T.horiz ? "left:" + a + "px;top:0" : "left:" + b + "px;top:" + a + "px") + ";width:" + T.cell + "px;height:" + T.cell + "px";
+      }
+    };
+    // bunku i posunúť do viditeľnej časti
+    T.ensure = function (i) {
+      if (!(i >= 0)) return;
+      var step = T.cell + T.gap, a = Math.floor(i / T.lanes) * step;
+      var pos = T.horiz ? box.scrollLeft : box.scrollTop, len = T.horiz ? box.clientWidth : box.clientHeight, np = pos;
+      if (a < pos) np = a;
+      else if (a + T.cell + 2 * PAD > pos + len) np = a + T.cell + 2 * PAD - len;
+      if (np !== pos) { if (T.horiz) box.scrollLeft = np; else box.scrollTop = np; }
+      T.render(false);
+    };
+    // nová veľkosť miniatúr: bunka pod myšou (alebo prvá viditeľná) ostane na mieste
+    T.resize = function (ev) {
+      var c = ev && ev.target && ev.target.closest ? ev.target.closest(".cell") : null, i, off;
+      var step = T.cell + T.gap, pos = T.horiz ? box.scrollLeft : box.scrollTop;
+      if (c && inner.contains(c)) {
+        i = Number(c.dataset.i);
+        var r = c.getBoundingClientRect(), br = box.getBoundingClientRect();
+        off = (T.horiz ? r.left - br.left : r.top - br.top) - PAD;
+      } else { i = Math.floor(pos / step) * T.lanes; off = Math.floor(i / T.lanes) * step - pos; }
+      T.layout();
+      var a = Math.floor(i / T.lanes) * (T.cell + T.gap) - off;
+      if (T.horiz) box.scrollLeft = Math.max(0, a); else box.scrollTop = Math.max(0, a);
+      T.render(false);
+    };
+    box.addEventListener("scroll", function () {
+      if (T.raf) return;
+      T.raf = requestAnimationFrame(function () { T.raf = 0; T.render(false); });
+    }, { passive: true });
+    if (window.ResizeObserver) new ResizeObserver(function () { if (box.offsetParent) { T.layout(); T.render(false); } }).observe(box);
+    return T;
+  }
+
+  // ================= režim náhľadu: zoznam (vľavo alebo dole) + veľká fotka =================
+  // Tretie zobrazenie popri mriežke a skupinách. Zoznam = S.view (rovnaký kurzor aj výber ako mriežka).
+  var pvEl = $("#pv"), pList = $("#pList"), pStage = $("#pStage"), hdr = $("header");
+  var PV = {
+    tiles: null, v: null, id: null, video: null, t: 0, dir: 1, bottom: store("gpvpos") === "bottom",
+    narrow: window.matchMedia ? window.matchMedia("(max-width: 899px)") : null
+  };
+  function pvHoriz() { return PV.bottom || !!(PV.narrow && PV.narrow.matches); }
+  PV.tiles = Tiles(pList, {
+    ctx: "list", horiz: pvHoriz,
+    count: function () { return S.view.length; },
+    make: function (i, px) { return makeCell(S.view[i], i, px); },
+    refresh: function (c, i, px) { thumbSrc(c.firstChild, S.view[i], px); }
+  });
+  PV.v = Viewer(pStage);
+  PV.v.onpage = function (d) { // koliesko nad náhľadom listuje
+    var n = S.cur + d;
+    if (n >= 0 && n < S.view.length) setCursor(n); else toast(d > 0 ? "Posledná fotka" : "Prvá fotka");
+  };
+  PV.v.onclick = function (p) { PV.v.toggleOne(p); }; // klik = prispôsobiť ↔ 1:1
+  PV.v.ondblclick = function () { if (cursorItem()) openViewer(S.view, S.cur); }; // dvojklik = celá obrazovka
+  PV.v.onload = function () { paintPv(); prefetchNext(S.view[S.cur + PV.dir]); };
+  function stopPvVideo() { if (PV.video) { PV.video.pause(); PV.video.remove(); PV.video = null; } }
+  function paintPv() {
+    if (S.mode !== "preview") return;
+    var it = cursorItem(), st = [];
+    $("#pTitle").textContent = it ? (it.relpath || it.name) : (S.view.length ? "" : "Žiadna fotka");
+    if (it && S.synced.has(it.id)) st.push("✓ v PC");
+    if (it && S.marked.has(it.id)) st.push("🗑 na zmazanie");
+    $("#pState").textContent = st.join(" · ");
+    $("#pState").hidden = !st.length;
+    $("#pMark").textContent = it && S.marked.has(it.id) ? "↩ Zrušiť 🗑" : "🗑 Označiť";
+    ["pMark", "pDl", "pOpen", "pFit", "pOne"].forEach(function (k) { $("#" + k).disabled = !it; });
+    $("#pWith").disabled = !it || !C.isImage(it.mime);
+    $("#pInfo").textContent = it ? infoText(it, PV.v.nw && PV.id === it.id ? { w: PV.v.nw, h: PV.v.nh } : null) + " · " + (S.cur + 1) + " / " + S.view.length : "";
+    $("#pPos").textContent = PV.bottom ? "Zoznam vľavo" : "Zoznam dole";
+  }
+  function showPreview(force) {
+    if (S.mode !== "preview") return;
+    var it = cursorItem();
+    paintPv();
+    if (!it) { clearTimeout(PV.t); PV.id = null; PV.v.clear(); stopPvVideo(); return; }
+    if (!force && PV.id === it.id) return;
+    PV.id = it.id;
+    cancelPrefetch(it.id);
+    clearTimeout(PV.t);
+    // pri rýchlom listovaní šípkami sa veľká fotka načíta až po krátkej pauze (mobil nedekóduje každú)
+    PV.t = setTimeout(function () {
+      if (PV.id !== it.id || S.mode !== "preview") return;
+      stopPvVideo();
+      if (C.isImage(it.mime)) { PV.v.img.hidden = false; PV.v.load(srcFor(it), false); return; }
+      PV.v.clear(); PV.v.img.hidden = true;
+      var vd = el("video");
+      vd.controls = true; vd.preload = "metadata"; vd.src = url("/api/file", { id: it.id });
+      PV.video = vd;
+      pStage.appendChild(vd);
+    }, force ? 0 : 90);
+  }
+  function pvRefresh(resetScroll) {
+    if (S.cur < 0 && S.view.length) S.cur = 0;
+    PV.tiles.layout();
+    if (resetScroll) { pList.scrollTop = 0; pList.scrollLeft = 0; }
+    PV.tiles.render(true);
+    var it = cursorItem();
+    if (it && it.id !== PV.id) PV.tiles.ensure(S.cur);
+    showPreview();
+  }
+  function setMode(m) {
+    S.mode = m === "preview" ? "preview" : "grid";
+    store("gmode", S.mode);
+    document.body.classList.toggle("pmode", S.mode === "preview");
+    pvEl.hidden = S.mode !== "preview";
+    pvEl.classList.toggle("bottom", PV.bottom);
+    $("#modeGrid").setAttribute("aria-pressed", S.mode === "grid" ? "true" : "false");
+    $("#modePrev").setAttribute("aria-pressed", S.mode === "preview" ? "true" : "false");
+    syncThumbUi();
+    if (S.mode === "preview") {
+      if (S.cur < 0 && S.view.length) S.cur = 0;
+      PV.tiles.layout(); PV.tiles.render(true);
+      PV.tiles.ensure(S.cur);
+      showPreview(true);
+    } else {
+      clearTimeout(PV.t); PV.id = null; PV.v.clear(); stopPvVideo(); cancelPrefetch();
+      layoutGrid(); renderWindow(true);
+      if (S.cur >= 0) setCursor(S.cur);
+    }
+  }
+  function setPvPos(bottom) {
+    PV.bottom = !!bottom;
+    store("gpvpos", PV.bottom ? "bottom" : "left");
+    pvEl.classList.toggle("bottom", PV.bottom);
+    PV.tiles.layout(); PV.tiles.render(true);
+    PV.tiles.ensure(S.cur);
+    paintPv();
+  }
+  if (PV.narrow && PV.narrow.addEventListener) PV.narrow.addEventListener("change", function () { if (S.mode === "preview") { PV.tiles.layout(); PV.tiles.render(true); PV.tiles.ensure(S.cur); } });
+  $("#modeGrid").addEventListener("click", function () { setMode("grid"); });
+  $("#modePrev").addEventListener("click", function () { setMode("preview"); });
+  $("#pFit").addEventListener("click", function () { PV.v.fitView(); });
+  $("#pOne").addEventListener("click", function () { PV.v.one(); });
+  $("#pFq").addEventListener("click", function () { setFQ(!FQ.on); });
+  $("#pMark").addEventListener("click", function () { var it = cursorItem(); if (it) toggleMark(it.id); });
+  $("#pDl").addEventListener("click", function () { var it = cursorItem(); if (it) downloadMany([it]); });
+  $("#pWith").addEventListener("click", function () { var it = cursorItem(); if (it) openFree(it.id); });
+  $("#pOpen").addEventListener("click", function () { if (cursorItem()) openViewer(S.view, S.cur); });
+  $("#pPos").addEventListener("click", function () { setPvPos(!PV.bottom); });
+  // klik na miniatúru ju ukáže; Ctrl+klik výber, Shift+klik interval (rovnako ako v mriežke); dvojklik celá obrazovka
+  pList.addEventListener("click", function (e) {
+    var c = e.target.closest(".cell");
+    if (!c) return;
+    var i = Number(c.dataset.i), it = S.view[i];
+    if (!it) return;
+    S.ext = null;
+    if (e.shiftKey) { selectRangeTo(i); setCursor(i, false); return; }
+    S.anchor = it.id;
+    if (S.selMode || e.ctrlKey || e.metaKey) toggleSel(it.id);
+    setCursor(i, false);
+  });
+  pList.addEventListener("dblclick", function (e) { var c = e.target.closest(".cell"); if (c && S.view[Number(c.dataset.i)]) openViewer(S.view, Number(c.dataset.i)); });
+  function syncHdr() { document.documentElement.style.setProperty("--hdr", hdr.offsetHeight + "px"); }
+  if (window.ResizeObserver) new ResizeObserver(syncHdr).observe(hdr);
+  syncHdr();
+
+  // ================= veľkosť miniatúr: posuvník, −/+, Ctrl + koliesko, Ctrl + + / − =================
+  var thSize = $("#thSize");
+  function thumbCtxMain() { return S.mode === "preview" ? "list" : "grid"; }
+  function syncThumbUi() {
+    var k = thumbCtxMain(), t = C.THUMBS[k];
+    thSize.min = t.min; thSize.max = t.max; thSize.value = Math.round(TS[k]);
+    thSize.setAttribute("aria-valuetext", Math.round(TS[k]) + " px");
+  }
+  function thumbStep(ctx, dir) { setThumb(ctx, C.thumbKey(ctx, TS[ctx], dir)); }
+  // ev = udalosť kolieska: miniatúra pod myšou ostane na mieste
+  function setThumb(ctx, v, ev) {
+    v = C.thumbClamp(ctx, v);
+    if (v === TS[ctx]) return;
+    TS[ctx] = v;
+    store("gth." + ctx, String(Math.round(v)));
+    applyThumbVars();
+    var px = C.thumbReq(v, dpr());
+    if (ctx === "grid") {
+      if (S.mode === "grid" && !topOv()) regrid(ev); else { layoutGrid(); renderWindow(false); }
+      if (markedOv.classList.contains("on")) upgradeThumbs($("#mBody"), px);
+      if (binOv.classList.contains("on")) upgradeThumbs($("#bBody"), px);
+    } else if (ctx === "list") PV.tiles.resize(ev);
+    else if (ctx === "groups") upgradeThumbs(gBody, px);
+    else if (ctx === "strip") { upgradeThumbs($("#strip"), px); if (fcOv.classList.contains("on")) FC.tiles.resize(ev); }
+    syncThumbUi();
+  }
+  // mriežka: bunka pod myšou (inak kurzor alebo prvý viditeľný riadok) ostane po zmene veľkosti na mieste
+  function regrid(ev) {
+    var i = -1, frac = 0, y = 0, hh = hdr.offsetHeight;
+    var c = ev && ev.target && ev.target.closest ? ev.target.closest("#grid .cell") : null;
+    if (c && ev.clientY != null) {
+      var r = c.getBoundingClientRect();
+      i = Number(c.dataset.i); frac = (ev.clientY - r.top) / (r.height || 1); y = ev.clientY;
+    } else {
+      var gr = grid.getBoundingClientRect(), cur = GV.mounted.get(S.cur), cr = cur && cur.getBoundingClientRect();
+      if (cr && cr.bottom > hh && cr.top < window.innerHeight) { i = S.cur; y = cr.top; }
+      else { var row0 = Math.max(0, Math.floor((hh - gr.top) / GV.rowH)); i = row0 * GV.cols; y = gr.top + row0 * GV.rowH; }
+    }
+    layoutGrid();
+    if (i >= 0 && i < S.view.length) {
+      var gt = grid.getBoundingClientRect().top + window.scrollY, row = Math.floor(i / GV.cols);
+      window.scrollTo(0, Math.max(0, gt + row * GV.rowH + frac * GV.cell - y));
+    }
+    renderWindow(false);
+  }
+  thSize.addEventListener("input", function () { setThumb(thumbCtxMain(), Number(thSize.value)); });
+  $("#thMinus").addEventListener("click", function () { thumbStep(thumbCtxMain(), -1); });
+  $("#thPlus").addEventListener("click", function () { thumbStep(thumbCtxMain(), 1); });
 
   // ================= skupiny (série + duplikáty) =================
   var groupsOv = $("#groups"), gBody = $("#gBody");
@@ -1849,8 +2890,8 @@ if (typeof module !== "undefined" && module.exports) module.exports = GCore;
       var th = el("span", "th");
       g.ids.slice(0, 6).forEach(function (id) {
         var it = item(id), im = el("img");
-        im.loading = "lazy"; im.alt = ""; im.decoding = "async";
-        im.src = url("/api/thumb", { id: id, s: 128, v: it ? it.mtime : null });
+        im.loading = "lazy"; im.alt = ""; im.decoding = "async"; im.dataset.tid = id;
+        thumbSrc(im, it || { id: id }, C.thumbReq(TS.groups, dpr()));
         th.appendChild(im);
       });
       row.appendChild(th);
@@ -1915,7 +2956,7 @@ if (typeof module !== "undefined" && module.exports) module.exports = GCore;
 
   // ================= porovnávač 2–4 fotiek =================
   var cmpOv = $("#cmp"), cWrap = $("#cWrap");
-  var CM = { ids: [], n: 2, active: 0, panes: [], group: null, link: true, metas: new Map(), exif: store("gexif") !== "0" };
+  var CM = { ids: [], n: 2, active: 0, panes: [], group: null, link: true, metas: new Map(), exif: store("gexif") !== "0", dir: 1 };
   (function buildPanes() {
     for (var p = 0; p < 4; p++) {
       var pane = el("section", "pane");
@@ -1930,7 +2971,8 @@ if (typeof module !== "undefined" && module.exports) module.exports = GCore;
       var mk = el("button", "mk warn", "🗑"); mk.setAttribute("aria-label", "Označiť na zmazanie (X)");
       var dl = el("button", "dl", "⬇"); dl.setAttribute("aria-label", "Stiahnuť (D)");
       var chat = el("button", "chat", "💬"); chat.setAttribute("aria-label", "Do chatu (Shift+D)"); chat.title = "Do chatu — zmenšená kópia pre Claude (Shift+D)";
-      ph.appendChild(keep); ph.appendChild(mk); ph.appendChild(dl); ph.appendChild(chat);
+      var pin = el("button", "pin", "📌"); pin.setAttribute("aria-label", "Pripnúť túto a porovnať s inými (C)"); pin.title = "Pripnúť túto a porovnať s inými fotkami (C)";
+      ph.appendChild(keep); ph.appendChild(mk); ph.appendChild(dl); ph.appendChild(chat); ph.appendChild(pin);
       var stage = el("div", "stage");
       var pf = el("div", "pf");
       pane.appendChild(ph); pane.appendChild(stage); pane.appendChild(pf);
@@ -1939,21 +2981,10 @@ if (typeof module !== "undefined" && module.exports) module.exports = GCore;
       var P = { el: pane, v: v, idx: -1, pf: pf };
       (function (pi, P) {
         v.onchange = function (rel) { if (CM.link) CM.panes.forEach(function (o, k) { if (k !== pi && k < CM.n && o.v.nw) o.v.setRel(rel); }); };
-        v.onload = function () { paintPane(pi); };
+        v.onload = function () { paintPane(pi); if (pi === CM.active) cmpPrefetch(); };
+        v.onpage = function (d) { setActive(pi); cmpStep(d); }; // koliesko nad panelom = predošlá / ďalšia fotka v ňom
         pane.addEventListener("pointerdown", function () { setActive(pi); });
-        // Ctrl+koliesko nad panelom: predošlá / ďalšia fotka v tomto paneli (panel sa stane aktívnym); zoom stránky blokuje dokument
-        var wheelAcc = 0, wheelT = 0;
-        pane.addEventListener("wheel", function (e) {
-          if (!(e.ctrlKey || e.metaKey)) return;
-          e.preventDefault();
-          if (e.timeStamp - wheelT > 400) wheelAcc = 0; // dlhšia pauza = nový pohyb kolieska
-          wheelT = e.timeStamp;
-          wheelAcc += e.deltaMode === 1 ? e.deltaY * 33 : e.deltaY;
-          if (Math.abs(wheelAcc) < 50) return; // jemné kolieska / touchpad: zbiera sa, kým nie je aspoň „zárez"
-          var dir = wheelAcc > 0 ? 1 : -1;
-          wheelAcc = 0;
-          setActive(pi); cmpStep(dir);
-        }, { passive: false });
+        pin.addEventListener("click", function () { var id = CM.ids[P.idx]; if (id != null) openFree(id, { group: CM.group }); });
         keep.addEventListener("click", function () { setActive(pi); keepOnly(); });
         mk.addEventListener("click", function () { var id = CM.ids[P.idx]; if (id != null) toggleMark(id); });
         dl.addEventListener("click", function () { var it = item(CM.ids[P.idx]); if (it) downloadMany([it]); });
@@ -1980,10 +3011,10 @@ if (typeof module !== "undefined" && module.exports) module.exports = GCore;
     buildStrip();
     paintCmpBar();
     paintQual();
-    var next = CM.ids[CM.n]; if (next) prefetch(item(next));
   }
   cmpOv.onclose = function () {
     CM.panes.forEach(function (P) { P.v.clear(); P.idx = -1; });
+    cancelPrefetch();
     if (CM.evalJob) CM.evalJob.cancelled = true;
     CM.ids = []; CM.qgroup = null; CM.evalJob = null;
     if (groupsOv.classList.contains("on")) {
@@ -2038,27 +3069,31 @@ if (typeof module !== "undefined" && module.exports) module.exports = GCore;
     $(".mk", P.el).setAttribute("aria-label", S.marked.has(id) ? "Zrušiť označenie (X)" : "Označiť na zmazanie (X)");
     paintFooters();
   }
+  // päta panelu: čas, MB, rozlíšenie, priečinok; skóre z mobilu; EXIF s rozdielmi (porovnávač aj „Porovnať s…“)
+  function fillFooter(pf, it, v, m, diff, qs) {
+    pf.textContent = "";
+    if (!it) return;
+    pf.appendChild(el("div", "row", infoText(it, v.nw ? { w: v.nw, h: v.nh } : null)));
+    if (qs) { var qr = el("div", "row qs", C.scoreLine(qs)); qr.title = "skóre z mobilu (ostrosť, expozícia, oči, úsmev)"; pf.appendChild(qr); }
+    if (!m) return;
+    var row = el("div", "row ex");
+    C.metaRows(m).forEach(function (r) {
+      if (!r.v) return;
+      if (row.childNodes.length) row.appendChild(document.createTextNode(" · "));
+      var sp = el("span", diff[r.k] ? "diff" : "", r.v);
+      sp.title = r.label;
+      row.appendChild(sp);
+    });
+    pf.appendChild(row);
+  }
   function paintFooters() {
     var shown = CM.panes.slice(0, CM.n).map(function (P) { return CM.metas.get(CM.ids[P.idx]) || null; });
     var diff = C.metaDiff(shown.filter(Boolean).length >= 2 ? shown : []);
     CM.panes.slice(0, CM.n).forEach(function (P, k) {
       var it = item(CM.ids[P.idx]);
       if (!it) return;
-      P.pf.textContent = "";
-      P.pf.appendChild(el("div", "row", infoText(it, P.v.nw ? { w: P.v.nw, h: P.v.nh } : null)));
       var qg = CM.group || CM.qgroup, qs = qg && qg.qscores ? qg.qscores[CM.ids[P.idx]] : null;
-      if (qs) { var qr = el("div", "row qs", C.scoreLine(qs)); qr.title = "skóre z mobilu (ostrosť, expozícia, oči, úsmev)"; P.pf.appendChild(qr); }
-      var m = shown[k];
-      if (!m) return;
-      var row = el("div", "row ex");
-      C.metaRows(m).forEach(function (r) {
-        if (!r.v) return;
-        if (row.childNodes.length) row.appendChild(document.createTextNode(" · "));
-        var s = el("span", diff[r.k] ? "diff" : "", r.v);
-        s.title = r.label;
-        row.appendChild(s);
-      });
-      P.pf.appendChild(row);
+      fillFooter(P.pf, it, P.v, shown[k], diff, qs);
     });
   }
   function fetchMeta() {
@@ -2078,7 +3113,8 @@ if (typeof module !== "undefined" && module.exports) module.exports = GCore;
       d.type = "button"; d.dataset.i = i;
       d.setAttribute("role", "listitem");
       var im = el("img");
-      im.loading = "lazy"; im.alt = ""; im.src = url("/api/thumb", { id: id, s: 128, v: it ? it.mtime : null });
+      im.loading = "lazy"; im.alt = ""; im.dataset.tid = id;
+      thumbSrc(im, it || { id: id }, C.thumbReq(TS.strip, dpr()));
       d.appendChild(im);
       d.appendChild(el("span", "sb"));
       d.appendChild(el("span", "del", "🗑"));
@@ -2134,11 +3170,17 @@ if (typeof module !== "undefined" && module.exports) module.exports = GCore;
     paintStrip(); fetchMeta();
     var th = $("#strip").querySelector('.sthumb[data-i="' + CM.panes[CM.active].idx + '"]');
     if (th) th.scrollIntoView({ inline: "nearest", block: "nearest" });
-    var nx = CM.ids[CM.panes[CM.active].idx + 1]; if (nx != null) prefetch(item(nx));
   }
-  // ←/→ a Ctrl+koliesko: zmení fotku LEN v aktívnom paneli — ďalšia (predošlá), ktorá nie je zobrazená v inom paneli
+  // prednačítať ďalšiu fotku aktívneho panelu v smere listovania (len jednu, až keď je aktuálna načítaná)
+  function cmpPrefetch() {
+    var P = CM.panes[CM.active], used = CM.panes.slice(0, CM.n).map(function (o) { return o.idx; }), n = P.idx;
+    do { n += CM.dir; } while (n >= 0 && n < CM.ids.length && used.indexOf(n) >= 0);
+    prefetchNext(n >= 0 && n < CM.ids.length ? item(CM.ids[n]) : null);
+  }
+  // ←/→ a koliesko: zmení fotku LEN v aktívnom paneli — ďalšia (predošlá), ktorá nie je zobrazená v inom paneli
   function cmpStep(dir) {
     var P = CM.panes[CM.active], cur = P.idx;
+    CM.dir = dir;
     var used = CM.panes.slice(0, CM.n).map(function (o) { return o.idx; }), n = cur;
     do { n += dir; } while (n >= 0 && n < CM.ids.length && used.indexOf(n) >= 0);
     if (n < 0 || n >= CM.ids.length) { toast(dir > 0 ? "Ďalšia fotka už nie je" : "Predošlá fotka už nie je"); return; }
@@ -2170,8 +3212,11 @@ if (typeof module !== "undefined" && module.exports) module.exports = GCore;
     CM.exif = !CM.exif;
     store("gexif", CM.exif ? "1" : "0");
     cmpOv.classList.toggle("noexif", !CM.exif);
+    fcOv.classList.toggle("noexif", !CM.exif);
     $("#cExif").setAttribute("aria-pressed", CM.exif ? "true" : "false");
+    $("#fExif").setAttribute("aria-pressed", CM.exif ? "true" : "false");
   }
+  $("#cFq").addEventListener("click", function () { setFQ(!FQ.on); });
   $("#cClose").addEventListener("click", function () { closeOv(cmpOv); });
   $("#cDone").addEventListener("click", function () { finishGroup("done"); });
   $("#cSkip").addEventListener("click", function () { finishGroup("skip"); });
@@ -2375,6 +3420,437 @@ if (typeof module !== "undefined" && module.exports) module.exports = GCore;
     }).catch(function () { });
   }
 
+  // ================= „Porovnať s…“: vľavo pripnutá fotka, vpravo ľubovoľná iná =================
+  // Vpravo sa listuje fotkami z rozsahu (aktuálny filter / celá knižnica / tento priečinok / táto skupina), hore je
+  // ich pás. Značky (X) a Ctrl+Z ako v porovnávači skupín; keď sú označené skryté, označená vpravo zmizne a príde
+  // ďalšia (pripnutá ostáva s červenou značkou).
+  var fcOv = $("#fcmp"), fWrap = $("#fWrap"), fScope = $("#fScope");
+  var FC = { pin: null, ids: [], idx: -1, scope: "view", group: null, active: 1, link: true, dir: 1, panes: [], tiles: null };
+  function fcItem(p) { return p === 0 ? item(FC.pin) : item(FC.ids[FC.idx]); }
+  (function buildFcPanes() {
+    for (var p = 0; p < 2; p++) {
+      var pane = el("section", "pane");
+      pane.dataset.p = p;
+      pane.setAttribute("aria-label", p ? "Porovnávaná fotka (vpravo)" : "Pripnutá fotka (vľavo)");
+      var ph = el("div", "ph");
+      ph.appendChild(el("span", "role", p ? "porovnávaná" : "📌 pripnutá"));
+      ph.appendChild(el("span", "act", "aktívny"));
+      ph.appendChild(el("span", "nm"));
+      ph.appendChild(el("span", "st"));
+      var pinB = null;
+      if (p === 1) { pinB = el("button", "", "📌 Pripnúť sem"); pinB.title = "Pripnúť túto fotku vľavo (P)"; ph.appendChild(pinB); }
+      var mk = el("button", "mk warn", "🗑"); mk.setAttribute("aria-label", "Označiť na zmazanie (X)");
+      var dl = el("button", "dl", "⬇"); dl.setAttribute("aria-label", "Stiahnuť (D)");
+      ph.appendChild(mk); ph.appendChild(dl);
+      var stage = el("div", "stage"), pf = el("div", "pf");
+      pane.appendChild(ph); pane.appendChild(stage); pane.appendChild(pf);
+      fWrap.appendChild(pane);
+      var P = { el: pane, v: Viewer(stage), pf: pf, id: null };
+      (function (pi, P) {
+        P.v.onchange = function (rel) { var o = FC.panes[1 - pi]; if (FC.link && o.v.nw) o.v.setRel(rel); };
+        P.v.onload = function () { fcFooters(); if (pi === 1) prefetchNext(item(FC.ids[FC.idx + FC.dir])); };
+        P.v.onpage = function (d) { fcStep(d, true); }; // koliesko nad ktorýmkoľvek panelom listuje pravú stranu
+        pane.addEventListener("pointerdown", function () { fcActive(pi); });
+        if (pinB) pinB.addEventListener("click", function () { fcPinRight(); });
+        mk.addEventListener("click", function () { var it = fcItem(pi); if (it) toggleMark(it.id); });
+        dl.addEventListener("click", function () { var it = fcItem(pi); if (it) downloadMany([it]); });
+      })(p, P);
+      FC.panes.push(P);
+    }
+  })();
+  FC.tiles = Tiles($("#fStrip"), {
+    ctx: "strip", horiz: function () { return true; },
+    count: function () { return FC.ids.length; },
+    make: function (i, px) {
+      var it = item(FC.ids[i]), c = el("button", "cell");
+      c.type = "button"; c.dataset.i = i; c.setAttribute("role", "listitem");
+      var img = el("img");
+      img.alt = ""; img.decoding = "async";
+      img.addEventListener("load", function () { img.classList.add("on"); });
+      img.addEventListener("error", function () { img.classList.add("on"); img.style.opacity = ".25"; });
+      thumbSrc(img, it, px);
+      c.appendChild(img);
+      c.appendChild(el("span", "mark", "🗑"));
+      fcPaintCell(c, i);
+      return c;
+    },
+    refresh: function (c, i, px) { thumbSrc(c.firstChild, item(FC.ids[i]), px); fcPaintCell(c, i); }
+  });
+  function fcPaintCell(c, i) {
+    var it = item(FC.ids[i]);
+    if (!it) return;
+    c.classList.toggle("shown", i === FC.idx);
+    c.classList.toggle("ismark", S.marked.has(it.id));
+    c.setAttribute("aria-label", it.name + ", " + C.fmtDate(it.taken) + (i === FC.idx ? ", vpravo" : "") + (S.marked.has(it.id) ? ", na zmazanie" : ""));
+    c.title = it.name + " · klik = vpravo, Alt + klik = pripnúť vľavo";
+  }
+  function groupOf(id) {
+    if (FC.group && FC.group.ids.indexOf(id) >= 0) return FC.group;
+    return (S.groups || []).filter(function (g) { return g.ids.indexOf(id) >= 0; })[0] || null;
+  }
+  function fcBase() {
+    var pin = item(FC.pin);
+    switch (FC.scope) {
+      case "all": return S.items;
+      case "folder": return S.items.filter(function (x) { return pin && x.bucket === pin.bucket; });
+      case "group": return FC.group ? FC.group.ids.map(item).filter(Boolean) : [];
+      default: return S.view;
+    }
+  }
+  // reset = nový začiatok (vpravo fotka hneď za pripnutou), inak ostane tá istá (alebo tá, čo prišla na jej miesto)
+  function fcRebuild(reset) {
+    var base = fcBase(), r = C.freeList(base, FC.pin, S.marked, S.hideMarked);
+    if (r.ids.length && !base.some(function (x) { return x.id === FC.pin; })) r.start = Math.max(0, C.anchorIndex(r.ids.map(item), S.items, FC.pin));
+    var old = FC.ids, oldIdx = FC.idx;
+    FC.ids = r.ids;
+    FC.idx = reset || oldIdx < 0 ? r.start : C.reindex(old, oldIdx, r.ids);
+    fcScopeUi();
+  }
+  function fcScopeUi() {
+    fScope.value = FC.scope;
+    var go = fScope.querySelector('option[value="group"]');
+    go.disabled = !FC.group;
+    go.textContent = FC.group ? "táto skupina (" + C.photos(FC.group.ids.length) + ")" : "táto skupina (fotka nie je v skupine)";
+  }
+  function fcActive(p) {
+    FC.active = p;
+    FC.panes.forEach(function (P, k) { P.el.classList.toggle("active", k === p); });
+  }
+  function fcLoad(p, reset) {
+    var P = FC.panes[p], it = fcItem(p);
+    if (!it) { P.id = null; P.v.clear(); fcPaintPane(p); return; }
+    if (P.id !== it.id || reset) {
+      var o = FC.panes[1 - p].v, rel = !reset && FC.link && o.nw ? o.rel : null;
+      if (rel) P.v.rel = { cx: rel.cx, cy: rel.cy, z: rel.z };
+      P.id = it.id;
+      P.v.load(srcFor(it), !!rel);
+    }
+    fcPaintPane(p);
+  }
+  function fcShow(reset) {
+    fcLoad(0, reset); fcLoad(1, reset);
+    FC.tiles.layout(); FC.tiles.render(true); FC.tiles.ensure(FC.idx);
+    fcMeta(); fcBar();
+  }
+  function openFree(id, opt) {
+    opt = opt || {};
+    var it = item(id);
+    if (!it || !C.isImage(it.mime)) { toast("„Porovnať s…“ funguje len pre fotky"); return; }
+    FC.pin = it.id;
+    FC.group = opt.group && opt.group.ids.indexOf(it.id) >= 0 ? opt.group : null;
+    FC.group = FC.group || groupOf(it.id);
+    FC.scope = opt.group && FC.group ? "group" : (store("gfscope") || "view");
+    if (FC.scope === "group" && !FC.group) FC.scope = "folder";
+    FC.ids = []; FC.idx = -1; FC.dir = 1;
+    fcRebuild(true);
+    fcOv.classList.toggle("noexif", !CM.exif);
+    $("#fExif").setAttribute("aria-pressed", CM.exif ? "true" : "false");
+    $("#fLink").checked = FC.link;
+    if (!fcOv.classList.contains("on")) openOv(fcOv);
+    fcActive(1);
+    fcShow(true);
+    if (!S.groups) loadGroups(false).then(function () {
+      if (fcOv.classList.contains("on") && !FC.group) { FC.group = groupOf(FC.pin); fcScopeUi(); }
+    });
+  }
+  fcOv.onclose = function () { FC.panes.forEach(function (P) { P.v.clear(); P.id = null; }); cancelPrefetch(); };
+  function fcRefresh() {
+    if (!fcOv.classList.contains("on")) return;
+    fcRebuild(false);
+    FC.tiles.layout(); FC.tiles.render(true);
+    if (FC.panes[1].id !== FC.ids[FC.idx]) { fcLoad(1, false); FC.tiles.ensure(FC.idx); }
+    fcPaintPane(0); fcPaintPane(1); fcBar();
+  }
+  function fcGo(n) {
+    if (!FC.ids.length) return;
+    n = Math.min(Math.max(n, 0), FC.ids.length - 1);
+    if (n === FC.idx) return;
+    FC.dir = n < FC.idx ? -1 : 1;
+    FC.idx = n;
+    fcLoad(1, false);
+    FC.tiles.render(false); FC.tiles.ensure(FC.idx);
+    fcMeta(); fcBar();
+  }
+  function fcStep(d, wheel) {
+    var n = FC.idx + d;
+    if (n < 0 || n >= FC.ids.length) { if (wheel || FC.ids.length) toast(d > 0 ? "Ďalšia fotka už nie je" : "Predošlá fotka už nie je"); return; }
+    fcGo(n);
+  }
+  // pripnúť inú fotku: pravá ostane (ak to nie je práve ona), inak príde fotka hneď za novou pripnutou
+  function fcPin(id, keepRight) {
+    if (id == null || id === FC.pin) return;
+    var right = FC.ids[FC.idx];
+    FC.pin = id;
+    if (FC.scope === "group" && FC.group && FC.group.ids.indexOf(id) < 0) FC.scope = "folder";
+    fcRebuild(true);
+    var k = keepRight && right !== id ? FC.ids.indexOf(right) : -1;
+    if (k >= 0) FC.idx = k;
+    fcShow(false);
+  }
+  function fcPinRight() { var r = FC.ids[FC.idx]; if (r != null) { fcPin(r, false); toast("Pripnutá: " + item(r).name); } }
+  // T: pripnutá a porovnávaná si vymenia strany
+  function fcSwap() {
+    var r = FC.ids[FC.idx], old = FC.pin;
+    if (r == null) return;
+    FC.pin = r;
+    fcRebuild(true);
+    var k = FC.ids.indexOf(old);
+    if (k >= 0) FC.idx = k;
+    fcShow(false);
+  }
+  function fcPaintPane(p) {
+    var P = FC.panes[p], it = fcItem(p);
+    $(".nm", P.el).textContent = it ? it.name : (p ? "Nie je s čím porovnať – zmeň „Vpravo“" : "");
+    $(".nm", P.el).title = it ? (it.relpath || it.name) : "";
+    var st = $(".st", P.el);
+    st.textContent = "";
+    if (it && S.marked.has(it.id)) st.appendChild(el("span", "tag del", "🗑 na zmazanie"));
+    else if (it && S.synced.has(it.id)) st.appendChild(el("span", "tag ok", "✓ v PC"));
+    $(".mk", P.el).textContent = it && S.marked.has(it.id) ? "↩" : "🗑";
+    $(".mk", P.el).setAttribute("aria-label", it && S.marked.has(it.id) ? "Zrušiť označenie (X)" : "Označiť na zmazanie (X)");
+    $$("button", $(".ph", P.el)).forEach(function (b) { b.disabled = !it; });
+    fcFooters();
+  }
+  function fcFooters() {
+    var its = [fcItem(0), fcItem(1)], metas = its.map(function (it) { return it ? CM.metas.get(it.id) || null : null; });
+    var diff = C.metaDiff(metas[0] && metas[1] ? metas : []);
+    FC.panes.forEach(function (P, k) { fillFooter(P.pf, its[k], P.v, metas[k], diff, null); });
+  }
+  function fcMeta() {
+    var need = [FC.pin, FC.ids[FC.idx]].filter(function (id) { return id != null && !CM.metas.has(id); });
+    if (!need.length) { fcFooters(); return; }
+    get("/api/meta", { ids: need.join(",") }).then(function (r) {
+      Object.keys(r).forEach(function (k) { CM.metas.set(Number(k), r[k]); });
+      fcFooters();
+    }).catch(function () { });
+  }
+  var SCOPE_TXT = { view: "aktuálny filter", all: "celá knižnica", folder: "tento priečinok", group: "táto skupina" };
+  function fcBar() {
+    var a = item(FC.pin), b = fcItem(1);
+    $("#fTitle").textContent = "Porovnať s… · " + (a ? a.name : "") + " ↔ " + (b ? b.name + " · " + (FC.idx + 1) + " / " + FC.ids.length : "nič") +
+      " · vpravo: " + SCOPE_TXT[FC.scope];
+    FC.tiles.mounted.forEach(function (c, i) { fcPaintCell(c, i); });
+  }
+  function fcSetScope(sc) {
+    if (sc === "group" && !FC.group) return;
+    FC.scope = sc;
+    if (sc !== "group") store("gfscope", sc);
+    fcRebuild(true);
+    $("#fStrip").scrollLeft = 0;
+    fcShow(false);
+  }
+  fScope.addEventListener("change", function () { fcSetScope(fScope.value); });
+  function fcCycleScope() {
+    var order = ["view", "all", "folder", "group"].filter(function (x) { return x !== "group" || FC.group; });
+    fcSetScope(order[(order.indexOf(FC.scope) + 1) % order.length]);
+    toast("Vpravo: " + SCOPE_TXT[FC.scope]);
+  }
+  $("#fStrip").addEventListener("click", function (e) {
+    var c = e.target.closest(".cell");
+    if (!c) return;
+    var i = Number(c.dataset.i);
+    if (e.altKey) { e.preventDefault(); fcPin(FC.ids[i], true); return; } // Alt + klik = pripnúť vľavo
+    fcGo(i);
+  });
+  $("#fClose").addEventListener("click", function () { closeOv(fcOv); });
+  $("#fLink").addEventListener("change", function () { FC.link = $("#fLink").checked; });
+  $("#fFit").addEventListener("click", fcFit);
+  function fcFit() { FC.panes.forEach(function (P) { P.v.rel = { cx: 0.5, cy: 0.5, z: 1 }; P.v.setRel(P.v.rel); }); }
+  $("#fExif").addEventListener("click", function () { toggleExif(); });
+  $("#fFq").addEventListener("click", function () { setFQ(!FQ.on); });
+  $("#fSwap").addEventListener("click", fcSwap);
+
+  // ================= vlastné kontextové menu (pravé tlačidlo, kláves Menu, Shift+F10) =================
+  // Shift + pravé tlačidlo nechá pôvodné menu prehliadača. Šípky, Home/End, Enter; Esc alebo Tab zavrie.
+  var ctxEl = $("#ctx"), CTX = { open: false, back: null, kbdT: 0 };
+  function ctxListTarget(where, i, elx) { var it = S.view[i]; return it ? { where: where, id: it.id, idx: i, el: elx } : null; }
+  // na čo sa menu vzťahuje podľa miesta kliknutia
+  function ctxTargetAt(t) {
+    if (!t || !t.closest || t.closest("#ctx")) return null;
+    var ov = topOv(), c;
+    if (!ov) {
+      if ((c = t.closest("#grid .cell"))) return ctxListTarget("grid", Number(c.dataset.i), c);
+      if ((c = t.closest("#pList .cell"))) return ctxListTarget("list", Number(c.dataset.i), c);
+      if (S.mode === "preview" && t.closest("#pStage") && !t.closest("video")) return ctxListTarget("preview", S.cur, pStage);
+      return null;
+    }
+    if (ov === viewerOv) { var vi = vCur(); return vi && t.closest("#vStage") && !t.closest("video,button") ? { where: "viewer", id: vi.id, el: vStage } : null; }
+    if (ov === cmpOv) {
+      if ((c = t.closest("#strip .sthumb"))) return { where: "strip", id: CM.ids[Number(c.dataset.i)], el: c };
+      if ((c = t.closest(".pane"))) { var p = Number(c.dataset.p), id = CM.ids[CM.panes[p].idx]; return id != null ? { where: "cmp", id: id, el: c, pane: p } : null; }
+      return null;
+    }
+    if (ov === fcOv) {
+      if ((c = t.closest("#fStrip .cell"))) { var sid = FC.ids[Number(c.dataset.i)]; return sid != null ? { where: "strip", id: sid, el: c } : null; }
+      if ((c = t.closest(".pane"))) { var fp = Number(c.dataset.p), fi = fcItem(fp); return fi ? { where: "fcmp", id: fi.id, el: c, pane: fp } : null; }
+    }
+    return null;
+  }
+  // kláves Menu / Shift+F10: aktuálna fotka obrazovky
+  function ctxTargetKey() {
+    var ov = topOv(), it;
+    if (!ov) {
+      if (S.cur < 0) return null;
+      return S.mode === "preview" ? ctxListTarget("preview", S.cur, PV.tiles.mounted.get(S.cur) || pStage) : ctxListTarget("grid", S.cur, GV.mounted.get(S.cur) || grid);
+    }
+    if (ov === viewerOv) { it = vCur(); return it ? { where: "viewer", id: it.id, el: vStage } : null; }
+    if (ov === cmpOv) { var P = CM.panes[CM.active], id = CM.ids[P.idx]; return id != null ? { where: "cmp", id: id, el: P.el, pane: CM.active } : null; }
+    if (ov === fcOv) { it = fcItem(FC.active); return it ? { where: "fcmp", id: it.id, el: FC.panes[FC.active].el, pane: FC.active } : null; }
+    return null;
+  }
+  function ctxInfo(tg) {
+    var it = item(tg.id), lists = tg.where === "grid" || tg.where === "list" || tg.where === "preview", sel = Array.from(S.sel);
+    var c = {
+      where: tg.where, sel: S.sel.size, inSel: lists && S.sel.has(tg.id), selected: S.sel.has(tg.id), marked: S.marked.has(tg.id),
+      selMarked: sel.length > 0 && sel.every(function (x) { return S.marked.has(x); }), image: !!it && C.isImage(it.mime), range: null
+    };
+    // interval od kotvy (naposledy kliknutej) po túto fotku
+    if (lists && tg.idx != null && S.anchor != null && S.anchor !== tg.id) {
+      var ai = C.anchorIndex(S.view, S.items, S.anchor);
+      if (ai >= 0) {
+        var all = C.rangeIds(S.view, ai, tg.idx), has = function (set) { return function (x) { return set.has(x); }; };
+        var no = function (set) { return function (x) { return !set.has(x); }; };
+        c.range = { n: all.length, a: ai, b: tg.idx, selOn: all.some(no(S.sel)), selOff: all.some(has(S.sel)), markOn: all.some(no(S.marked)), markOff: all.some(has(S.marked)) };
+      }
+    }
+    return c;
+  }
+  function openCtx(tg, x, y) {
+    closeCtx(false);
+    var info = ctxInfo(tg);
+    ctxEl.textContent = "";
+    C.ctxItems(info).forEach(function (m) {
+      if (m.sep && ctxEl.childNodes.length) { var sp = el("div", "sep"); sp.setAttribute("role", "separator"); ctxEl.appendChild(sp); }
+      var b = el("button", "", m.label);
+      b.type = "button"; b.tabIndex = -1; b.disabled = !!m.disabled;
+      b.setAttribute("role", "menuitem");
+      b.dataset.act = m.id;
+      b.addEventListener("click", function () { closeCtx(true); runCtx(m.id, tg, info); });
+      ctxEl.appendChild(b);
+    });
+    CTX.open = true;
+    CTX.back = document.activeElement;
+    ctxEl.hidden = false;
+    var W = window.innerWidth, H = window.innerHeight, r = ctxEl.getBoundingClientRect();
+    if (x == null) {
+      var er = tg.el && tg.el.getBoundingClientRect ? tg.el.getBoundingClientRect() : { left: W / 2, top: H / 2, width: 0, height: 0 };
+      x = er.left + Math.min(er.width / 2, 40); y = er.top + Math.min(er.height / 2, 40);
+    }
+    ctxEl.style.left = Math.max(8, Math.min(x, W - r.width - 8)) + "px";
+    ctxEl.style.top = Math.max(8, Math.min(y, H - r.height - 8)) + "px";
+    var first = ctxButtons()[0];
+    if (first) first.focus({ preventScroll: true });
+  }
+  function ctxButtons() { return $$("button", ctxEl).filter(function (b) { return !b.disabled; }); }
+  function closeCtx(restore) {
+    if (!CTX.open) return;
+    CTX.open = false;
+    ctxEl.hidden = true;
+    ctxEl.textContent = "";
+    var b = CTX.back;
+    CTX.back = null;
+    if (restore === false) return;
+    if (b && document.contains(b) && b.focus) b.focus({ preventScroll: true });
+    else { var t = topOv(); if (t) t.focus({ preventScroll: true }); }
+  }
+  function ctxKeys(e) {
+    var bs = ctxButtons(), i = bs.indexOf(document.activeElement);
+    switch (e.key) {
+      case "ArrowDown": e.preventDefault(); if (bs.length) bs[(i + 1) % bs.length].focus(); break;
+      case "ArrowUp": e.preventDefault(); if (bs.length) bs[(i - 1 + bs.length) % bs.length].focus(); break;
+      case "Home": e.preventDefault(); if (bs.length) bs[0].focus(); break;
+      case "End": e.preventDefault(); if (bs.length) bs[bs.length - 1].focus(); break;
+      case "Escape": case "Tab": case "ContextMenu": e.preventDefault(); closeCtx(true); break;
+      case "Enter": case " ": if (i < 0) e.preventDefault(); break; // na položke ju stlačí prehliadač
+      default: if (e.key === "F10" && e.shiftKey) { e.preventDefault(); closeCtx(true); }
+    }
+  }
+  // kopírovanie názvu: na adrese v LAN (http) nie je navigator.clipboard, preto aj starší spôsob
+  function copyText(t) {
+    var done = function () { toast("Skopírované: " + (t.length > 70 ? t.slice(0, 67) + "…" : t)); };
+    var legacy = function () {
+      var back = document.activeElement, ta = el("textarea");
+      ta.value = t; ta.setAttribute("readonly", ""); ta.style.cssText = "position:fixed;left:-9999px;top:0;opacity:0";
+      document.body.appendChild(ta); ta.select();
+      var ok = false;
+      try { ok = document.execCommand("copy"); } catch (e) { ok = false; }
+      ta.remove();
+      if (back && back.focus) back.focus({ preventScroll: true });
+      if (ok) done(); else toast("Kopírovanie nepovolil prehliadač – názov: " + t);
+    };
+    if (navigator.clipboard && window.isSecureContext) navigator.clipboard.writeText(t).then(done, legacy); else legacy();
+  }
+  function openInPreview(id) {
+    for (var k = 0; k < 6 && topOv(); k++) closeOv(topOv());
+    var i = S.view.findIndex(function (x) { return x.id === id; });
+    if (S.mode !== "preview") setMode("preview");
+    if (i >= 0) setCursor(i); else toast("Fotka nie je v aktuálnom zobrazení (filter alebo skryté označené)");
+  }
+  function runCtx(act, tg, info) {
+    var it = item(tg.id);
+    if (!it) return;
+    var multi = info.inSel && info.sel > 1, list = multi ? selItems() : [it];
+    switch (act) {
+      case "mark": {
+        var plan = C.markPlan(multi ? Array.from(S.sel) : [], tg.id, S.marked);
+        if (!multi) S.anchor = tg.id;
+        setMarks(plan.ids, plan.del).then(function (ch) { if (multi) toast((plan.del ? "Označené na zmazanie: " : "Zrušená značka: ") + C.photos(ch.length) + " · Ctrl+Z vráti"); }).catch(function () { });
+        break;
+      }
+      case "sel": S.anchor = tg.id; toggleSel(tg.id); break;
+      case "selall": selectShown(); break;
+      case "selnone": setSelMode(false); break;
+      case "rsel": case "runsel": selectRangeTo(info.range.b, act === "rsel"); break;
+      case "rmark": case "runmark": markRangeTo(info.range.b, act === "rmark"); break;
+      case "with": openFree(tg.id, { group: topOv() === cmpOv ? CM.group : null }); break;
+      case "preview": openInPreview(tg.id); break;
+      case "full": { var k = S.view.findIndex(function (x) { return x.id === tg.id; }); if (k >= 0) openViewer(S.view, k); break; }
+      case "dl": downloadMany(list, { reduced: false }); break;
+      case "copy": copyText(list.map(function (x) { return x.name; }).join("\n")); break;
+    }
+  }
+  document.addEventListener("contextmenu", function (e) {
+    if (Date.now() - CTX.kbdT < 800) { e.preventDefault(); return; } // už otvorené klávesom Menu / Shift+F10
+    if (e.shiftKey) return; // Shift + pravé tlačidlo = menu prehliadača
+    var tg = ctxTargetAt(e.target);
+    if (!tg) return;
+    e.preventDefault();
+    if (tg.where === "grid") setCursor(tg.idx, false);
+    if (tg.where === "cmp") setActive(tg.pane);
+    if (tg.where === "fcmp") fcActive(tg.pane);
+    var kb = e.button !== 2 && !e.clientX && !e.clientY;
+    openCtx(tg, kb ? null : e.clientX, kb ? null : e.clientY);
+  });
+  document.addEventListener("pointerdown", function (e) { if (CTX.open && !ctxEl.contains(e.target)) closeCtx(false); }, true);
+  document.addEventListener("scroll", function () { if (CTX.open) closeCtx(false); }, true);
+  window.addEventListener("resize", function () { closeCtx(false); });
+  window.addEventListener("blur", function () { closeCtx(false); });
+
+  // ================= koliesko mimo fotky =================
+  // Fotka (.stage) má vlastnú obsluhu vo Viewer. Inde: Ctrl + koliesko nad zoznamom mení veľkosť jeho miniatúr,
+  // nad lištou vrstvy s fotkami nerobí nič (zoom stránky by rozbil rozloženie); v pomocníkovi a dialógoch ostáva
+  // zoom stránky prehliadača. Obyčajné koliesko nad zoznamom scrolluje, nad vodorovným pásom ho posúva do strany.
+  function wheelZone(t) {
+    var ov = topOv();
+    if (ov === helpOv || ov === loginOv || ov === $("#ask") || ov === workOv) return { where: "none" };
+    var s = t.closest ? t.closest("#strip,#fStrip") : null;
+    if (s) return { where: "strip", ctx: "strip", el: s };
+    if (ov === groupsOv) return { where: "list", ctx: "groups" };
+    if (ov === markedOv || ov === binOv) return { where: "list", ctx: "grid" };
+    if (ov) return { where: "bar" };
+    if (S.mode === "preview") return pvHoriz() && t.closest && t.closest("#pList") ? { where: "strip", ctx: "list", el: pList } : { where: "list", ctx: "list" };
+    return { where: "list", ctx: "grid" };
+  }
+  window.addEventListener("wheel", function (e) {
+    if (CTX.open) closeCtx(false);
+    var t = e.target && e.target.closest ? e.target : document.body;
+    if (t.closest(".stage")) return;
+    var z = wheelZone(t), a = C.wheelAction(e, z.where);
+    if (a === "thumbs") { e.preventDefault(); setThumb(z.ctx, TS[z.ctx] * C.wheelZoom(e.deltaY, e.deltaMode), e); }
+    else if (a === "hscroll") { e.preventDefault(); z.el.scrollLeft += C.wheelPx(Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY, e.deltaMode); }
+    else if (a === "block") e.preventDefault();
+  }, { passive: false, capture: true });
+
   // ================= prehľad „Na zmazanie" =================
   var markedOv = $("#marked");
   function openMarked() { openOv(markedOv); renderMarked(); }
@@ -2398,7 +3874,8 @@ if (typeof module !== "undefined" && module.exports) module.exports = GCore;
     list.forEach(function (it, i) {
       var c = el("div", "mcell"), b = el("button", "mimg"), im = el("img");
       b.type = "button"; b.setAttribute("aria-label", "Otvoriť " + it.name);
-      im.loading = "lazy"; im.alt = ""; im.src = url("/api/thumb", { id: it.id, s: 300, v: it.mtime });
+      im.loading = "lazy"; im.alt = ""; im.dataset.tid = it.id;
+      thumbSrc(im, it, C.thumbReq(TS.grid, dpr()));
       b.appendChild(im);
       b.addEventListener("click", function () { openViewer(list, i); });
       c.appendChild(b);
@@ -2504,7 +3981,8 @@ if (typeof module !== "undefined" && module.exports) module.exports = GCore;
       btn.type = "button";
       btn.setAttribute("aria-pressed", BIN.picked.has(b.key) ? "true" : "false");
       btn.setAttribute("aria-label", "Vybrať " + b.name);
-      im.loading = "lazy"; im.alt = ""; im.src = url("/api/thumb", { bin: b.key, s: 300 });
+      im.loading = "lazy"; im.alt = ""; im.dataset.bin = b.key;
+      thumbSrc(im, { bin: b.key }, C.thumbReq(TS.grid, dpr()));
       btn.appendChild(im);
       btn.addEventListener("click", function () {
         if (BIN.picked.has(b.key)) BIN.picked.delete(b.key); else BIN.picked.add(b.key);
@@ -2560,17 +4038,68 @@ if (typeof module !== "undefined" && module.exports) module.exports = GCore;
       sec.appendChild(tb);
       body.appendChild(sec);
     });
-    var note = el("p", "hint", "Označenie je len návrh. Zmazanie potvrdíš v mobile (appka sa opýta pri otvorení), " +
-      "alebo v prehľade „Na zmazanie“ tlačidlom „Zmazať do Koša teraz“, ak má Galéria+ prístup ku všetkým súborom.");
-    note.style.flexBasis = "100%";
-    body.appendChild(note);
+    [
+      "Koliesko všade rovnako: nad fotkou listuje (predošlá / ďalšia), s Ctrl približuje ku kurzoru (aj pinch na touchpade), so Shift posúva do strany. " +
+        "Nad zoznamom scrolluje, s Ctrl mení veľkosť miniatúr. Zoom celej stránky ostáva v menu prehliadača (Ctrl+0 ho vráti).",
+      "Plná kvalita (O): bez nej sa najprv ukáže náhľad 2560 px a originál až pri priblížení; so zapnutou hneď originál. HEIC a DNG prehliadač " +
+        "nezobrazí, preto ich mobil pošle ako JPEG v plnom rozlíšení (do 4096 px). Štítok vpravo hore v každom paneli hovorí, čo práve vidíš.",
+      "Sťahovanie: viac fotiek príde ako jeden ZIP do priečinka Stiahnuté súbory (Ctrl+J). Ak Chrome hlási „nezabezpečené stiahnutie“, klikni " +
+        "Ponechať; ak sa pýta na „sťahovanie viacerých súborov“, klikni Povoliť. Posuvník „Kvalita zmenšeného JPEG“ platí len pre zmenšené sťahovanie.",
+      "Označenie je len návrh. Fotky označené na zmazanie sú predvolene skryté (H ich ukáže stlmené). Zmazanie potvrdíš v mobile (appka sa opýta " +
+        "pri otvorení), alebo v prehľade „Na zmazanie“ tlačidlom „Zmazať do Koša teraz“, ak má Galéria+ prístup ku všetkým súborom."
+    ].forEach(function (t) {
+      var note = el("p", "hint", t);
+      note.style.flexBasis = "100%";
+      note.style.margin = "0";
+      body.appendChild(note);
+    });
   })();
   function helpScreen() {
     var ov = topOv();
-    return ov === cmpOv ? "cmp" : ov === viewerOv ? "viewer" : ov === groupsOv ? "groups" : ov === markedOv ? "marked" : ov === binOv ? "bin" : "grid";
+    return ov === cmpOv ? "cmp" : ov === fcOv ? "fcmp" : ov === viewerOv ? "viewer" : ov === groupsOv ? "groups" : ov === markedOv ? "marked"
+      : ov === binOv ? "bin" : S.mode === "preview" ? "preview" : "grid";
   }
+  // „Diagnostika servera“: /api/stats ako tabuľka; tlačidlo sa ukáže, len keď ho server má (inak 404)
+  var DIAG = { known: null };
+  function probeDiag() {
+    if (DIAG.known !== null) return;
+    DIAG.known = false;
+    fetch("/api/stats", { credentials: "same-origin", headers: headers(false) }).then(function (r) {
+      DIAG.known = r.ok;
+      $("#hDiag").hidden = !r.ok;
+    }).catch(function () { });
+  }
+  function showDiag() {
+    var box = $("#hDiagBox"), b = $("#hDiag");
+    box.hidden = false;
+    b.setAttribute("aria-expanded", "true");
+    box.textContent = "";
+    box.appendChild(el("p", "hint", "Načítavam diagnostiku…"));
+    get("/api/stats").then(function (j) {
+      box.textContent = "";
+      var sec = el("section");
+      sec.appendChild(el("h2", "", "Diagnostika servera"));
+      var tb = el("table");
+      C.statsRows(j).forEach(function (r) {
+        var tr = el("tr");
+        tr.appendChild(el("td", "", r.k)); tr.appendChild(el("td", "", r.v));
+        tb.appendChild(tr);
+      });
+      sec.appendChild(tb);
+      var again = el("button", "", "↻ Obnoviť");
+      again.addEventListener("click", showDiag);
+      sec.appendChild(again);
+      box.appendChild(sec);
+    }).catch(function (e) { box.textContent = ""; box.appendChild(el("p", "hint", "Diagnostiku sa nepodarilo načítať (" + e.message + ").")); });
+  }
+  $("#hDiag").addEventListener("click", function () {
+    var box = $("#hDiagBox");
+    if (!box.hidden) { box.hidden = true; $("#hDiag").setAttribute("aria-expanded", "false"); return; }
+    showDiag();
+  });
   function openHelp() {
     if (topOv() === helpOv) return;
+    probeDiag();
     var sc = helpScreen();
     $$("section", $("#hBody")).forEach(function (sec) { sec.classList.toggle("cur", sec.dataset.s === sc); });
     var cur = C.HELP.filter(function (x) { return x.id === sc; })[0];
@@ -2586,6 +4115,8 @@ if (typeof module !== "undefined" && module.exports) module.exports = GCore;
 
   function refreshOpenViews() {
     if (viewerOv.classList.contains("on")) viewerState();
+    fcRefresh();
+    paintPv();
     if (cmpOv.classList.contains("on")) { CM.panes.slice(0, CM.n).forEach(function (P, k) { paintPane(k); }); paintStrip(); paintCmpBar(); }
     if (markedOv.classList.contains("on")) renderMarked();
     refreshGroupViews();
@@ -2617,36 +4148,50 @@ if (typeof module !== "undefined" && module.exports) module.exports = GCore;
   document.addEventListener("keyup", function (e) {
     if (isSpace(e) && spaceSwallow) { e.preventDefault(); spaceSwallow = false; }
   });
-  // Zoom celej stránky (Ctrl+koliesko) je vždy zakázaný; Ctrl+koliesko nad panelom porovnávača mení fotku
-  window.addEventListener("wheel", function (e) { if (e.ctrlKey || e.metaKey) e.preventDefault(); }, { passive: false, capture: true });
-
   document.addEventListener("keydown", function (e) {
     var t = e.target, typing = isTyping(t), ov = topOv();
+    if (CTX.open) { ctxKeys(e); return; }
     if ((e.ctrlKey || e.metaKey) && !e.altKey && (e.key === "z" || e.key === "Z") && !e.shiftKey) {
       if (typing || ov === loginOv) return;
       e.preventDefault(); doUndo(); return;
     }
-    // Ctrl/Alt klávesy (Ctrl+F, Ctrl+D…) patria prehliadaču; výnimka: Ctrl+šípky v mriežke posúvajú kurzor
-    var gridArrow = !ov && e.key.indexOf("Arrow") === 0;
-    if (e.altKey || ((e.ctrlKey || e.metaKey) && !gridArrow)) return;
+    // Ctrl/Alt klávesy (Ctrl+F, Ctrl+T, Ctrl+0…) patria prehliadaču; stránka si nechá len tie, ktoré naozaj
+    // obsluhuje (Ctrl+šípky, Ctrl+A, Ctrl+D v zoznamoch, Ctrl + + / − = veľkosť miniatúr) – C.ctrlAllowed
+    if (e.altKey) return;
+    if ((e.ctrlKey || e.metaKey) && (typing || !C.ctrlAllowed(helpScreen(), e.key))) return;
     if (e.key === "Tab" && ov) { trapTab(e, ov); return; }
     if (e.key === "Escape") {
       if (typing && ov !== loginOv) { t.blur(); if (ov) ov.focus({ preventScroll: true }); return; }
       if (ov && ov !== loginOv) { e.preventDefault(); closeOv(ov); return; }
-      if (S.selMode) setSelMode(false);
+      if (S.selMode || S.sel.size) setSelMode(false);
       return;
     }
     if (typing || ov === loginOv || ov === $("#ask") || ov === workOv) return;
+    if (e.key === "ContextMenu" || (e.key === "F10" && e.shiftKey)) {
+      var tg = ctxTargetKey();
+      if (!tg) return;
+      e.preventDefault(); CTX.kbdT = Date.now();
+      openCtx(tg, null, null);
+      return;
+    }
     if (e.key === "?") { e.preventDefault(); if (ov === helpOv) closeOv(helpOv); else openHelp(); return; }
     if (ov === helpOv) return;
     // medzerník vo vrstve bez vlastnej obsluhy nesmie posúvať stránku pod ňou (na tlačidle ostáva jeho klik)
-    if (isSpace(e) && ov && ov !== cmpOv && ov !== viewerOv && !(t && t.tagName === "BUTTON")) e.preventDefault();
+    if (isSpace(e) && ov && ov !== cmpOv && ov !== viewerOv && ov !== fcOv && !(t && t.tagName === "BUTTON")) e.preventDefault();
     if (ov === cmpOv) return cmpKeys(e);
+    if (ov === fcOv) return fcmpKeys(e);
     if (ov === viewerOv) return viewerKeys(e);
     if (ov === groupsOv) return groupKeys(e);
-    if (ov === markedOv || ov === binOv) return;
+    if (ov === markedOv || ov === binOv) return thumbOnlyKeys(e);
+    if (S.mode === "preview") return previewKeys(e);
     gridKeys(e);
   });
+  // Na zmazanie, Kôš: len veľkosť miniatúr (Ctrl + + / −)
+  function thumbOnlyKeys(e) {
+    if (!(e.ctrlKey || e.metaKey)) return;
+    if (e.key === "+" || e.key === "=") { e.preventDefault(); thumbStep("grid", 1); }
+    else if (e.key === "-") { e.preventDefault(); thumbStep("grid", -1); }
+  }
   function viewerKeys(e) {
     if (onEnterButton(e)) return;
     var it = vCur();
@@ -2660,6 +4205,8 @@ if (typeof module !== "undefined" && module.exports) module.exports = GCore;
       case "1": e.preventDefault(); vv.one(); break;
       case "+": case "=": e.preventDefault(); vv.zoomBy(1.4); break;
       case "-": e.preventDefault(); vv.zoomBy(1 / 1.4); break;
+      case "o": case "O": e.preventDefault(); setFQ(!FQ.on); break;
+      case "c": case "C": e.preventDefault(); if (it) openFree(it.id); break;
     }
   }
   function groupKeys(e) {
@@ -2673,11 +4220,13 @@ if (typeof module !== "undefined" && module.exports) module.exports = GCore;
         e.preventDefault(); if (S.glist.length) openGroupAt(Math.max(0, S.gcur)); break;
       case "n": case "N": e.preventDefault(); openNextOpen(S.gcur); break;
       case "k": case "K": e.preventDefault(); bulkKeep(); break;
+      case "+": case "=": e.preventDefault(); thumbStep("groups", 1); break;
+      case "-": e.preventDefault(); thumbStep("groups", -1); break;
     }
   }
   function cmpKeys(e) {
     if (onEnterButton(e)) return;
-    var P = CM.panes[CM.active], id = CM.ids[P.idx];
+    var P = CM.panes[CM.active], id = CM.ids[P.idx], ctrl = e.ctrlKey || e.metaKey;
     switch (e.key) {
       case "ArrowRight": e.preventDefault(); cmpStep(1); break;
       case "ArrowLeft": e.preventDefault(); cmpStep(-1); break;
@@ -2693,26 +4242,94 @@ if (typeof module !== "undefined" && module.exports) module.exports = GCore;
       case "d": case "D": e.preventDefault(); if (item(id)) { if (e.shiftKey) toChat([item(id)]); else downloadMany([item(id)]); } break;
       case "f": case "F": e.preventDefault(); fitAll(); break;
       case "0": e.preventDefault(); P.v.one(); break;
-      case "+": case "=": e.preventDefault(); P.v.zoomBy(1.4); break;
-      case "-": e.preventDefault(); P.v.zoomBy(1 / 1.4); break;
+      case "+": case "=": e.preventDefault(); if (ctrl) thumbStep("strip", 1); else P.v.zoomBy(1.4); break;
+      case "-": e.preventDefault(); if (ctrl) thumbStep("strip", -1); else P.v.zoomBy(1 / 1.4); break;
       case "l": case "L": e.preventDefault(); setLayout(CM.n >= Math.min(4, CM.ids.length) ? 2 : CM.n + 1); break;
       case "v": case "V": e.preventDefault(); $("#cLink").checked = !$("#cLink").checked; CM.link = $("#cLink").checked; toast("Spoločné priblíženie: " + (CM.link ? "zapnuté" : "vypnuté")); break;
       case "i": case "I": e.preventDefault(); toggleExif(); break;
       case "q": case "Q": e.preventDefault(); evalGroup(); break;
+      case "o": case "O": e.preventDefault(); setFQ(!FQ.on); break;
+      case "c": case "C": e.preventDefault(); if (id != null) openFree(id, { group: CM.group }); break;
       case "Enter": if (CM.group) { e.preventDefault(); finishGroup("done"); } break;
       case "s": case "S": if (CM.group) { e.preventDefault(); finishGroup("skip"); } break;
       case "n": case "N": if (CM.group) { e.preventDefault(); goNextGroup(); } break;
       case "p": case "P": if (CM.group && S.gcur > 0) { e.preventDefault(); openGroupAt(S.gcur - 1); } break;
     }
   }
+  function fcmpKeys(e) {
+    if (onEnterButton(e)) return;
+    var it = fcItem(FC.active), id = it ? it.id : null, P = FC.panes[FC.active], ctrl = e.ctrlKey || e.metaKey;
+    switch (e.key) {
+      case "ArrowRight": e.preventDefault(); fcStep(1); break;
+      case "ArrowLeft": e.preventDefault(); fcStep(-1); break;
+      case "Home": e.preventDefault(); fcGo(0); break;
+      case "End": e.preventDefault(); fcGo(FC.ids.length - 1); break;
+      case "1": case "2": e.preventDefault(); fcActive(Number(e.key) - 1); break;
+      case " ": spaceMark(e, id); break;
+      case "x": case "X": case "Delete": e.preventDefault(); if (id != null) toggleMark(id); break;
+      case "t": case "T": e.preventDefault(); fcSwap(); break;
+      case "p": case "P": e.preventDefault(); fcPinRight(); break;
+      case "d": case "D": e.preventDefault(); if (it) { if (e.shiftKey) toChat([it]); else downloadMany([it]); } break;
+      case "f": case "F": e.preventDefault(); fcFit(); break;
+      case "0": e.preventDefault(); P.v.one(); break;
+      case "+": case "=": e.preventDefault(); if (ctrl) thumbStep("strip", 1); else P.v.zoomBy(1.4); break;
+      case "-": e.preventDefault(); if (ctrl) thumbStep("strip", -1); else P.v.zoomBy(1 / 1.4); break;
+      case "v": case "V": e.preventDefault(); FC.link = !FC.link; $("#fLink").checked = FC.link; toast("Spoločné priblíženie: " + (FC.link ? "zapnuté" : "vypnuté")); break;
+      case "i": case "I": e.preventDefault(); toggleExif(); break;
+      case "o": case "O": e.preventDefault(); setFQ(!FQ.on); break;
+      case "r": case "R": e.preventDefault(); fcCycleScope(); break;
+    }
+  }
   // šípky/Home/End (aj s Ctrl): kurzor sa posunie a stránka ho sleduje; so Shift sa výber rozšíri o interval
   function moveCursor(e) {
-    var n = C.gridMove(S.cur, e.key, GV.cols, S.view.length);
+    var n = S.mode === "preview" ? C.listMove(S.cur, e.key, PV.tiles.lanes, S.view.length, PV.tiles.horiz) : C.gridMove(S.cur, e.key, GV.cols, S.view.length);
     if (n < 0) return;
     if (e.shiftKey) { extendSelTo(n); setCursor(n); return; }
     S.ext = null;
     setCursor(n);
     S.anchor = S.view[S.cur].id; // kotva pre ďalší Shift+klik / Shift+šípku
+  }
+  // C: 2–4 vybrané fotky spolu, inak „Porovnať s…“ pre vybranú (jednu) alebo fotku pod kurzorom
+  function compareKey() {
+    var list = selItems(), imgs = list.filter(function (it) { return C.isImage(it.mime); });
+    if (imgs.length >= 2 && imgs.length <= 4 && imgs.length === list.length) { openCompare(imgs.map(function (it) { return it.id; }), { title: "Porovnanie výberu" }); return; }
+    if (list.length > 1) { toast("Na porovnanie vyber 2–4 fotky alebo jednu pre „Porovnať s…“"); return; }
+    var it = list[0] || cursorItem();
+    if (it) openFree(it.id); else toast("Najprv vyber fotku (kurzor alebo výber)");
+  }
+  // klávesy spoločné pre mriežku aj režim náhľadu
+  function listKeys(e) {
+    var ctrl = e.ctrlKey || e.metaKey;
+    switch (e.key) {
+      case " ": {
+        var it2 = cursorItem();
+        if (e.shiftKey) { e.preventDefault(); spaceSwallow = true; if (it2 && !e.repeat) shiftSpace(it2); } // Shift+medzerník = výber (interval od kotvy)
+        else spaceMark(e, it2 ? it2.id : null); // medzerník = označiť / zrušiť na zmazanie
+        break;
+      }
+      case "x": case "X": case "Delete": {
+        e.preventDefault();
+        var it3 = cursorItem();
+        if (e.shiftKey) markRangeTo(S.cur); // interval od kotvy po kurzor
+        else markSelOrCur(it3 ? it3.id : null); // výber naraz, inak kurzor
+        break;
+      }
+      case "d": case "D": {
+        e.preventDefault();
+        if (ctrl) { if (S.selMode || S.sel.size) { setSelMode(false); toast("Výber zrušený"); } break; } // Ctrl+D = zrušiť výber
+        var list = S.sel.size ? selItems() : (cursorItem() ? [cursorItem()] : []);
+        if (e.shiftKey) toChat(list); else downloadMany(list);
+        break;
+      }
+      case "a": case "A": e.preventDefault(); selectShown(); break;
+      case "s": case "S": e.preventDefault(); setSelMode(!S.selMode); break;
+      case "g": case "G": e.preventDefault(); openGroups(); break;
+      case "m": case "M": e.preventDefault(); openMarked(); break;
+      case "b": case "B": e.preventDefault(); openBin(); break;
+      case "h": case "H": e.preventDefault(); setHideMarked(!S.hideMarked); break;
+      case "v": case "V": e.preventDefault(); setMode(S.mode === "preview" ? "grid" : "preview"); break;
+      case "/": e.preventDefault(); qInput.focus(); qInput.select(); break;
+    }
   }
   function gridKeys(e) {
     var t = e.target, onCell = t && t.classList && t.classList.contains("cell");
@@ -2721,32 +4338,9 @@ if (typeof module !== "undefined" && module.exports) module.exports = GCore;
       case "ArrowRight": case "ArrowLeft": case "ArrowDown": case "ArrowUp": case "Home": case "End":
         e.preventDefault(); moveCursor(e); break;
       case "Enter": { e.preventDefault(); var it = cursorItem(); if (it) openViewer(S.view, S.cur); break; }
-      case " ": {
-        var it2 = cursorItem();
-        if (e.shiftKey) { e.preventDefault(); spaceSwallow = true; if (it2 && !e.repeat) toggleSel(it2.id); } // Shift+medzerník = výber
-        else spaceMark(e, it2 ? it2.id : null); // medzerník = označiť / zrušiť na zmazanie
-        break;
-      }
-      case "x": case "X": case "Delete": {
-        e.preventDefault();
-        if (S.sel.size) {
-          var ids = Array.from(S.sel), del = ids.some(function (id) { return !S.marked.has(id); });
-          setMarks(ids, del).then(function (ch) { toast((del ? "Označené: " : "Zrušené označenie: ") + C.photos(ch.length) + " · Ctrl+Z vráti"); });
-        } else { var it3 = cursorItem(); if (it3) toggleMark(it3.id); }
-        break;
-      }
-      case "d": case "D": {
-        e.preventDefault();
-        var list = S.sel.size ? selItems() : (cursorItem() ? [cursorItem()] : []);
-        if (e.shiftKey) toChat(list); else downloadMany(list);
-        break;
-      }
-      case "c": case "C": e.preventDefault(); if ($("#selCmp").disabled) toast("Na porovnanie vyber 2–4 fotky"); else $("#selCmp").click(); break;
-      case "s": case "S": e.preventDefault(); setSelMode(!S.selMode); break;
-      case "a": case "A": e.preventDefault(); selectShown(); break;
-      case "g": case "G": e.preventDefault(); openGroups(); break;
-      case "m": case "M": e.preventDefault(); openMarked(); break;
-      case "b": case "B": e.preventDefault(); openBin(); break;
+      case "c": case "C": e.preventDefault(); compareKey(); break;
+      case "+": case "=": e.preventDefault(); thumbStep("grid", 1); break;
+      case "-": e.preventDefault(); thumbStep("grid", -1); break;
       case "f": case "F": {
         e.preventDefault();
         var order = ["all", "new", "synced", "marked", "images", "videos"];
@@ -2755,9 +4349,29 @@ if (typeof module !== "undefined" && module.exports) module.exports = GCore;
         toast("Filter: " + fSel.options[fSel.selectedIndex].text);
         break;
       }
-      case "/": e.preventDefault(); qInput.focus(); qInput.select(); break;
+      default: listKeys(e);
     }
   }
+  function previewKeys(e) {
+    var t = e.target, onCell = t && t.classList && t.classList.contains("cell"), ctrl = e.ctrlKey || e.metaKey;
+    if (onEnterButton(e) && !onCell) return;
+    switch (e.key) {
+      case "ArrowRight": case "ArrowLeft": case "ArrowDown": case "ArrowUp": case "Home": case "End":
+        e.preventDefault(); moveCursor(e); break;
+      case "Enter": e.preventDefault(); if (cursorItem()) openViewer(S.view, S.cur); break;
+      case "c": case "C": e.preventDefault(); compareKey(); break;
+      case "+": case "=": e.preventDefault(); if (ctrl) thumbStep("list", 1); else PV.v.zoomBy(1.4); break;
+      case "-": e.preventDefault(); if (ctrl) thumbStep("list", -1); else PV.v.zoomBy(1 / 1.4); break;
+      case "f": case "F": e.preventDefault(); PV.v.fitView(); break;
+      case "1": e.preventDefault(); PV.v.one(); break;
+      case "o": case "O": e.preventDefault(); setFQ(!FQ.on); break;
+      case "l": case "L": e.preventDefault(); setPvPos(!PV.bottom); break;
+      default: listKeys(e);
+    }
+  }
+
+  setMode(S.mode);
+  setFQ(FQ.on);
 
   boot();
 })();

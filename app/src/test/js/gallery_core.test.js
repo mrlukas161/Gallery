@@ -402,3 +402,310 @@ test("★ istá: bez poplašnej vety; presné kópie: sú to rovnaké fotky; bez
   const cached = C.starNote({ kind: "similar", best: 1, uncertain: true }, "z.jpg");
   assert.ok(cached.warn && cached.text.includes("rozhodni sám"));
 });
+
+// ---------------- 0.67.2: koliesko, miniatúry, plná kvalita, náhľad, Porovnať s…, menu, intervaly, sťahovanie ----------------
+
+test("koliesko: rozhodnutie podľa modifikátorov a miesta", () => {
+  const m = (o) => Object.assign({ ctrlKey: false, metaKey: false, shiftKey: false }, o);
+  // nad fotkou: koliesko listuje, Ctrl (aj Cmd, aj pinch na touchpade = wheel s ctrlKey) zoomuje, Shift posúva
+  assert.equal(C.wheelAction(m({}), "stage"), "page");
+  assert.equal(C.wheelAction(m({ ctrlKey: true }), "stage"), "zoom");
+  assert.equal(C.wheelAction(m({ metaKey: true }), "stage"), "zoom");
+  assert.equal(C.wheelAction(m({ shiftKey: true }), "stage"), "pan");
+  assert.equal(C.wheelAction(m({ ctrlKey: true, shiftKey: true }), "stage"), "zoom");
+  // zoznam: koliesko scrolluje (prehliadač), Ctrl mení veľkosť miniatúr
+  assert.equal(C.wheelAction(m({}), "list"), "scroll");
+  assert.equal(C.wheelAction(m({ ctrlKey: true }), "list"), "thumbs");
+  // vodorovný pás: koliesko posúva do strany, Shift nechá prehliadaču, Ctrl = miniatúry
+  assert.equal(C.wheelAction(m({}), "strip"), "hscroll");
+  assert.equal(C.wheelAction(m({ shiftKey: true }), "strip"), "scroll");
+  assert.equal(C.wheelAction(m({ ctrlKey: true }), "strip"), "thumbs");
+  // lišta vrstvy s fotkami: Ctrl nesmie zoomovať stránku; pomocník a dialógy: zoom stránky ostáva
+  assert.equal(C.wheelAction(m({ ctrlKey: true }), "bar"), "block");
+  assert.equal(C.wheelAction(m({}), "bar"), "scroll");
+  assert.equal(C.wheelAction(m({ ctrlKey: true }), "none"), "native");
+});
+
+test("koliesko: akumulácia – zárez myši = 1 fotka, touchpad = 1 fotka na pohyb prstov", () => {
+  // myš: zárezy po 300 ms -> každý jedna fotka
+  let st = {}, n = 0;
+  for (let i = 0; i < 4; i++) n += C.wheelStep(st, 0, 100, 0, i * 300);
+  assert.equal(n, 4);
+  // Firefox (riadky): 3 riadky na zárez
+  st = {};
+  assert.equal(C.wheelStep(st, 0, -3, 1, 0), -1);
+  // rýchle točenie (zárez každých 50 ms): nie 10 fotiek, ale najviac jedna za 120 ms
+  st = {}; n = 0;
+  for (let i = 0; i < 10; i++) n += C.wheelStep(st, 0, 100, 0, i * 50);
+  assert.ok(n >= 3 && n <= 5, "rýchle točenie: " + n);
+  // touchpad: 40 malých udalostí po 16 ms (pohyb + zotrvačnosť) = jedna fotka
+  st = {}; n = 0;
+  for (let i = 0; i < 40; i++) n += C.wheelStep(st, 0, Math.max(1, 30 - i), 0, i * 16);
+  assert.equal(n, 1);
+  // po pauze ďalší pohyb prstov = ďalšia fotka
+  for (let i = 0; i < 20; i++) n += C.wheelStep(st, 0, 20, 0, 2000 + i * 16);
+  assert.equal(n, 2);
+  // vodorovný ťah na touchpade (deltaX) tiež listuje; späť = záporný smer
+  st = {};
+  let d = 0;
+  for (let i = 0; i < 10; i++) d += C.wheelStep(st, -15, 2, 0, i * 16);
+  assert.equal(d, -1);
+  // malý pohyb pod prahom nič nespraví
+  st = {};
+  assert.equal(C.wheelStep(st, 0, 20, 0, 0) + C.wheelStep(st, 0, 20, 0, 16), 0);
+});
+
+test("koliesko: zoom – zárez myši ~14 %, pinch sleduje prsty", () => {
+  near(C.wheelZoom(-100, 0), Math.exp(0.15), 1e-9);
+  near(C.wheelZoom(100, 0), Math.exp(-0.15), 1e-9);
+  near(C.wheelZoom(-3, 1), Math.exp(0.18), 1e-9); // Firefox: riadky
+  near(C.wheelZoom(-10, 0), Math.exp(0.1), 1e-9); // pinch: malé pixelové delty
+  assert.equal(C.wheelPx(2, 1), 80);
+  assert.equal(C.wheelPx(1, 2), 800);
+});
+
+test("veľkosť miniatúr: rozsah, krok a väčší náhľad zo servera pri väčšej miniatúre", () => {
+  assert.equal(C.thumbClamp("grid", 50), 80);
+  assert.equal(C.thumbClamp("grid", 999), 400);
+  assert.equal(C.thumbClamp("grid", null), 140);
+  assert.equal(C.thumbClamp("grid", "x"), 140);
+  assert.equal(C.thumbClamp("groups", 10), 40);
+  assert.equal(C.thumbClamp("strip", 500), 240);
+  near(C.thumbClamp("grid", 140.04), 140, 1e-9);
+  near(C.thumbClamp("grid", 140.36), 140.4, 1e-9); // desatiny: pomalý pinch sa sčíta
+  near(C.thumbKey("grid", 140, 1), 161, 1e-9);
+  near(C.thumbKey("grid", 140, -1), 121.7, 1e-9);
+  assert.equal(C.thumbKey("grid", 400, 1), 400);
+  // náhľad zo servera: kratšia strana 4:3 musí pokryť bunku (cover), pevné stupne, strop 1024
+  assert.equal(C.thumbReq(140, 1), 192);
+  assert.equal(C.thumbReq(80, 1), 128);
+  assert.equal(C.thumbReq(140, 2), 384);
+  assert.equal(C.thumbReq(300, 1), 512);
+  assert.equal(C.thumbReq(400, 1), 768);
+  assert.equal(C.thumbReq(400, 2), 1024);
+  assert.ok(C.thumbReq(260, 1) > C.thumbReq(140, 1), "väčšia miniatúra = väčší náhľad");
+});
+
+test("plná kvalita: výber zdroja podľa voľby a typu súboru", () => {
+  const jpg = { id: 1, mime: "image/jpeg", name: "a.jpg", w: 4032, h: 3024, mtime: 9 };
+  let p = C.srcPlan(jpg, false);
+  assert.deepEqual(plain(p.preview), { path: "/api/thumb", params: { id: 1, max: 2560, v: 9 } });
+  assert.deepEqual(plain(p.full), { path: "/api/file", params: { id: 1 } }); // originál bez prekódovania
+  assert.equal(p.fullFirst, false); // bez „Plnej kvality“ až pri priblížení
+  assert.equal(C.srcPlan(jpg, true).fullFirst, true); // s ňou hneď
+  // HEIC: prehliadač ho nezobrazí -> JPEG zo servera s max = dlhá strana originálu
+  const heic = { id: 2, mime: "image/heic", name: "IMG_2.HEIC", w: 4032, h: 3024, mtime: 5 };
+  p = C.srcPlan(heic, true);
+  assert.deepEqual(plain(p.full), { path: "/api/thumb", params: { id: 2, max: 4032, v: 5 } });
+  assert.equal(p.native, false);
+  assert.equal(p.fmt, "HEIC");
+  assert.equal(p.fullFirst, true);
+  // 50 Mpx HEIC: strop servera 4096 px, rozmer plnej verzie zodpovedá
+  p = C.srcPlan({ id: 3, mime: "image/heic", name: "b.heic", w: 8160, h: 6120, mtime: 1 }, false);
+  assert.equal(p.full.params.max, 4096);
+  assert.equal(p.fullW, 4096); assert.equal(p.fullH, 3072);
+  // malý HEIC: náhľad 2560 už je plné rozlíšenie -> netreba nič ďalšie
+  p = C.srcPlan({ id: 4, mime: "image/heic", name: "c.heic", w: 2000, h: 1500, mtime: 1 }, true);
+  assert.equal(p.full, null); assert.equal(p.fullFirst, false);
+  // DNG bez rozmerov: plná verzia so stropom servera
+  p = C.srcPlan({ id: 5, mime: "image/x-adobe-dng", name: "r.dng", w: 0, h: 0, mtime: 1 }, false);
+  assert.equal(p.full.params.max, 4096); assert.equal(p.fmt, "DNG");
+  // otočená fotka (90°): rozmery podľa zobrazenia
+  p = C.srcPlan({ id: 6, mime: "image/jpeg", name: "d.jpg", w: 4000, h: 3000, orient: 90, mtime: 1 }, false);
+  assert.equal(p.origW, 3000); assert.equal(p.origH, 4000);
+  assert.equal(C.fmtOf({ name: "x", mime: "image/x-sony-arw" }), "SONY-ARW");
+});
+
+test("plná kvalita: štítok „čo práve vidíš“ v paneli", () => {
+  const b = { ow: 4032, oh: 3024 };
+  assert.equal(C.qualLabel(Object.assign({ kind: "prev", w: 2560, h: 1920, native: true }, b)), "náhľad 2560 px");
+  assert.equal(C.qualLabel(Object.assign({ kind: "prev", w: 2560, h: 1920, native: true, loading: true }, b)), "náhľad 2560 px · načítavam originál…");
+  assert.equal(C.qualLabel(Object.assign({ kind: "full", w: 4032, h: 3024, native: true }, b)), "originál 4032 × 3024");
+  assert.equal(C.qualLabel(Object.assign({ kind: "full", w: 4032, h: 3024, native: false, fmt: "HEIC" }, b)), "HEIC → JPEG v plnom rozlíšení 4032 × 3024");
+  assert.equal(C.qualLabel(Object.assign({ kind: "prev", w: 2560, h: 1920, native: false, fmt: "HEIC", loading: true }, b)), "náhľad 2560 px · načítavam plné rozlíšenie…");
+  assert.equal(C.qualLabel({ kind: "full", w: 4096, h: 3072, ow: 8160, oh: 6120, native: false, fmt: "HEIC" }), "HEIC → JPEG 4096 × 3072 (originál 8160 × 6120)");
+  assert.equal(C.qualLabel({ kind: "prev", w: 2000, h: 1500, ow: 2000, oh: 1500, native: false, fmt: "DNG" }), "DNG → JPEG v plnom rozlíšení 2000 × 1500");
+  assert.equal(C.qualLabel(Object.assign({ kind: "prev", w: 2560, h: 1920, native: true, failed: true }, b)), "náhľad 2560 px · originál sa nepodarilo načítať");
+  assert.equal(C.qualLabel({ kind: "prev", w: 0, h: 0, loading: true }), "načítavam…");
+});
+
+test("canvas: výrez fotky na celé pixely zariadenia, nikdy mimo fotky", () => {
+  // prispôsobené: 4000×3000 v ploche 800×600 -> celá plocha, celá fotka
+  let r = C.drawRect(800, 600, 4000, 3000, { scale: 0.2, x: 0, y: 0 }, 1);
+  assert.deepEqual(plain(r), { sx: 0, sy: 0, sw: 4000, sh: 3000, dx: 0, dy: 0, dw: 800, dh: 600 });
+  // priblížené a posunuté s neceločíselnými hodnotami: cieľ celé čísla, zdroj vo vnútri fotky, rovnaká mierka
+  let drawn = 0;
+  for (const [sc, x, y, dpr] of [[1.37, 123.4, -77.7, 1], [3.333, -999.5, 400.25, 1.25], [0.513, 10.5, 3.3, 2], [7.9, 15000, -9000, 1.5]]) {
+    r = C.drawRect(1013, 677, 8000, 6000, { scale: sc, x, y }, dpr);
+    if (!r) continue;
+    drawn++;
+    for (const k of ["dx", "dy", "dw", "dh"]) assert.ok(Number.isInteger(r[k]), k + " " + r[k]);
+    assert.ok(r.sx >= 0 && r.sy >= 0 && r.sx + r.sw <= 8000 + 1e-6 && r.sy + r.sh <= 6000 + 1e-6, JSON.stringify(r));
+    assert.ok(r.dx >= 0 && r.dy >= 0 && r.dx + r.dw <= Math.round(1013 * dpr) && r.dy + r.dh <= Math.round(677 * dpr), JSON.stringify(r));
+    near(r.dw / r.sw, sc * dpr, 0.02);
+  }
+  assert.ok(drawn >= 3);
+  // fotka celkom mimo plochy -> nič
+  assert.equal(C.drawRect(800, 600, 4000, 3000, { scale: 1, x: 99999, y: 0 }, 1), null);
+});
+
+test("dávkové značenie: Delete/X s výberom označí všetky naraz, bez výberu aktuálnu", () => {
+  const marked = new Set([3]);
+  assert.deepEqual(plain(C.markPlan([1, 2, 3], 9, marked)), { ids: [1, 2, 3], del: true });
+  assert.deepEqual(plain(C.markPlan([3], 9, marked)), { ids: [3], del: false }); // všetky už označené -> zrušiť
+  assert.deepEqual(plain(C.markPlan([], 9, marked)), { ids: [9], del: true });
+  assert.deepEqual(plain(C.markPlan([], 3, marked)), { ids: [3], del: false });
+  assert.deepEqual(plain(C.markPlan([], null, marked)), { ids: [], del: false });
+});
+
+test("interval: výber aj odznačenie podľa kotvy, značky na zmazanie rovnako, Ctrl+Z celý naraz", () => {
+  const view = [1, 2, 3, 4, 5, 6].map((id) => ({ id }));
+  // kotva vybraná -> interval sa vyberie
+  let p = C.rangePlan(view, 1, 4, 2, new Set([2]));
+  assert.deepEqual(plain(p), { ids: [3, 4, 5], on: true, all: [2, 3, 4, 5] });
+  // kotva NIE je vybraná a v intervale sú vybrané -> celý interval sa odznačí
+  p = C.rangePlan(view, 1, 4, 2, new Set([3, 4, 6]));
+  assert.deepEqual(plain(p), { ids: [3, 4], on: false, all: [2, 3, 4, 5] });
+  // nič vybrané -> vybrať (odznačiť nie je čo)
+  p = C.rangePlan(view, 4, 0, 5, new Set());
+  assert.deepEqual(plain(p.ids), [1, 2, 3, 4, 5]); assert.equal(p.on, true);
+  // značky na zmazanie: to isté pravidlo
+  const marked = new Set([1, 2, 3]);
+  p = C.rangePlan(view, 0, 2, 1, marked); // kotva označená
+  assert.equal(p.on, true); assert.deepEqual(plain(p.ids), []);
+  marked.delete(1); // kotvu som odznačil -> interval sa odznačí
+  p = C.rangePlan(view, 0, 2, 1, marked);
+  assert.equal(p.on, false); assert.deepEqual(plain(p.ids), [2, 3]);
+  // Ctrl+Z vráti celý interval naraz: prev = {id: predošlý stav}
+  const sel = new Set([3, 4]), prev = {};
+  p = C.rangePlan(view, 1, 4, 2, sel);
+  p.all.forEach((id) => { if (sel.has(id) !== p.on) { prev[id] = !p.on; if (p.on) sel.add(id); else sel.delete(id); } });
+  assert.deepEqual([...sel], []);
+  const back = C.revertMarks(prev);
+  back.on.forEach((id) => sel.add(id)); back.off.forEach((id) => sel.delete(id));
+  assert.deepEqual([...sel].sort(), [3, 4]);
+});
+
+test("kotva intervalu: index v zobrazení aj keď sa kotva práve skryla", () => {
+  const items = [1, 2, 3, 4, 5, 6].map((id) => ({ id }));
+  const view = items.filter((x) => x.id !== 3); // 3 je označená a skrytá
+  assert.equal(C.anchorIndex(view, items, 4), 2);
+  assert.equal(C.anchorIndex(view, items, 3), 2); // miesto, kde by bola (pred 4)
+  assert.equal(C.anchorIndex(view, items, 6), 4);
+  assert.equal(C.anchorIndex(view, items, 99), -1);
+  assert.equal(C.anchorIndex(view, items, null), -1);
+  assert.equal(C.anchorIndex([], items, 1), -1);
+});
+
+test("skryť označené na zmazanie: zmiznú zo zoznamu, filter „Na zmazanie“ ich ukáže", () => {
+  const items = [
+    { id: 1, name: "a.jpg", mime: "image/jpeg" }, { id: 2, name: "b.jpg", mime: "image/jpeg" }, { id: 3, name: "c.mp4", mime: "video/mp4" }
+  ];
+  const marked = new Set([2, 3]), synced = new Map();
+  assert.deepEqual(plain(C.filterItems(items, "", "all", marked, synced, true).map((x) => x.id)), [1]);
+  assert.deepEqual(plain(C.filterItems(items, "", "all", marked, synced, false).map((x) => x.id)), [1, 2, 3]);
+  assert.deepEqual(plain(C.filterItems(items, "", "marked", marked, synced, true).map((x) => x.id)), [2, 3]);
+  assert.deepEqual(plain(C.filterItems(items, "", "images", marked, synced, true).map((x) => x.id)), [1]);
+});
+
+test("Porovnať s…: kandidáti vpravo, začiatok za pripnutou, po zmene tá istá alebo nasledujúca", () => {
+  const base = [
+    { id: 1, mime: "image/jpeg" }, { id: 2, mime: "video/mp4" }, { id: 3, mime: "image/jpeg" },
+    { id: 4, mime: "image/jpeg" }, { id: 5, mime: "image/heic" }, { id: 6, mime: "image/jpeg" }
+  ];
+  let r = C.freeList(base, 3, new Set([4]), true);
+  assert.deepEqual(plain(r), { ids: [1, 5, 6], start: 1 }); // bez videa, pripnutej a označenej; vpravo fotka za pripnutou
+  r = C.freeList(base, 3, new Set([4]), false);
+  assert.deepEqual(plain(r), { ids: [1, 4, 5, 6], start: 1 });
+  r = C.freeList(base, 6, new Set(), true);
+  assert.equal(r.start, 3); // pripnutá je posledná -> vpravo predošlá
+  r = C.freeList([{ id: 7, mime: "image/jpeg" }], 7, new Set(), true);
+  assert.deepEqual(plain(r), { ids: [], start: -1 });
+  // označená vpravo zmizla -> príde tá, ktorá sa posunula na jej miesto; inak ostane tá istá
+  assert.equal(C.reindex([1, 4, 5, 6], 1, [1, 5, 6]), 1);
+  assert.equal(C.reindex([1, 4, 5, 6], 2, [1, 5, 6]), 1);
+  assert.equal(C.reindex([1, 4, 5, 6], 3, [1, 4, 5]), 2);
+  assert.equal(C.reindex([1, 4], 1, []), -1);
+});
+
+test("zoznam náhľadu: šípky podľa orientácie", () => {
+  assert.equal(C.listMove(5, "ArrowDown", 3, 20, false), 8); // vľavo v stĺpcoch: ↓ o riadok
+  assert.equal(C.listMove(5, "ArrowRight", 3, 20, false), 6);
+  assert.equal(C.listMove(5, "ArrowRight", 1, 20, true), 6); // dole v páse: → ďalšia
+  assert.equal(C.listMove(5, "ArrowLeft", 1, 20, true), 4);
+  assert.equal(C.listMove(5, "ArrowDown", 1, 20, true), 6);
+  assert.equal(C.listMove(-1, "ArrowUp", 1, 20, true), 0);
+  assert.equal(C.listMove(19, "End", 1, 20, true), 19);
+});
+
+test("Ctrl skratky: stránka si nechá len tie, ktoré obsluhuje", () => {
+  for (const k of ["d", "D", "a", "ArrowDown", "+", "=", "-"]) assert.ok(C.ctrlAllowed("grid", k), k);
+  for (const k of ["f", "t", "w", "n", "0", "p", "s"]) assert.ok(!C.ctrlAllowed("grid", k), k);
+  assert.ok(C.ctrlAllowed("preview", "d"));
+  assert.ok(C.ctrlAllowed("cmp", "+") && !C.ctrlAllowed("cmp", "d"));
+  assert.ok(C.ctrlAllowed("groups", "-") && !C.ctrlAllowed("groups", "a"));
+  assert.ok(!C.ctrlAllowed("viewer", "+"), "v prehliadači fotky ostáva zoom stránky prehliadaču");
+});
+
+test("kontextové menu: položky podľa miesta, výberu a intervalu", () => {
+  const ids = (c) => C.ctxItems(c).map((x) => x.id);
+  const base = { sel: 0, inSel: false, selected: false, marked: false, selMarked: false, image: true, range: null };
+  assert.deepEqual(plain(ids(Object.assign({ where: "grid" }, base))), ["mark", "sel", "selall", "selnone", "with", "preview", "dl", "copy"]);
+  assert.deepEqual(plain(ids(Object.assign({ where: "list" }, base))), ["mark", "sel", "selall", "selnone", "with", "full", "dl", "copy"]);
+  assert.deepEqual(plain(ids(Object.assign({ where: "viewer" }, base))), ["mark", "with", "preview", "dl", "copy"]);
+  assert.deepEqual(plain(ids(Object.assign({ where: "cmp" }, base))), ["mark", "with", "preview", "dl", "copy"]);
+  let it = C.ctxItems(Object.assign({}, base, { where: "grid", sel: 3, inSel: true, selected: true }));
+  assert.equal(it[0].label, "🗑 Označiť vybrané na zmazanie (3)");
+  assert.equal(it[1].label, "Zrušiť výber tejto fotky");
+  assert.equal(it.find((x) => x.id === "dl").label, "⬇ Stiahnuť originály (3)");
+  assert.equal(it.find((x) => x.id === "copy").label, "Kopírovať názvy (3)");
+  it = C.ctxItems(Object.assign({}, base, { where: "grid", sel: 3, inSel: true, selMarked: true }));
+  assert.equal(it[0].label, "↩ Zrušiť značku vybraným (3)");
+  it = C.ctxItems(Object.assign({}, base, { where: "grid", marked: true }));
+  assert.equal(it[0].label, "↩ Zrušiť značku na zmazanie");
+  assert.ok(C.ctxItems(Object.assign({}, base, { where: "grid" })).find((x) => x.id === "selnone").disabled);
+  assert.ok(C.ctxItems(Object.assign({}, base, { where: "viewer", image: false })).find((x) => x.id === "with").disabled);
+  // interval od kotvy: len položky, ktoré niečo zmenia
+  it = C.ctxItems(Object.assign({}, base, { where: "grid", sel: 2, range: { n: 5, selOn: true, selOff: true, markOn: false, markOff: true } }));
+  assert.deepEqual(plain(it.filter((x) => /^r/.test(x.id)).map((x) => x.label)), ["Vybrať interval (5)", "Odznačiť interval (5)", "↩ Zrušiť značku zmazania v intervale (5)"]);
+  assert.ok(it.find((x) => x.id === "rsel").sep);
+  it = C.ctxItems(Object.assign({}, base, { where: "grid", range: { n: 1, selOn: true } }));
+  assert.ok(!it.some((x) => /^r/.test(x.id)), "interval z jednej fotky sa neponúka");
+  assert.ok(!C.ctxItems(Object.assign({}, base, { where: "viewer", range: { n: 4, selOn: true } })).some((x) => /^r/.test(x.id)));
+});
+
+test("sťahovanie: jeden súbor, ZIP alebo po jednom; hlásenia", () => {
+  assert.equal(C.dlPlan(0, true, false), "none");
+  assert.equal(C.dlPlan(1, true, false), "single");
+  assert.equal(C.dlPlan(3, true, false), "zip");
+  assert.equal(C.dlPlan(3, false, false), "seq");
+  assert.equal(C.dlPlan(3, true, true), "seq"); // zmenšené JPEG (Do chatu) ZIP nevie
+  assert.deepEqual(plain(C.zipChunks([1, 2, 3, 4, 5], 2)), [[1, 2], [3, 4], [5]]);
+  assert.equal(C.zipChunks(Array.from({ length: 1200 }, (_, i) => i)).length, 3);
+  assert.equal(C.dlViaFetch(5e6), true);
+  assert.equal(C.dlViaFetch(800e6), false);
+  assert.equal(C.dlHoldMs(0), 600);
+  assert.equal(C.dlHoldMs(40 * 1024 * 1024), 10600);
+  assert.equal(C.dlHoldMs(1e12), 180000);
+  assert.equal(C.dlReason(403), "prihlásenie vypršalo – zadaj PIN znova");
+  assert.equal(C.dlReason(404), "súbor už v mobile nie je");
+  assert.equal(C.dlReason(0), "spojenie s mobilom zlyhalo");
+  assert.equal(C.dlReason(500), "server odmietol (HTTP 500)");
+  assert.equal(C.dlDoneText(12, {}), "Stiahnuté: 12 súborov → priečinok Stiahnuté súbory v Chrome (Ctrl+J)");
+  assert.equal(C.dlDoneText(1, { "súbor už v mobile nie je": 1 }), "Stiahnuté: 1 súbor → priečinok Stiahnuté súbory v Chrome (Ctrl+J) · nepodarilo sa 1: súbor už v mobile nie je");
+  assert.equal(C.dlDoneText(0, { "prihlásenie vypršalo – zadaj PIN znova": 2 }), "Sťahovanie zlyhalo: prihlásenie vypršalo – zadaj PIN znova (2×)");
+  assert.equal(C.dlDoneText(3, {}, "Fotky"), "Uložené do priečinka „Fotky“: 3 súbory");
+});
+
+test("diagnostika servera: ľubovoľný JSON ako riadky tabuľky", () => {
+  const rows = plain(C.statsRows({ uptimeMs: 1234.567, thumbs: { hits: 10, avgMs: 12.345 }, ok: true, last: null, tags: ["a", "b"], deep: { a: { b: { c: { d: 1 } } } } }));
+  const m = Object.fromEntries(rows.map((r) => [r.k, r.v]));
+  assert.equal(m.uptimeMs, "1234,57");
+  assert.equal(m["thumbs.hits"], "10");
+  assert.equal(m["thumbs.avgMs"], "12,35");
+  assert.equal(m.ok, "áno");
+  assert.equal(m.last, "–");
+  assert.equal(m.tags, "a, b");
+  assert.equal(m["deep.a.b.c"], '{"d":1}'); // hlboké vnorenie ako JSON
+  assert.deepEqual(plain(C.statsRows(5)), [{ k: "hodnota", v: "5" }]);
+});
