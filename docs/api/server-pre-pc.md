@@ -377,3 +377,56 @@ aby formulár poslal skutočný `Origin` (pri `no-referrer` by bol `Origin: null
 
 **Diagnostika:** ak server má `GET /api/stats`, pomocník ponúkne „Diagnostika servera“ (JSON ako tabuľka).
 
+### Obľúbené, živé fotky, pretiahnutie a schránka (web, 0.67.2)
+
+Web zapína tieto časti len podľa `features` z `/api/ping` – bez `favorites` / `motion` sa ich UI vôbec neukáže
+(ani riadky v pomocníkovi). Serverová časť kontraktu je v sekciách endpointov vyššie.
+
+**Obľúbené (feature `favorites`)** – tie isté ako v appke:
+
+- Stav: `fav:true` z položiek `/api/list` (celý zoznam aj `sinceGen` delta; pole chýba = nie je obľúbená) a
+  `GET /api/favorites` → `{ids, gen}` pri štarte, pri celom načítaní (iný `epoch`), pri návrate do karty
+  (najviac raz za 30 s, aby si server obľúbené z appky načítal znova) a keď sa v `ping` zmení `favGen` bez zmeny
+  `gen`. Zmenu z telefónu web inak zachytí v delte zoznamu (server posunie `favGen` aj `gen`). Periodicky
+  `/api/favorites` nevolá (rátalo by sa to ako práca servera a brzdilo spracovanie knižnice).
+- Zmena: `POST /api/favorite {"ids":[…],"fav":true|false}` – rovnako ako `/api/mark` (`fetch` POST, JSON,
+  cookie alebo `X-Auth-Token`), celý výber jednou požiadavkou, nad 2000 id po 2000 za sebou. Z odpovede použije
+  `changed` (Ctrl+Z vráti len tie) a `gen` (= nový `favGen`). Neznáme id ignoruje.
+- UI: ★ na miniatúre (klik na ☆), prepínač v prehliadači / náhľade / paneloch porovnávačov, **Shift+F**
+  (F je filter a prispôsobiť), kontextové menu, tlačidlo vo výberovej lište, filter `fav` („★ Len obľúbené“,
+  `localStorage` `gfilter`), Ctrl+Z.
+
+**Živé fotky (feature `motion`):**
+
+- Odznak na miniatúre a filter „Živé fotky“ len z `motion:true` v `/api/list`.
+- V prehliadači a náhľade sa pri fotke, o ktorej to zoznam nepovie, raz opýta `GET /api/meta?ids=<id>` (po
+  načítaní fotky) a hľadá `motion.len > 0`. Porovnávače berú `motion` z tej istej odpovede `/api/meta`, ktorú už
+  pýtajú pre EXIF. Výsledok (aj prázdny) je v spoločnej cache, rozbehnutá požiadavka sa nezdvojí – to isté id sa
+  nepýta druhýkrát (ani keď ho potom pripneš v „Porovnať s…“).
+- ▶ Prehrať (P, v porovnávačoch Shift+P) vytvorí `<video src="/api/motion?id=<id>" controls>` cez fotku, `play()`
+  v geste používateľa (so zvukom), hlasitosť `localStorage` `gmvol`. Esc, koniec videa, listovanie alebo nová
+  vrstva video zastaví a uvoľní (`pause()`, odobratie `src`, `load()`). Chyba videa (napr. 404 `not_motion`) =
+  hlásenie a späť na fotku. Prihlásenie ako pri ostatných `<img>`/`<video>`: cookie, bez nej `token=` v adrese.
+
+**Pretiahnutie do inej aplikácie:** `dragstart` na miniatúre (mriežka, zoznam náhľadu, pásy porovnávačov,
+„Na zmazanie“) a na nepriblíženej fotke (prehliadač, náhľad, panely) nastaví len
+`DataTransfer` `DownloadURL` = `<mime>:<meno>:<absolútna URL>`, kde URL je tá istá ako pri ⬇:
+`/api/file?id=<id>&dl=1` (originál, mime z položky) alebo `…&q=<kvalita>&max=2048` (zmenšené JPEG, `image/jpeg`,
+prípona `.jpg`). Prihlásenie: Chrome pri sťahovaní z `DownloadURL` použije cookie `gp_sid` tej istej adresy; bez
+cookie je v URL `token=` (rovnako ako priamy odkaz na veľké video). `dl=1` znamená, že server po celom prenose
+zapíše „✓ v PC“. Chrome vie z webu do inej aplikácie pretiahnuť len 1 súbor – pri viacerých vybraných web pretiahne
+fotku pod kurzorom a po pustení vysvetlí alternatívy. Iné natívne ťahanie (výber textu/HTML, `<img>` náhľadu) je
+zakázané.
+
+**Schránka:** Ctrl+C a „Kopírovať obrázok“ – `fetch` `/api/file?id=` (originál), `/api/file?id=&q=&max=2048`
+(zmenšené) alebo `/api/thumb?id=&max=<dlhá strana, ≤ 4096>` (HEIC/DNG) → PNG → `navigator.clipboard.write`.
+Len v bezpečnom kontexte (localhost cez USB, alebo adresa povolená v
+`chrome://flags/#unsafely-treat-insecure-origin-as-secure`); inak sa položka neukáže a Ctrl+C vysvetlí prečo.
+
+**ZIP:** web pošle naraz najviac 2 formuláre `POST /api/zip` (server ďalší odmietne `503 busy`, čo by formulár
+ukázal namiesto stránky – zistiť sa to nedá); ZIP odoslaný pred menej ako 20 s sa ráta ako rozpracovaný. Nad
+2 × 500 fotiek ponúkne ďalší ZIP tlačidlom v hlásení.
+
+Web z `features` servera používa `zip`, `favorites`, `motion`; `stats` zisťuje sám (`GET /api/stats`), `thumbFull`
+(HEIC/DNG nad 4096 px) a `stateSince` (`/api/state?since=`) zatiaľ nie.
+
