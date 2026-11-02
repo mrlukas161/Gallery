@@ -177,6 +177,11 @@ Najviac 8 id. Vráti objekt podľa id (neznáme id chýbajú). Čísla sú surov
 ```
 
 `exp` je čas v sekundách, `gps` = poloha v EXIF áno/nie (súradnice sa neposielajú). Video: `format`, `w`, `h`, `dur`.
+
+**Poloha v súboroch pre PC (od 0.67.2):** `/api/file` (originál), `/api/zip` aj EXIF v `/api/meta` čítajú
+originál cez `MediaStore.setRequireOriginal`, takže fotky v PC majú GPS ako v telefóne (rozhodnutie Lukáša
+2. 11. 2026). Bez povolenia `ACCESS_MEDIA_LOCATION` server potichu číta bežnú kópiu bez polohy. Zmenšené JPEG
+(`q=`) a náhľady EXIF nemajú vôbec.
 Pohyblivá fotka má navyše `"motion":{"len":<bajty videa>}` (video stiahneš cez `/api/motion`).
 
 ## `GET /api/motion?id=<id>`

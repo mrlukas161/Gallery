@@ -114,7 +114,7 @@ class ServerMedia(private val appContext: Context) {
         val dl = Http.param(session, "dl") == "1"
         val q = Http.param(session, "q")?.toIntOrNull()
         if (q != null && item.mime.startsWith("image/")) return reduced(session, item, q, dl)
-        val pfd = resolver.openFileDescriptor(item.uri, "r") ?: return Http.error(Status.NOT_FOUND, "open failed")
+        val pfd = OriginalMedia.openFd(resolver, item.uri) ?: return Http.error(Status.NOT_FOUND, "open failed")
         // skutočná veľkosť súboru (MediaStore SIZE môže byť zastaraná a pevná dĺžka by potom nesedela)
         val size = pfd.statSize.takeIf { it >= 0 } ?: item.size
         val etag = ETags.of("f", item.id, item.mtime, size)
@@ -387,7 +387,7 @@ object MediaMeta {
         if (item.dur > 0) o.put("dur", item.dur)
         if (!item.mime.startsWith("image/")) return o
         try {
-            resolver.openFileDescriptor(item.uri, "r")?.use { pfd -> exifInto(ExifInterface(pfd.fileDescriptor), o) }
+            OriginalMedia.openFd(resolver, item.uri)?.use { pfd -> exifInto(ExifInterface(pfd.fileDescriptor), o) }
         } catch (ignored: Throwable) {
         }
         return o

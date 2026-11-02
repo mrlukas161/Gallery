@@ -341,7 +341,7 @@ class ServerZip(
         // false = súbor sa nedal otvoriť (preskočí sa a pôjde do chybajuce.txt)
         private fun add(zos: ZipOutputStream, names: ZipNames, item: MediaServer.Item): Boolean {
             val input = try {
-                appContext.contentResolver.openInputStream(item.uri)
+                OriginalMedia.openStream(appContext.contentResolver, item.uri)
             } catch (ignored: IOException) {
                 null
             } catch (ignored: SecurityException) {
