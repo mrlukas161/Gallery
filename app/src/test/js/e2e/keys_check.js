@@ -11,8 +11,10 @@
   var $ = function (s, r) { return (r || document).querySelector(s); };
   var $$ = function (s, r) { return Array.prototype.slice.call((r || document).querySelectorAll(s)); };
 
-  // sťahovanie nezačne naozaj: zachytávame kliky na <a download>
+  // sťahovanie nezačne naozaj: zachytávame kliky na <a download> (súbory idú cez fetch -> blob:, parametre
+  // požiadavky /api/file sú v /__log falošného servera)
   var dl = [];
+  async function fileLog() { return (await fetch("/__log")).json(); }
   var origClick = HTMLAnchorElement.prototype.click;
   HTMLAnchorElement.prototype.click = function () { if (this.download) { dl.push({ href: this.getAttribute("href"), name: this.download }); return; } return origClick.call(this); };
 
@@ -39,6 +41,10 @@
   // ---------- štart ----------
   for (var w = 0; w < 50 && !cell(0); w++) await sleep(100);
   ok("mriežka sa načítala", cell(0), "bez .cell");
+  // test počíta s mriežkou a viditeľnými označenými (predvolene sú skryté)
+  if ($("#modePrev").getAttribute("aria-pressed") === "true") { $("#modeGrid").click(); await sleep(200); }
+  var hidOn = $("#hideMarkedBtn").getAttribute("aria-pressed") === "true";
+  if (hidOn) { $("#hideMarkedBtn").click(); await sleep(150); }
   document.activeElement && document.activeElement.blur && document.activeElement.blur();
   window.scrollTo(0, 0);
   await sleep(100);
@@ -122,7 +128,8 @@
   key("D", { shift: true }); await sleep(2500);
   ok("Shift+D: 2 fotky (video sa preskočí)", dl.length === 2, JSON.stringify(dl));
   ok("názvy majú predponu Claude_ a príponu .jpg", dl.every(function (x) { return /^Claude_IMG_\d+\.jpg$/.test(x.name); }), JSON.stringify(dl));
-  ok("zmenšené JPEG, dlhá strana 2048 px", dl.every(function (x) { return /max=2048/.test(x.href) && /q=\d+/.test(x.href) && /dl=1/.test(x.href); }), JSON.stringify(dl));
+  var fl = (await fileLog()).slice(-2);
+  ok("zmenšené JPEG, dlhá strana 2048 px, po jednom (nie naraz)", fl.length === 2 && fl.every(function (x) { return x.max === "2048" && Number(x.q) > 0 && x.dl === "1"; }), JSON.stringify(fl));
   ok("toast s pokynom", /2 fotky pre chat v Stiahnutých súboroch – pretiahni ich do Claude/.test($("#toast").textContent), $("#toast").textContent);
   dl.length = 0;
   click($("#selChat")); await sleep(2500);
@@ -162,9 +169,13 @@
   ok("→ ďalšia fotka", /2 \//.test($("#vInfo").textContent), $("#vInfo").textContent);
   dl.length = 0; key("D", { shift: true }); await sleep(900);
   ok("Shift+D v prehliadači = do chatu", dl.length === 1 && /^Claude_/.test(dl[0].name), JSON.stringify(dl));
-  var wv = new WheelEvent("wheel", { ctrlKey: true, deltaY: -100, bubbles: true, cancelable: true });
-  $("#vStage").dispatchEvent(wv);
-  ok("Ctrl+koliesko v prehliadači nezoomuje stránku", wv.defaultPrevented, "");
+  var wv = new WheelEvent("wheel", { ctrlKey: true, deltaY: -100, bubbles: true, cancelable: true, clientX: 300, clientY: 300 });
+  $("#vStage").dispatchEvent(wv); await sleep(100);
+  ok("Ctrl+koliesko v prehliadači zoomuje fotku (nie stránku)", wv.defaultPrevented && Number($("#vStage canvas").dataset.z) > 1, $("#vStage canvas").dataset.z);
+  var info2 = $("#vInfo").textContent;
+  var wn = new WheelEvent("wheel", { deltaY: 100, bubbles: true, cancelable: true, clientX: 300, clientY: 300 });
+  $("#vStage").dispatchEvent(wn); await sleep(300);
+  ok("koliesko v prehliadači = ďalšia fotka", wn.defaultPrevented && /3 \//.test($("#vInfo").textContent), info2 + " -> " + $("#vInfo").textContent);
   // pomocník z prehliadača
   click($("#viewer .hbtn")); await sleep(100);
   ok("⌨ ? v prehliadači otvorí pomocníka so sekciou prehliadača navrchu", helpCur() === "viewer" && overlays().indexOf("help") >= 0, helpCur());
@@ -218,12 +229,11 @@
   click(cell(0), { ctrl: true }); click(cell(1), { ctrl: true }); click(cell(2), { ctrl: true }); click(cell(3), { ctrl: true });
   key("c"); await sleep(500);
   ok("C otvorí porovnávač", overlays().indexOf("cmp") >= 0, overlays());
-  function pName(p) { return $('.pane[data-p="' + p + '"] .nm').textContent; }
-  function active() { return $$(".pane.active").map(function (x) { return Number(x.dataset.p); }); }
+  function pName(p) { return $('#cmp .pane[data-p="' + p + '"] .nm').textContent; }
+  function active() { return $$("#cmp .pane.active").map(function (x) { return Number(x.dataset.p); }); }
   ok("2 panely: 1 a 2, aktívny je 1", pName(0) === "IMG_0001.jpg" && pName(1) === "IMG_0002.jpg" && active().join() === "0", pName(0) + "," + pName(1) + " act=" + active());
-  var a0 = $(".pane.active").getBoundingClientRect();
-  var cs = getComputedStyle($(".pane.active"));
-  ok("aktívny panel je zreteľne vyznačený (rám 3 px + štítok „aktívny“)", cs.outlineWidth === "3px" && cs.outlineStyle === "solid" && getComputedStyle($(".pane.active .act")).display !== "none" && getComputedStyle($(".pane:not(.active) .act")).display === "none", cs.outline);
+  var cs = getComputedStyle($("#cmp .pane.active"));
+  ok("aktívny panel je zreteľne vyznačený (rám 3 px + štítok „aktívny“)", cs.outlineWidth === "3px" && cs.outlineStyle === "solid" && getComputedStyle($("#cmp .pane.active .act")).display !== "none" && getComputedStyle($("#cmp .pane:not(.active) .act")).display === "none", cs.outline);
   key("ArrowRight"); await sleep(250);
   ok("→ mení LEN aktívny panel (1→3, druhý ostáva 2)", pName(0) === "IMG_0003.jpg" && pName(1) === "IMG_0002.jpg", pName(0) + "," + pName(1));
   key("ArrowRight"); await sleep(250);
@@ -236,32 +246,32 @@
   ok("← v druhom paneli mení len druhý (2→1), prvý ostáva 4", pName(1) === "IMG_0001.jpg" && pName(0) === "IMG_0004.jpg", pName(0) + "," + pName(1));
   // medzerník
   key(" "); await sleep(250);
-  ok("medzerník označí fotku aktívneho panela", /na zmazanie/.test($('.pane[data-p="1"] .st').textContent) && $('.pane[data-p="0"] .st').textContent.indexOf("na zmazanie") < 0, $('.pane[data-p="1"] .st').textContent);
+  ok("medzerník označí fotku aktívneho panela", /na zmazanie/.test($('#cmp .pane[data-p="1"] .st').textContent) && $('#cmp .pane[data-p="0"] .st').textContent.indexOf("na zmazanie") < 0, $('#cmp .pane[data-p="1"] .st').textContent);
   key(" "); await sleep(250);
-  ok("druhý medzerník označenie zruší", $('.pane[data-p="1"] .st').textContent.indexOf("na zmazanie") < 0, $('.pane[data-p="1"] .st').textContent);
-  // Ctrl+koliesko
-  var st0 = $('.pane[data-p="0"] .stage'), n0 = pName(0);
-  var cw = new WheelEvent("wheel", { ctrlKey: true, deltaY: -100, bubbles: true, cancelable: true, clientX: 200, clientY: 300 });
+  ok("druhý medzerník označenie zruší", $('#cmp .pane[data-p="1"] .st').textContent.indexOf("na zmazanie") < 0, $('#cmp .pane[data-p="1"] .st').textContent);
+  // koliesko = listovanie v paneli pod kurzorom
+  var st0 = $('#cmp .pane[data-p="0"] .stage'), n0 = pName(0);
+  var cw = new WheelEvent("wheel", { deltaY: -100, bubbles: true, cancelable: true, clientX: 200, clientY: 300 });
   st0.dispatchEvent(cw); await sleep(300);
-  ok("Ctrl+koliesko nad panelom 1: zoom stránky zablokovaný", cw.defaultPrevented, "");
-  ok("Ctrl+koliesko hore = predošlá fotka v tom paneli (4→3), panel sa stal aktívnym, druhý nezmenený", active().join() === "0" && n0 === "IMG_0004.jpg" && pName(0) === "IMG_0003.jpg" && pName(1) === "IMG_0001.jpg", n0 + " -> " + pName(0) + "," + pName(1) + " act=" + active());
-  var back = new WheelEvent("wheel", { ctrlKey: true, deltaY: 100, bubbles: true, cancelable: true });
+  ok("koliesko nad panelom 1: stránka sa nescrolluje", cw.defaultPrevented, "");
+  ok("koliesko hore = predošlá fotka v tom paneli (4→3), panel sa stal aktívnym, druhý nezmenený", active().join() === "0" && n0 === "IMG_0004.jpg" && pName(0) === "IMG_0003.jpg" && pName(1) === "IMG_0001.jpg", n0 + " -> " + pName(0) + "," + pName(1) + " act=" + active());
+  var back = new WheelEvent("wheel", { deltaY: 100, bubbles: true, cancelable: true });
   st0.dispatchEvent(back); await sleep(300);
-  ok("Ctrl+koliesko dole = ďalšia (3→4)", pName(0) === "IMG_0004.jpg", pName(0));
+  ok("koliesko dole = ďalšia (3→4)", pName(0) === "IMG_0004.jpg", pName(0));
   var cw2 = new WheelEvent("wheel", { ctrlKey: true, deltaY: 100, bubbles: true, cancelable: true });
   $("#strip").dispatchEvent(cw2);
-  ok("Ctrl+koliesko mimo panelov tiež nezoomuje stránku", cw2.defaultPrevented, "");
-  // koliesko = zoom do bodu pod kurzorom
-  var im = $('.pane[data-p="0"] .stage img.vimg'), tr0 = im.style.transform;
-  var pw = new WheelEvent("wheel", { deltaY: -200, bubbles: true, cancelable: true, clientX: st0.getBoundingClientRect().left + 40, clientY: st0.getBoundingClientRect().top + 40 });
+  ok("Ctrl+koliesko nad pásom mení miniatúry, stránku nezoomuje", cw2.defaultPrevented, "");
+  // Ctrl+koliesko = zoom do bodu pod kurzorom
+  var cv0 = $('#cmp .pane[data-p="0"] .stage canvas.vimg'), z0 = cv0.dataset.z + "/" + cv0.dataset.cx;
+  var pw = new WheelEvent("wheel", { ctrlKey: true, deltaY: -200, bubbles: true, cancelable: true, clientX: st0.getBoundingClientRect().left + 40, clientY: st0.getBoundingClientRect().top + 40 });
   st0.dispatchEvent(pw); await sleep(150);
-  var scale = Number((im.style.transform.match(/scale\(([\d.]+)\)/) || [])[1]);
-  ok("koliesko približuje a posúva do bodu pod kurzorom", pw.defaultPrevented && im.style.transform !== tr0 && scale > 0, tr0 + " -> " + im.style.transform);
-  var sc2 = Number(($('.pane[data-p="1"] .stage img.vimg').style.transform.match(/scale\(([\d.]+)\)/) || [])[1]);
-  ok("spoločné priblíženie: druhý panel sleduje relatívne", sc2 > 0, sc2);
+  ok("Ctrl+koliesko približuje a posúva do bodu pod kurzorom", pw.defaultPrevented && Number(cv0.dataset.z) > 1 && cv0.dataset.z + "/" + cv0.dataset.cx !== z0, z0 + " -> " + cv0.dataset.z + "/" + cv0.dataset.cx);
+  var cv1 = $('#cmp .pane[data-p="1"] .stage canvas.vimg');
+  ok("spoločné priblíženie: druhý panel sleduje relatívne", cv1.dataset.z === cv0.dataset.z && cv1.dataset.cx === cv0.dataset.cx, cv1.dataset.z);
   // Shift+D
   dl.length = 0; key("D", { shift: true }); await sleep(900);
-  ok("Shift+D v porovnávači = do chatu (aktívny panel)", dl.length === 1 && /^Claude_/.test(dl[0].name) && /max=2048/.test(dl[0].href), JSON.stringify(dl));
+  var fl2 = (await fileLog()).slice(-1);
+  ok("Shift+D v porovnávači = do chatu (aktívny panel)", dl.length === 1 && /^Claude_/.test(dl[0].name) && fl2[0] && fl2[0].max === "2048", JSON.stringify(dl) + JSON.stringify(fl2));
   // ★ vyhodnotiť, neistá
   key("q"); await sleep(1800);
   var qt = $("#cQual").textContent;
@@ -286,11 +296,22 @@
   ok("presné kópie: oznam, že sú to rovnaké fotky", /sú to rovnaké fotky/.test($("#cQual").textContent) && !$("#cQual").hidden, $("#cQual").textContent);
   await closeAll();
 
-  // ---------- Ctrl+koliesko mimo porovnávača ----------
-  var gw = new WheelEvent("wheel", { ctrlKey: true, deltaY: 100, bubbles: true, cancelable: true });
-  document.body.dispatchEvent(gw);
-  ok("Ctrl+koliesko v mriežke: zoom stránky zablokovaný", gw.defaultPrevented, "");
+  // ---------- Ctrl+koliesko v mriežke = veľkosť miniatúr ----------
+  var th0 = getComputedStyle(document.documentElement).getPropertyValue("--thumb").trim();
+  var gw = new WheelEvent("wheel", { ctrlKey: true, deltaY: -100, bubbles: true, cancelable: true });
+  document.body.dispatchEvent(gw); await sleep(100);
+  var th1 = getComputedStyle(document.documentElement).getPropertyValue("--thumb").trim();
+  ok("Ctrl+koliesko v mriežke mení veľkosť miniatúr (nie zoom stránky)", gw.defaultPrevented && parseFloat(th1) > parseFloat(th0), th0 + " -> " + th1);
+  $("#thSize").value = parseFloat(th0); $("#thSize").dispatchEvent(new Event("input", { bubbles: true })); await sleep(50);
 
+  // ---------- kontextové menu (Shift+F10) ----------
+  key("Home"); await sleep(50);
+  key("F10", { shift: true }); await sleep(80);
+  ok("Shift+F10 otvorí vlastné menu (role=menu) s fokusom na prvej položke", !$("#ctx").hidden && $("#ctx").getAttribute("role") === "menu" && document.activeElement.getAttribute("role") === "menuitem", $("#ctx").hidden);
+  key("Escape"); await sleep(50);
+  ok("Esc menu zavrie", $("#ctx").hidden, "");
+
+  if (hidOn) { $("#hideMarkedBtn").click(); await sleep(100); }
   HTMLAnchorElement.prototype.click = origClick;
   var bad = R.filter(function (x) { return !x.ok; });
   console.log("keys_check: " + (R.length - bad.length) + " / " + R.length + " v poriadku");

@@ -112,7 +112,8 @@ Bez parametrov (pôvodný formát) — pole položiek, zoradené **podľa dátum
 
 ## `GET /api/file?id=<id>`
 
-- Bez ďalších parametrov: **originál**. `Content-Length` je skutočná veľkosť súboru.
+- Bez ďalších parametrov: **originál** – súbor sa streamuje z MediaStore bez prekódovania (bajt po bajte).
+  `Content-Length` je skutočná veľkosť súboru.
   - `ETag: "f-<id>-<mtime>-<size>"`, `Cache-Control: private, no-cache`, `If-None-Match` → `304`.
   - `Accept-Ranges: bytes`; `Range: bytes=a-b`, `bytes=a-`, `bytes=-n` → `206` + `Content-Range`;
     mimo súboru `416` + `Content-Range: bytes */<size>`; viac rozsahov naraz → celý súbor (200).
@@ -128,7 +129,9 @@ Bez parametrov (pôvodný formát) — pole položiek, zoradené **podľa dátum
 - `&s=<64–1024>` (predvolene 300) — malý náhľad (mriežka). Do 512 px z `ContentResolver.loadThumbnail`
   (Android 10+), cache v pamäti servera podľa id + mtime + veľkosti.
 - `&max=<64–4096>` — väčší náhľad, napr. `max=2560` pre porovnávač (dekóduje sa raz cez ImageDecoder,
-  EXIF otočenie je uplatnené; HEIC, DNG aj video snímka).
+  EXIF otočenie je uplatnené; HEIC, DNG aj video snímka). Náhľad sa **nikdy nezväčšuje** nad originál
+  (`scaleToMax`), takže `max` ≥ dlhá strana originálu = JPEG v plnom rozlíšení (web „Plná kvalita“ pre HEIC/DNG);
+  originály nad 4096 px sa zmenšia na 4096 (strop servera). Kvalita JPEG nad 512 px je 85.
 - `&v=<mtime>` — keď sedí s aktuálnym `mtime`, odpoveď má `Cache-Control: private, max-age=604800, immutable`;
   inak `private, no-cache` + `ETag`.
 - `?bin=<key>&s=…` — náhľad fotky z Koša (`key` z `/api/bin`).
@@ -325,3 +328,52 @@ Ukladá sa do `Pictures/Galéria` resp. `Movies/Galéria`. Strop 4 GB a rezerva 
    preskoč `uncertain` a nikdy neoznač `unscored` ani celú skupinu).
 6. EXIF z `/api/meta?ids=…` (po 8).
 7. Mazanie: `dryRun` → potvrdenie s `freedBytes` → `/api/delete` po 1000 → ponúkni „Vrátiť“ cez `/api/restore {"batchId"}`.
+
+## Web „Galéria+ Sync“ — ovládanie (0.67.2)
+
+Web je `app/src/main/assets/gallery.html` (čisté funkcie v bloku `GCORE`, testy `app/src/test/js/*.test.js`,
+prehliadkový test `app/src/test/js/e2e/keys_check.js`). Pomocník (kláves `?`) vzniká z `GCore.HELP` a test ho
+porovnáva s obsluhou klávesov.
+
+**Zobrazenia:** mriežka, **náhľad** (zoznam vľavo alebo dole + veľká fotka; `V` prepína, `L` poloha zoznamu,
+pod 900 px vždy dole) a „Podobné a duplikáty“ (`G`). Voľby sa pamätajú v `localStorage` (`gmode`, `gpvpos`,
+`gth.*` veľkosti miniatúr, `ghidem` skryť označené, `gfq` plná kvalita, `gfscope` rozsah „Porovnať s…“).
+
+**Koliesko (všade rovnako):**
+
+| kde | koliesko | Ctrl + koliesko (aj pinch na touchpade) | Shift + koliesko |
+|---|---|---|---|
+| fotka (prehliadač, porovnávač, náhľad, „Porovnať s…“) | predošlá / ďalšia fotka (v porovnávači v paneli pod kurzorom; touchpad: jedna za pohyb prstov) | zoom ku kurzoru | posun do strany |
+| mriežka, zoznam náhľadu, zoznam skupín, Na zmazanie, Kôš | scroll | veľkosť miniatúr | scroll |
+| pás miniatúr (porovnávač, „Porovnať s…“, zoznam náhľadu dole) | posun do strany | veľkosť miniatúr | posun |
+| lišta vrstvy s fotkami | – | nič (stránka sa nezoomuje) | – |
+
+Zoom celej stránky prehliadača ostáva (menu, `Ctrl+0`, pomocník a dialógy). Veľkosť miniatúr: aj `Ctrl` + `+` / `−`
+a posuvník −/+ v hlavičke (80–400 px); pri väčšej miniatúre web žiada väčší náhľad (`/api/thumb?s=` 128–1024).
+
+**Plná kvalita (`O`):** bez nej náhľad `max=2560` a originál (`/api/file?id=`) až pri priblížení nad rozlíšenie
+náhľadu; s ňou originál hneď. HEIC/DNG (prehliadač ich nevie) ako `/api/thumb?id=&max=<dlhá strana originálu, najviac 4096>`.
+Štítok vpravo hore v paneli: „náhľad 2560 px“, „originál 4032 × 3024“, „HEIC → JPEG v plnom rozlíšení …“,
+„… · načítavam originál…“. Fotka sa kreslí do `<canvas>` (len viditeľný výrez na celé pixely – bez čiar na hranách
+dlaždíc). Prednačíta sa len ďalšia fotka, až keď je aktuálna načítaná (pri listovaní sa zruší).
+
+**„Porovnať s…“ (`C`, 📌 v porovnávači skupiny, kontextové menu):** vľavo pripnutá, vpravo ľubovoľná fotka
+(rozsah `R`: aktuálny filter / celá knižnica / tento priečinok / táto skupina), pás miniatúr hore, `T` vymení strany,
+`P` alebo Alt + klik pripne inú, spoločný zoom v relatívnych súradniciach, EXIF rozdiely, `X` a `Ctrl+Z`.
+
+**Výber a značky:** `Delete`/`X` s výberom = jeden `POST /api/mark {ids, del}`; Shift + klik / Shift + medzerník =
+interval od kotvy (kotva vybraná → vybrať, inak odznačiť), `Shift+X` to isté pre značky; `Ctrl+Z` vráti celý
+interval aj dávku; `Ctrl+D` a `Esc` zrušia výber. Označené na zmazanie sú predvolene skryté (`H`), počítadlo
+„Na zmazanie: N (X MB)“ otvorí prehľad. Pravé tlačidlo / kláves Menu / Shift+F10 = vlastné menu (`role=menu`),
+Shift + pravé tlačidlo = menu prehliadača.
+
+**Sťahovanie:** viac originálov = jeden formulár `POST /api/zip` (`application/x-www-form-urlencoded`, `ids=1,2,3`
+najviac 500, voliteľne `token=` bez cookie; server s funkciou `zip` v `/api/ping`) – prihlásenie sa overí vopred
+`/api/ping`. Inak po jednom, každý až po dokončení predošlého: do ~200 MB `fetch` → Blob → `<a download>`
+(stav odpovede = príčina chyby: 403 prihlásenie, 404 súbor zmizol, sieť), väčšie najprv `Range: bytes=0-0`
+a potom priamy odkaz (token v adrese, ak nie je cookie). Stránka má `<meta name="referrer" content="same-origin">`,
+aby formulár poslal skutočný `Origin` (pri `no-referrer` by bol `Origin: null` a server ho odmietne). Na localhoste
+(USB) „📁 Uložiť do priečinka…“ cez `showDirectoryPicker`.
+
+**Diagnostika:** ak server má `GET /api/stats`, pomocník ponúkne „Diagnostika servera“ (JSON ako tabuľka).
+
