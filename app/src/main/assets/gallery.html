@@ -840,6 +840,7 @@ var GCore = (function () {
       { k: "[1]", t: "1:1 (pixel originálu)", ev: ["1"] },
       { k: "[+] / [-]", t: "priblížiť / oddialiť", ev: ["+", "=", "-"] },
       { k: "koliesko, dvojklik, 2 prsty", t: "priblíženie do bodu pod kurzorom", mouse: true },
+      { k: "[Ctrl]+koliesko", t: "predošlá / ďalšia fotka", mouse: true },
       { k: "ťahanie myšou", t: "posun priblíženej fotky", mouse: true },
       { k: "[Ctrl]+[Z]", t: "vrátiť posledné označenie", g: true, ev: ["z"] },
       { k: "[?]", t: "tento pomocník", g: true, ev: ["?"] },
@@ -1624,7 +1625,7 @@ if (typeof module !== "undefined" && module.exports) module.exports = GCore;
     };
     function local(e) { var r = stage.getBoundingClientRect(); return { x: e.clientX - r.left - r.width / 2, y: e.clientY - r.top - r.height / 2 }; }
     stage.addEventListener("wheel", function (e) {
-      if (e.ctrlKey || e.metaKey) { e.preventDefault(); return; } // Ctrl+koliesko: zoom stránky je zakázaný, fotky mení panel porovnávača
+      if (e.ctrlKey || e.metaKey) { e.preventDefault(); return; } // Ctrl+koliesko: zoom stránky je zakázaný, fotky mení prehliadač / panel porovnávača
       if (!v.nw) return;
       e.preventDefault();
       var p = local(e);
@@ -1702,6 +1703,21 @@ if (typeof module !== "undefined" && module.exports) module.exports = GCore;
   // ================= jedna fotka =================
   var viewerOv = $("#viewer"), vStage = $("#vStage"), vv = Viewer(vStage), vList = [], vIdx = -1, video = null;
   function vCur() { return vList[vIdx] || null; }
+  // Ctrl + koliesko nad fotkou = predošlá / ďalšia (ako v porovnávači); koliesko bez Ctrl približuje
+  (function () {
+    var acc = 0, t = 0;
+    vStage.addEventListener("wheel", function (e) {
+      if (!(e.ctrlKey || e.metaKey)) return;
+      e.preventDefault();
+      if (e.timeStamp - t > 400) acc = 0;
+      t = e.timeStamp;
+      acc += e.deltaMode === 1 ? e.deltaY * 33 : e.deltaY;
+      if (Math.abs(acc) < 50) return;
+      var dir = acc > 0 ? 1 : -1;
+      acc = 0;
+      stepViewer(dir);
+    }, { passive: false });
+  })();
   function viewerState() {
     var it = vCur();
     if (!it) return;
