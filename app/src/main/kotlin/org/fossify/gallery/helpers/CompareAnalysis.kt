@@ -32,6 +32,12 @@ object CompareAnalysis {
     @Volatile
     private var diskLoaded = false
 
+    // server-rychlost: zvýši sa pri každej zmene cache skóre — /api/groups podľa nej vie, že skupiny
+    // (best, uncertain, keep) môže vrátiť z vlastnej cache bez čítania súborov
+    @Volatile
+    var cacheVersion = 0L
+        private set
+
     // priebežné výsledky a čakanie na model tvárí (voliteľné)
     interface Listener {
         fun onPartial(scores: Map<String, PhotoScore>) {}
@@ -143,6 +149,7 @@ object CompareAnalysis {
         val reuse = cached != null && (cached.facesChecked || run.unavailable)
         val m = if (reuse) cached else measureOne(path, modified, run)
         if (m != null) cache.put(m, size) else unreadable.add(path, modified, size)
+        cacheVersion++
         return m
     }
 
@@ -219,6 +226,7 @@ object CompareAnalysis {
                 if (f.exists()) cache.load(f.readLines())
             } catch (ignored: IOException) {
             }
+            cacheVersion++
         }
     }
 
@@ -241,9 +249,12 @@ object CompareAnalysis {
         private val waitMs: Long,
     ) : AutoCloseable {
         private var deadline = 0L
+        // urgent: na výsledok čaká človek (porovnávač, /api/quality) — indexer, ktorý ustupuje serveru,
+        // mu miesto uvoľní (ServerYield)
         private val slot = HeavySlot(
             active = { !isCancelled() && System.currentTimeMillis() < deadline },
             onWait = { listener?.onWaitingForFaces() },
+            urgent = true,
         )
         private var quality: PhotoQuality? = null
 

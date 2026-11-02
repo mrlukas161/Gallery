@@ -378,10 +378,22 @@ class Sessions(
     @Synchronized
     fun count(): Int = lastSeen.size
 
+    // server-rychlost: prihlásenia prežijú reštart služby (START_STICKY) — tokeny oddelené čiarkou
+    @Synchronized
+    fun export(): String = lastSeen.keys.joinToString(",")
+
+    // obnova po reštarte služby: platné tokeny (hex) s časom obnovy ako poslednou aktivitou
+    @Synchronized
+    fun restore(raw: String?, now: Long) {
+        raw.orEmpty().split(',').map { it.trim() }.filter { TOKEN_RE.matches(it) }.takeLast(max)
+            .forEach { lastSeen[it] = now }
+    }
+
     companion object {
         const val DEFAULT_IDLE_MS = 12L * 60 * 60 * 1000
         const val DEFAULT_MAX = 64
         private const val TOKEN_BYTES = 32
+        private val TOKEN_RE = Regex("^[0-9a-f]{64}$")
     }
 }
 

@@ -14,6 +14,8 @@ import org.fossify.gallery.R
 import org.fossify.gallery.family.FamilyInbox
 import org.fossify.gallery.helpers.BackgroundPriority
 import java.io.File
+import org.fossify.gallery.helpers.ServerYield
+import org.fossify.gallery.services.IndexingService
 
 // QR/čiarové kódy: prejde fotky a uloží dekódovaný obsah (qr.db). RÝCHLE (ZXing jeden prechod ~0,1 s/fotka),
 // resumovateľné (preskočí už spracované). Beží v automatickom indexovaní na pozadí aj na tlačidlo.
@@ -53,6 +55,7 @@ object QrIndexer {
                 var done = 0
                 for (path in todo) {
                     if (!isRunning) break
+                    ServerYield.SHARED.pause(IndexingService.TASK_QR, { isRunning }) // PC práve sťahuje
                     var text = ""
                     try {
                         val bmp = decodeDownscaled(path)

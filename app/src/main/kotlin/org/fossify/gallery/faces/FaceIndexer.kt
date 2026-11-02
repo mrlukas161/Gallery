@@ -16,6 +16,8 @@ import org.fossify.gallery.helpers.HeavyGate
 import org.fossify.gallery.helpers.HeavySlot
 import java.io.File
 import java.util.concurrent.atomic.AtomicLong
+import org.fossify.gallery.helpers.ServerYield
+import org.fossify.gallery.services.IndexingService
 
 // B2: indexovanie = detekcia + ODTLAČOK pre každú tvár (faces.db); po dokončení vráti počet tvárí
 // a fotiek s tvárami. Beží na bežnom vlákne (robustnosť FGS/WorkManager = B4).
@@ -87,6 +89,8 @@ object FaceIndexer {
                     total = todo.size
                     for ((mediaStoreId, path) in todo) {
                         if (!active()) break
+                        // server-rychlost: PC práve sťahuje -> počkaj; naliehavej úlohe uvoľni model
+                        ServerYield.SHARED.pause(IndexingService.TASK_FACES, active) { models.close() }
                         if (path in withFaces) {
                             try {
                                 dao.insertIndexedPhoto(IndexedPhotoEntity(path, dao.getFaceCountForPath(path), System.currentTimeMillis()))

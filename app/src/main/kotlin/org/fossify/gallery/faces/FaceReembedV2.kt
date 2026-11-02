@@ -6,6 +6,8 @@ import org.fossify.gallery.helpers.BackgroundPriority
 import org.fossify.gallery.helpers.HeavyGate
 import org.fossify.gallery.helpers.HeavySlot
 import java.io.File
+import org.fossify.gallery.helpers.ServerYield
+import org.fossify.gallery.services.IndexingService
 
 // Jednorazový prepočet všetkých odtlačkov vo faces.db na v2 (FaceEmbedder.PIPELINE_MODEL_ID) NA MIESTE:
 // id tvárí, rámčeky, menovky ani odmietnutia sa nemenia. Spúšťa ho IndexingService (TASK_FACE_V2) pri
@@ -136,6 +138,7 @@ object FaceReembedV2 {
         onProgress(progressDone, progressTotal)
         for ((path, list) in todo.groupBy({ it.mediaFullPath }, { it.id })) {
             if (!isRunning) return false
+            ServerYield.SHARED.pause(IndexingService.TASK_FACE_V2, { isRunning }) { models.close() }
             val (ok, processed) = processPhoto(dao, staging, path, list.toHashSet(), models)
             processed.forEach { attempts[it] = (attempts[it] ?: 0) + 1 }
             progressDone += ok

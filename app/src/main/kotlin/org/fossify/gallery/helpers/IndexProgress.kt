@@ -10,6 +10,10 @@ class IndexProgress(val name: String, private val clock: () -> Long = System::cu
         private set
     var waiting = false
         private set
+
+    // server-rychlost: úloha po dokončení fotky čaká, kým PC (LAN server) dosťahuje (ServerYield)
+    var waitingForPc = false
+        private set
     private var startMs = 0L
     private var hasStart = false
     private var startDone = 0
@@ -23,10 +27,15 @@ class IndexProgress(val name: String, private val clock: () -> Long = System::cu
         this.done = done
         this.total = total
         waiting = false
+        waitingForPc = false
     }
 
     fun markWaiting() {
         waiting = true
+    }
+
+    fun markWaitingForPc(on: Boolean) {
+        waitingForPc = on
     }
 
     val started: Boolean get() = total > 0

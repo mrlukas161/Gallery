@@ -7,6 +7,8 @@ import org.fossify.gallery.helpers.BackgroundPriority
 import org.fossify.gallery.helpers.HeavyGate
 import org.fossify.gallery.helpers.HeavySlot
 import java.util.concurrent.atomic.AtomicLong
+import org.fossify.gallery.helpers.ServerYield
+import org.fossify.gallery.services.IndexingService
 
 // „Prepracovať tváre" — jednorazová oprava + doplnenie:
 //  1) fotka sa dekóduje SPRÁVNE OTOČENÁ (EXIF) -> detektor nájde aj tváre na fotkách na výšku,
@@ -76,6 +78,7 @@ object RefreshFaces {
                     total = paths.size
                     for (path in paths) {
                         if (!active()) break
+                        ServerYield.SHARED.pause(IndexingService.TASK_REEMBED, active) { models.close() }
                         val pair = refreshPhoto(dao, path, models)
                         updated += pair.first
                         added += pair.second

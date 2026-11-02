@@ -54,23 +54,26 @@ object ImageDecode {
         return viaDecoder ?: legacy({ file.inputStream() }, maxPx)
     }
 
+    // server-rychlost: dekódovanie priamo na cieľovú veľkosť (setTargetSize — dekodér si sám zvolí
+    // vzorkovanie a zmenší počas dekódovania, bez druhej bitmapy v Jave). DecodePlan stráži pamäť:
+    // HEIC 50 Mpx sa nedekóduje celé (~200 MB), ale so vzorkovaním 2 (výsledok o kúsok menší ako max).
     @RequiresApi(Build.VERSION_CODES.P)
     private fun decode(source: () -> ImageDecoder.Source, maxPx: Int): Bitmap? = try {
         val bmp = ImageDecoder.decodeBitmap(source()) { decoder, info, _ ->
-            // softvérová bitmapa (JPEG kompresia z HW bitmapy nejde) a hrubé zmenšenie už pri dekódovaní
+            // softvérová bitmapa (JPEG kompresia z HW bitmapy nejde)
             decoder.allocator = ImageDecoder.ALLOCATOR_SOFTWARE
-            decoder.setTargetSampleSize(sampleFor(info.size.width, info.size.height, maxPx))
+            val w = info.size.width
+            val h = info.size.height
+            val plan = DecodePlan.of(w, h, maxPx)
+            // neplatné rozmery vráti plán nezmenené -> dekóduje sa bez cieľa
+            if (plan.width != w || plan.height != h) {
+                decoder.setTargetSize(plan.width, plan.height)
+            }
         }
+        // poistka (dekodér, ktorý cieľ nedodrží) — pri presnej veľkosti nič nerobí
         scaleToMax(bmp, maxPx)
     } catch (ignored: Throwable) {
         null
-    }
-
-    // mocnina 2 tak, aby dekódovaný obrázok mal najviac ~2× cieľovú veľkosť (dorovná scaleToMax)
-    fun sampleFor(w: Int, h: Int, maxPx: Int): Int {
-        var sample = 1
-        while (w / sample > maxPx * 2 || h / sample > maxPx * 2) sample *= 2
-        return sample
     }
 
     private fun legacy(open: () -> InputStream?, maxPx: Int): Bitmap? {
@@ -78,8 +81,9 @@ object ImageDecode {
             val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
             open()?.use { BitmapFactory.decodeStream(it, null, bounds) }
             if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
+            val plan = DecodePlan.of(bounds.outWidth, bounds.outHeight, maxPx)
             val opts = BitmapFactory.Options().apply {
-                inSampleSize = sampleFor(bounds.outWidth, bounds.outHeight, maxPx)
+                inSampleSize = plan.sample
                 inPreferredConfig = Bitmap.Config.ARGB_8888
             }
             val bmp = open()?.use { BitmapFactory.decodeStream(it, null, opts) } ?: return null
@@ -89,7 +93,7 @@ object ImageDecode {
             } catch (ignored: Throwable) {
                 null
             }
-            applyOrientation(scaleToMax(bmp, maxPx), orientation ?: NORMAL)
+            applyOrientation(scaleToMax(bmp, maxOf(plan.width, plan.height)), orientation ?: NORMAL)
         } catch (ignored: Throwable) {
             null
         }

@@ -267,6 +267,22 @@ class ServerLogicTest {
         assertEquals(2, s.count())
     }
 
+    // server-rychlost: prihlásenia prežijú reštart služby (START_STICKY)
+    @Test fun session_prezije_restart_sluzby() {
+        val s = Sessions(idleMs = 1000, max = 2)
+        val a = s.create(0)
+        val b = s.create(0)
+        val again = Sessions(idleMs = 1000, max = 2)
+        again.restore(s.export() + ",zly,", 5000)
+        assertTrue(again.valid(a, 5500))
+        assertTrue(again.valid(b, 5500))
+        assertEquals(2, again.count())
+        val empty = Sessions()
+        empty.restore(null, 0)
+        empty.restore("", 0)
+        assertEquals(0, empty.count())
+    }
+
     @Test fun origin_rovnaky_alebo_ziadny() {
         assertTrue(RequestGuard.sameOrigin(null, "192.168.1.5:8089", null))
         assertTrue(RequestGuard.sameOrigin("http://192.168.1.5:8089", "192.168.1.5:8089", "same-origin"))

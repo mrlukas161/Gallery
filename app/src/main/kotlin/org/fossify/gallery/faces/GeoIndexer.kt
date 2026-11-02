@@ -8,6 +8,8 @@ import org.fossify.commons.extensions.isVideoFast
 import org.fossify.commons.helpers.ensureBackgroundThread
 import org.fossify.gallery.family.FamilyInbox
 import org.fossify.gallery.helpers.BackgroundPriority
+import org.fossify.gallery.helpers.ServerYield
+import org.fossify.gallery.services.IndexingService
 
 // Prečíta GPS z EXIF každej fotky (rýchle – len hlavička) a z metadát videí (ISO6709) a uloží do
 // geo.db. Typ (fotka/video) sa rozlišuje príponou cesty — bez zmeny schémy. Resumovateľné.
@@ -40,6 +42,7 @@ object GeoIndexer {
                 var done = 0
                 for (path in todo) {
                     if (!isRunning) break
+                    ServerYield.SHARED.pause(IndexingService.TASK_GEO, { isRunning }) // PC práve sťahuje
                     var lat = 0.0
                     var lon = 0.0
                     var has = false

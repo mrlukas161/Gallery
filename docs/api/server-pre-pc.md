@@ -9,7 +9,10 @@ Verzia 3 je spätne kompatibilná s verziou 2 — staré volania fungujú ďalej
 
 ## Prihlásenie
 
-Každý štart servera vygeneruje nový 6-miestny PIN (ukáže ho notifikácia v mobile).
+Každý **ručný** štart servera vygeneruje nový 6-miestny PIN (ukáže ho notifikácia v mobile). Keď systém
+službu sám reštartuje (napr. po uvoľnení pamäte), server beží ďalej s **tým istým PIN-om aj `epoch`** a prihlásenia
+prehliadačov (cookie) ostanú platné — web ani PC program sa neodhlásia. Nový PIN je až po výslovnom zastavení
+servera (Nastavenia, tlačidlo v notifikácii) alebo po zamknutí pre hádanie PIN-u.
 
 | Klient | Ako sa prihlási |
 |---|---|
@@ -44,6 +47,7 @@ Každý štart servera vygeneruje nový 6-miestny PIN (ukáže ho notifikácia v
 | Metóda | Cesta | Na čo |
 |---|---|---|
 | GET | `/api/ping` | stav servera, generácie, `features` |
+| GET | `/api/stats` | diagnostika rýchlosti (časy, cache, stav telefónu) |
 | POST | `/api/login`, `/api/logout` | session pre prehliadač |
 | GET | `/api/list` | zoznam fotiek a videí (celý alebo len zmeny) |
 | GET | `/api/file?id=` | originál (Range, ETag) alebo zmenšené JPEG |
@@ -65,18 +69,23 @@ Každý štart servera vygeneruje nový 6-miestny PIN (ukáže ho notifikácia v
 {"name":"Galéria+","version":"3","epoch":"q3J_x9Zk","count":10512,"gen":7,"stateGen":42,
  "newest":1730370000,"allFiles":true,"recycleBin":true,
  "features":["session","sinceGen","etag","range","groupsV2","groupState","meta","markBatch",
-             "syncedBatch","deleteDryRun","bin","restore","thumbMax","dlMark","quality"]}
+             "syncedBatch","deleteDryRun","bin","restore","thumbMax","dlMark","quality","stateSince","stats"]}
 ```
 
 - `version` — `"3"`; podľa `features` sa rozhoduj, ktoré API použiť (staré servery pole nemajú).
-- `epoch` — náhodné id behu servera. Iný `epoch` = server sa reštartoval, `gen` začína od nuly → načítaj zoznam celý.
-- `gen` — generácia zoznamu, zvýši sa pri každej zmene (pribudnutá, zmazaná, upravená fotka).
+- `epoch` — náhodné id behu servera. Iný `epoch` = server sa reštartoval → načítaj zoznam celý. Pri reštarte
+  služby systémom ostáva `epoch` rovnaký; `gen` vtedy pokračuje s odstupom (nikdy sa nevráti na číslo, ktoré klient
+  už videl s iným obsahom), takže `sinceGen` vráti `full:true`.
+- `gen` — generácia zoznamu, zvýši sa pri každej zmene (pribudnutá, zmazaná, upravená fotka). Nie je to počítadlo
+  od nuly — porovnávaj len na rovnosť.
 - `stateGen` — zvýši sa pri každej zmene značiek, stiahnutých alebo stavu skupín (aj z mobilu).
 - `allFiles` — appka má „Prístup ku všetkým súborom“ → funguje `/api/delete` a `/api/restore`.
 - `recycleBin` — Kôš je zapnutý (mazanie ide do Koša, inak natrvalo).
 
 Odporúčaný cyklus PC programu: `ping` každé 2–4 s; pri zmene `gen` → `/api/list?sinceGen=<starý gen>`,
-pri zmene `stateGen` → `/api/state` (a `/api/groupstate`), pri zmene `epoch` → celý zoznam.
+pri zmene `stateGen` → `/api/state?since=<starý stateGen>` (a `/api/groupstate`), pri zmene `epoch` → celý zoznam.
+`ping` (a `/api/stats`) sa **nerátajú ako práca servera** — otvorená karta, ktorá len pinguje, nebrzdí spracovanie
+knižnice v mobile ani nedrží mobil prebudený.
 
 ## `GET /api/list`
 
@@ -120,15 +129,22 @@ Bez parametrov (pôvodný formát) — pole položiek, zoradené **podľa dátum
   - `Content-Disposition: inline; filename="<ASCII náhrada>"; filename*=UTF-8''<presný názov>`.
 - `&dl=1` — `Content-Disposition: attachment`. Server zapíše **„✓ v PC“ sám**, až keď odošle celý
   originál (prerušené sťahovanie ani `Range` sa nezapíšu). PC program môže namiesto toho volať `/api/synced`.
-- `&q=<30–100>[&max=<256–4096>]` — **zmenšené JPEG** (dlhá strana `max`, predvolene 2048), správne otočené.
+- `&q=<30–100>[&max=<256–4096>]` — **zmenšené JPEG** (dlhá strana najviac `max`, predvolene 2048), správne otočené.
   Funguje aj pre HEIC/DNG. Názov v `Content-Disposition` má príponu `.jpg`. Nezapisuje „✓ v PC“.
+  Pri `max ≥ 1024` sa výsledok drží v diskovej cache mobilu (druhé stiahnutie je hneď). Pri veľmi veľkých fotkách
+  (nad ~25 Mpx, napr. HEIC 50 Mpx) môže byť dlhá strana o kúsok menšia ako `max` (8160 px → 4080 namiesto 4096) —
+  mobil tak nedekóduje celých ~200 MB. Pri preťažení `503 {"error":"busy"}` + `Retry-After: 1` (viď nižšie).
 
 ## `GET /api/thumb?id=<id>`
 
 - `&s=<64–1024>` (predvolene 300) — malý náhľad (mriežka). Do 512 px z `ContentResolver.loadThumbnail`
   (Android 10+), cache v pamäti servera podľa id + mtime + veľkosti.
-- `&max=<64–4096>` — väčší náhľad, napr. `max=2560` pre porovnávač (dekóduje sa raz cez ImageDecoder,
-  EXIF otočenie je uplatnené; HEIC, DNG aj video snímka).
+- `&max=<64–4096>` — väčší náhľad, napr. `max=2560` pre porovnávač (dekóduje sa raz cez ImageDecoder priamo na
+  cieľovú veľkosť, EXIF otočenie je uplatnené; HEIC, DNG aj video snímka). Náhľady ≥ 1024 px sú aj v diskovej
+  cache mobilu (`cacheDir/pc_thumbs`, ~300 MB, najdlhšie nepoužité sa mažú) — prežijú reštart servera.
+- Veľké dekódovania (> 512 px) idú najviac **2 naraz**, ďalších najviac **6 čaká**; ďalšia požiadavka dostane hneď
+  `503 {"error":"busy"}` + `Retry-After: 1` → skús znova o sekundu. Keď klient spojenie zavrie (prehliadač zrušil
+  načítanie obrázka), mobil náhľad, ktorý ešte nezačal dekódovať, zahodí.
 - `&v=<mtime>` — keď sedí s aktuálnym `mtime`, odpoveď má `Cache-Control: private, max-age=604800, immutable`;
   inak `private, no-cache` + `ETag`.
 - `?bin=<key>&s=…` — náhľad fotky z Koša (`key` z `/api/bin`).
@@ -241,11 +257,18 @@ Stav prechádzania skupín (web: „Spracované X z Y“), uložený v mobile (p
 Značka je len **návrh**. Zmazanie potvrdí používateľ v mobile (Galéria+ sa opýta pri otvorení a presunie
 fotky do Koša Galérie+, pri vypnutom Koši natrvalo) alebo PC/web cez `/api/delete`.
 
-- `GET /api/state` → `{"marked":[id,…],"synced":{"<id>":<ms>},"stateGen":42}`
+- `GET /api/state` → `{"marked":[id,…],"synced":{"<id>":<ms>},"stateGen":42,"full":true}`
+- `GET /api/state?since=<stateGen>` — **len zmeny** od danej generácie (feature `stateSince`):
+  `{"full":false,"since":41,"marked":[id…],"unmarked":[id…],"synced":{"<id>":<ms>},"stateGen":42}` —
+  `marked`/`unmarked` = fotky, ktorým sa zmenila značka (nastav/zruš), `synced` = nové „✓ v PC“. Ak mobil
+  históriu nemá (stará generácia, reštart servera, „zrušiť všetky značky“), vráti celý stav s `full:true` — vtedy
+  starý stav zahoď. Generácie zmenené len stavom skupín vrátia prázdne zmeny.
 - `POST /api/mark` `{"ids":[1,2,3],"del":true}` (dávkovo, najviac 20 000 id, telo do 512 kB)
   → `{"ok":true,"marked":<počet všetkých>,"changed":<koľkým sa zmenil stav>,"stateGen":43}`.
   `del:false` značku zruší. Pôvodné `POST /api/mark?id=<id>&del=1|0` funguje ďalej.
 - `POST /api/synced` `{"ids":[…]}` (alebo `?id=`) — zapíše „✓ v PC“ → `{"ok":true,"count":n}`.
+- „✓ v PC“ po `/api/file?dl=1` sa v mobile zapíše hneď do pamäti (vidno ho v `/api/list` aj `/api/state`),
+  do úložiska ide dávkou o ~3 s; `stateGen` sa zvýši **raz za dávku**, nie po každom súbore.
 - `POST /api/clearmarks` — zruší všetky značky.
 
 ## `POST /api/delete`
@@ -287,10 +310,88 @@ kam sa nedá zapisovať → priečinok Obrázky), riadok v DB Galérie+ sa vrát
 
 ## `POST /api/upload`
 
-Bez zmeny oproti verzii 2: `multipart/form-data` (prvá časť = súbor, názov z časti) alebo surové telo
-s hlavičkami `X-Filename` (URL-kódovaný názov), voliteľne `X-Mime`, a `Content-Length`.
+`multipart/form-data` (prvá časť = súbor, názov z časti) alebo surové telo s hlavičkami `X-Filename`
+(URL-kódovaný názov), voliteľne `X-Mime`, a `Content-Length`.
 Ukladá sa do `Pictures/Galéria` resp. `Movies/Galéria`. Strop 4 GB a rezerva voľného miesta.
-→ `{"saved":"<názov>","uri":"content://…"}`.
+→ `{"saved":"<názov>","uri":"content://…","id":1234}` — `id` = MediaStore `_ID` novej položky (hneď ju vráti
+`/api/list?sinceGen` aj `/api/file?id=`; `null`, ak sa nedalo zistiť).
+
+**PC program: posielaj `PUT /api/upload` so surovým telom** (`X-Filename`, `Content-Length`). Multipart mobil
+zapisuje na disk 3× (NanoHTTPD celé telo, potom časť, potom MediaStore), surové telo ide rovno do MediaStore.
+Neposielaj `Expect: 100-continue` (server ho nepozná a klient by zbytočne čakal).
+
+## Rýchlosť servera (server-rychlost)
+
+Server beží v tom istom procese ako spracovanie knižnice (tváre, OCR, CLIP…), mobil má pri zhasnutej obrazovke
+uspávané CPU aj Wi-Fi. Preto:
+
+- **Spracovanie knižnice ustupuje serveru.** Kým PC/web niečo sťahuje (každá požiadavka okrem `ping` a `stats`),
+  automatické spracovanie sa nespustí (60 s po poslednej požiadavke) a bežiace úlohy po dokončení aktuálnej fotky
+  počkajú, kým je server 30 s ticho (notifikácia „… čaká – PC práve sťahuje“). Ručne spustené úlohy sa spustia,
+  ale tiež ustupujú. `/api/quality` model tvárí dostane prednostne (ustupujúci indexer ho uvoľní).
+- **WakeLock + WifiLock** len počas požiadaviek a ~90 s po poslednej (s časovým limitom ako poistkou) — bez
+  požiadaviek sa do ~2 min uvoľnia. Pomáha aj výnimka z optimalizácie batérie (Nastavenia → Server pre PC ukáže
+  odkaz, ak chýba).
+- **Prenos**: `TCP_NODELAY`, výstup cez 64 kB buffer, čítanie požiadavky s časovým limitom 25 s. Najviac
+  **20 súbežných spojení**; ďalšie dostane hneď `503 {"error":"busy"}` + `Retry-After: 1` a spojenie sa zavrie.
+  Keep-alive spojenia drž rozumne (prehliadač ich má 6).
+- **Index**: nová / zmazaná / obnovená fotka sa do zoznamu dostane bez prestavby celej knižnice v požiadavke
+  (upload a mazanie hneď, obnova a zmeny z mobilu do ~2,5 s, najviac 10 s).
+- **`/api/groups`**: ETag vzniká z kľúča (index, skupiny v mobile, skryté skupiny, cache skóre) — `If-None-Match`
+  vráti `304` bez akéhokoľvek výpočtu; inak telo z cache servera.
+
+### Hlavička `Server-Timing`
+
+Každá odpoveď ju má, napr. `Server-Timing: app;dur=85.2, q;dur=40.1, dec;dur=38.0, jpg;dur=6.3, cache;desc=miss`
+(časy v ms, prehliadač ich ukáže v DevTools → Network → Timing):
+
+| Metrika | Význam |
+|---|---|
+| `app` | celá obsluha v mobile (bez odoslania tela) |
+| `q` | čakanie vo fronte dekódovaní (iné veľké náhľady) |
+| `dec` | dekódovanie obrázka (HEIC/JPEG/video snímka) |
+| `jpg` | kompresia do JPEG |
+| `cache` | `mem` / `disk` = náhľad z cache, `miss` = dekódoval sa |
+
+### `GET /api/stats`
+
+Diagnostika „prečo je server pomalý“ (s prihlásením ako ostatné API). Nič nemení, nerobí sa z nej práca servera.
+
+```json
+{"now":1730370000000,"client":"lan","epoch":"q3J_x9Zk","uptimeMs":3600000,
+ "requests":{"inFlight":2,"connections":7,"maxConnections":20,"rejectedConnections":0,"total":5321,"usb":0,"lan":5321},
+ "endpoints":{"/api/thumb":{"count":4100,"p50":4,"p95":180,"max":2400,"p50Total":6,"p95Total":260}},
+ "slow":[{"at":1730369990000,"path":"/api/thumb?id=1234&max=2560","status":200,"ms":812,"totalMs":905,
+          "bytes":812345,"via":"lan"}],
+ "index":{"count":10512,"gen":157,"rebuilds":4,"rebuildLastMs":310,"rebuildAvgMs":290,"rebuildMaxMs":420,
+          "rebuildLastAt":1730369000000},
+ "thumbs":{"mem":{"hits":3900,"misses":200,"smallBytes":15000000,"largeBytes":30000000},
+           "disk":{"hits":120,"misses":80,"files":350,"bytes":290000000,"maxBytes":314572800},
+           "decode":{"large":{"running":2,"waiting":3,"parallel":2,"maxWaiting":6,"done":300,"rejected":0,"cancelled":12},
+                     "small":{"running":0,"waiting":0,"parallel":4,"maxWaiting":64,"done":900,"rejected":0,"cancelled":40}}},
+ "groups":{"hits":30,"misses":2},
+ "synced":{"pending":0},
+ "processing":{"running":["faces"],"pausedForPc":["faces"],"heavyBusy":true,"heavyWaiting":0,
+               "serverIdleMs":0,"autoStartAllowed":false},
+ "device":{"charging":true,"batteryPct":81,"batteryTempC":36.5,"screenOn":false,"powerSave":false,
+           "deviceIdle":false,"ignoringBatteryOptimizations":false,"thermalStatus":0},
+ "wifi":{"rssi":-58,"linkMbps":866,"freqMHz":5180},
+ "locks":{"wake":true,"wifi":true,"wifiMode":"low_latency","heldMs":120000,"idleMs":2000,"holdMs":90000}}
+```
+
+Ako to čítať:
+
+| Kde | Čo hľadať |
+|---|---|
+| `endpoints.<cesta>` | `p50`/`p95`/`max` = čas obsluhy v mobile (ms) z posledných 256 požiadaviek, `p50Total`/`p95Total` aj s odoslaním. Vysoké `p95` pri `/api/thumb` a `/api/file` = dekódovanie (pozri `thumbs.decode`), vysoké `p95Total` pri malých odpovediach = sieť |
+| `slow` | posledných 20 požiadaviek nad 500 ms (obsluha, alebo malá odpoveď s pomalým prenosom). `via`: `usb` = 127.0.0.1 (adb), `lan` = Wi-Fi |
+| `requests` | `inFlight` bežiace požiadavky, `connections` otvorené spojenia (aj nečinné keep-alive), `rejectedConnections` odmietnuté nad limit |
+| `index` | prestavby zoznamu (počet a trvanie); veľa prestavieb = v mobile sa práve veľa mení |
+| `thumbs` | úspešnosť cache (`hits`/`misses`), fronta veľkých dekódovaní (`waiting`, `rejected` = 503, `cancelled` = zrušené klientom) |
+| `processing` | čo spracovanie knižnice práve robí; `pausedForPc` = úlohy, ktoré serveru ustúpili; `heavyBusy` = model (tváre/OCR/CLIP) je načítaný |
+| `device` | `charging`, `batteryTempC` (nad ~42 °C mobil spomaľuje CPU), `thermalStatus` (0 = OK, 3+ = obmedzenie), `deviceIdle` (Doze), `powerSave` (šetrič), `ignoringBatteryOptimizations` (false = systém môže sieť pri zhasnutej obrazovke brzdiť), `screenOn` |
+| `wifi` | `rssi` (dBm; pod −70 slabý signál), `linkMbps`, `freqMHz` (2,4 GHz vs 5 GHz); `null` = mobil nie je na Wi-Fi (USB) |
+| `locks` | `wake`/`wifi` = zámky držané počas prenosu; po ~90 s bez požiadaviek majú byť `false` |
 
 ## Zmeny oproti verzii 2
 
@@ -304,6 +405,14 @@ Ukladá sa do `Pictures/Galéria` resp. `Movies/Galéria`. Strop 4 GB a rezerva 
 - `/api/delete`: `dryRun`, `freedBytes`, `batchId`.
 - Nové: `/api/login`, `/api/logout`, `/api/meta`, `/api/groupstate`, `/api/bin`, `/api/restore`.
 - Chyby vždy ako JSON `{"error":…}`, kontrola `Origin` pri zmenách.
+
+## Novinky (server-rychlost)
+
+- `features` obsahuje `stateSince` (`/api/state?since=`) a `stats` (`/api/stats`). Všetko je spätne kompatibilné.
+- Každá odpoveď má `Server-Timing`. Nové kódy: `503 {"error":"busy"}` + `Retry-After` (fronta dekódovaní alebo
+  limit spojení).
+- PIN, `epoch` aj prihlásenia prežijú reštart služby systémom; `gen` po reštarte pokračuje s odstupom.
+- `/api/upload` vracia aj `id`; pre PC program odporúčame `PUT` so surovým telom.
 
 ## Novinky (porovnávač 0.67, vlna 2)
 
@@ -319,9 +428,12 @@ Ukladá sa do `Pictures/Galéria` resp. `Movies/Galéria`. Strop 4 GB a rezerva 
 3. Živý zoznam: `ping` → pri zmene `gen` `/api/list?sinceGen=…`, pri zmene `epoch` celý zoznam.
 4. Porovnanie: najprv `/api/thumb?id=…&max=2560&v=<mtime>`, originál `/api/file?id=…` až pri priblížení
    (HEIC/DNG: `/api/file?id=…&q=92&max=4096`). Zoom drž v relatívnych súradniciach (stred ako podiel, mierka voči „prispôsobiť“).
+   Na `503 busy` odpovedz novým pokusom po `Retry-After`; naraz nepýtaj viac ako ~4 veľké náhľady.
 5. Skupiny z `/api/groups?v=2`, stav cez `/api/groupstate` (zdieľaný s webom), ★ = `best ?? keeper`.
    „Vyhodnotiť skupinu“: `POST /api/quality {"ids":[…]}`, pri `202`/`429` opakuj po `retryMs`.
    Hromadné „Ponechať najlepšiu“: presné kópie podľa `keep`, ostatné podľa `/api/quality` (`groups[key].best`,
    preskoč `uncertain` a nikdy neoznač `unscored` ani celú skupinu).
 6. EXIF z `/api/meta?ids=…` (po 8).
 7. Mazanie: `dryRun` → potvrdenie s `freedBytes` → `/api/delete` po 1000 → ponúkni „Vrátiť“ cez `/api/restore {"batchId"}`.
+8. Nahrávanie: `PUT /api/upload` so surovým telom (`X-Filename`, `Content-Length`), bez `Expect: 100-continue`.
+9. Stav značiek: `/api/state?since=<stateGen>` (pri `full:true` stav nahraď celý). Pri pomalosti pozri `/api/stats`.

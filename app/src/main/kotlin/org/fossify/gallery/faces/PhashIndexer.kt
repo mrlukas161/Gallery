@@ -14,6 +14,8 @@ import org.fossify.gallery.R
 import org.fossify.gallery.family.FamilyInbox
 import org.fossify.gallery.helpers.BackgroundPriority
 import java.io.File
+import org.fossify.gallery.helpers.ServerYield
+import org.fossify.gallery.services.IndexingService
 
 // Perceptuálny hash (average hash): každú fotku zmenší na PEVNÝCH 8x8, spočíta 64-bit hash (phash.db).
 // Rýchle, resumovateľné. Slúži na hľadanie podobných/duplicitných fotiek naprieč celou knižnicou.
@@ -55,6 +57,7 @@ object PhashIndexer {
                 var done = 0
                 for (path in todo) {
                     if (!isRunning) break
+                    ServerYield.SHARED.pause(IndexingService.TASK_PHASH, { isRunning }) // PC práve sťahuje
                     val hash = try {
                         computeHash(path)
                     } catch (e: Throwable) {
