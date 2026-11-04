@@ -110,10 +110,14 @@ test("pomocník: nemúdrosti z myši — Shift+klik, koliesko, Do chatu, kontext
   assert.ok(/role="menu"/.test(html) && /setAttribute\("role", "menuitem"\)/.test(script), "menu má role menu / menuitem");
 });
 
-test("medzerník: vo všetkých obsluhách ide cez spaceMark a nik iný ho nepoužíva na stlačenie tlačidla", () => {
-  for (const fn of ["viewerKeys", "cmpKeys", "fcmpKeys"]) assert.ok(/case " ": spaceMark\(e, /.test(bodyOf(fn)), fn);
-  assert.ok(bodyOf("listKeys").includes("spaceMark(e,"), "listKeys (mriežka aj náhľad)");
-  const sm = bodyOf("spaceMark");
-  assert.ok(sm.includes("e.preventDefault()") && sm.includes("e.repeat"), "spaceMark: preventDefault a e.repeat");
+test("medzerník = výber: vo všetkých obsluhách ide cez spaceSel, X / Delete označí výber naraz", () => {
+  for (const fn of ["viewerKeys", "cmpKeys", "fcmpKeys"]) {
+    assert.ok(/case " ": spaceSel\(e, /.test(bodyOf(fn)), fn);
+    assert.ok(/case "x": case "X": case "Delete":[^\n]*markSelOrCur\(/.test(bodyOf(fn)), fn + ": X = výber naraz, inak aktuálna");
+  }
+  assert.ok(bodyOf("listKeys").includes("spaceSel(e,"), "listKeys (mriežka aj náhľad)");
+  assert.ok(!script.includes("spaceMark"), "starý spaceMark (medzerník = na zmazanie) už nemá byť");
+  const sm = bodyOf("spaceSel");
+  assert.ok(sm.includes("e.preventDefault()") && sm.includes("e.repeat") && sm.includes("toggleSel("), "spaceSel: preventDefault, e.repeat, toggleSel");
   assert.ok(!/onButton\(/.test(script), "starý onButton (stláčal medzerník tlačidlá) už nemá byť");
 });

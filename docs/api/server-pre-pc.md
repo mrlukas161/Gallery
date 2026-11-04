@@ -537,7 +537,9 @@ dlaždíc). Prednačíta sa len ďalšia fotka, až keď je aktuálna načítan�
 (rozsah `R`: aktuálny filter / celá knižnica / tento priečinok / táto skupina), pás miniatúr hore, `T` vymení strany,
 `P` alebo Alt + klik pripne inú, spoločný zoom v relatívnych súradniciach, EXIF rozdiely, `X` a `Ctrl+Z`.
 
-**Výber a značky:** `Delete`/`X` s výberom = jeden `POST /api/mark {ids, del}`; Shift + klik / Shift + medzerník =
+**Výber a značky:** medzerník = vybrať / odobrať fotku (od 0.67.3 všade, aj v prehliadači a porovnávačoch);
+`Delete`/`X` (aj tlačidlo 🗑 pri jednej fotke) s výberom = jeden `POST /api/mark {ids, del}`, bez výberu aktuálna
+fotka; Shift + klik / Shift + medzerník =
 interval od kotvy (kotva vybraná → vybrať, inak odznačiť), `Shift+X` to isté pre značky; `Ctrl+Z` vráti celý
 interval aj dávku; `Ctrl+D` a `Esc` zrušia výber. Označené na zmazanie sú predvolene skryté (`H`), počítadlo
 „Na zmazanie: N (X MB)“ otvorí prehľad. Pravé tlačidlo / kláves Menu / Shift+F10 = vlastné menu (`role=menu`),
@@ -584,15 +586,19 @@ Web zapína tieto časti len podľa `features` z `/api/ping` – bez `favorites`
   vrstva video zastaví a uvoľní (`pause()`, odobratie `src`, `load()`). Chyba videa (napr. 404 `not_motion`) =
   hlásenie a späť na fotku. Prihlásenie ako pri ostatných `<img>`/`<video>`: cookie, bez nej `token=` v adrese.
 
-**Pretiahnutie do inej aplikácie:** `dragstart` na miniatúre (mriežka, zoznam náhľadu, pásy porovnávačov,
-„Na zmazanie“) a na nepriblíženej fotke (prehliadač, náhľad, panely) nastaví len
-`DataTransfer` `DownloadURL` = `<mime>:<meno>:<absolútna URL>`, kde URL je tá istá ako pri ⬇:
-`/api/file?id=<id>&dl=1` (originál, mime z položky) alebo `…&q=<kvalita>&max=2048` (zmenšené JPEG, `image/jpeg`,
-prípona `.jpg`). Prihlásenie: Chrome pri sťahovaní z `DownloadURL` použije cookie `gp_sid` tej istej adresy; bez
-cookie je v URL `token=` (rovnako ako priamy odkaz na veľké video). `dl=1` znamená, že server po celom prenose
-zapíše „✓ v PC“. Chrome vie z webu do inej aplikácie pretiahnuť len 1 súbor – pri viacerých vybraných web pretiahne
-fotku pod kurzorom a po pustení vysvetlí alternatívy. Iné natívne ťahanie (výber textu/HTML, `<img>` náhľadu) je
-zakázané.
+**Pretiahnutie do inej aplikácie (od 0.67.3):** ťahá sa natívny `<img>` – Chrome k nemu pribalí dáta obrázka ako
+súbor (z cache, žiadna ďalšia požiadavka na server) a aplikácia Claude ho prijme. Miniatúra (mriežka, zoznam
+náhľadu, pásy porovnávačov, „Na zmazanie“) = jej náhľad `/api/thumb?s=`; otvorená nepriblížená fotka (prehliadač,
+náhľad, panely) = neviditeľný `<img class="dragpx">` presne nad plátnom s tou istou adresou ako zobrazený obrázok
+(náhľad `max=2560`, pri Plnej kvalite originál). `DownloadURL` z 0.67.2 Claude neprijal, preto sa už nepoužíva.
+Chrome z webu pustí len 1 súbor – pri viacerých vybraných po pustení ponúkne „💬 Pripraviť všetky (N)“ = Do chatu.
+Iné natívne ťahanie (výber textu/HTML) je zakázané.
+
+**Do chatu (Shift+D):** každá fotka ako samostatné zmenšené JPEG (`/api/file?id=&q=85&max=2048`, predpona `Claude_`,
+bez „✓ v PC“). V bezpečnom kontexte (localhost/USB alebo adresa povolená v chrome://flags) do dočasného priečinka
+pre chat cez `showDirectoryPicker` – priečinok sa vyberie raz a pamätá sa v IndexedDB (`galeria-plus` / `kv` /
+`chatDir` = `{dir, names}`); pred ďalším odoslaním sa z neho zmažú len súbory z `names` (zapísané minule). Inak
+postupne do Stiahnutých.
 
 **Schránka:** Ctrl+C a „Kopírovať obrázok“ – `fetch` `/api/file?id=` (originál), `/api/file?id=&q=&max=2048`
 (zmenšené) alebo `/api/thumb?id=&max=<dlhá strana, ≤ 4096>` (HEIC/DNG) → PNG → `navigator.clipboard.write`.

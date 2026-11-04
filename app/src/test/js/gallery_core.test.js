@@ -771,25 +771,28 @@ test("živé fotky: zo zoznamu hneď, inak podľa /api/meta (motion.len)", () =>
   assert.equal(C.liveState({ id: 2, mime: "video/mp4", motion: true }, undefined), false, "video nie je živá fotka");
 });
 
-test("pretiahnutie do inej aplikácie: DownloadURL = mime:meno:absolútna URL ako ⬇", () => {
-  const jpg = { id: 7, name: "IMG_7.jpg", mime: "image/jpeg" }, heic = { id: 8, name: "IMG_8.HEIC", mime: "image/heic" };
-  const vid = { id: 9, name: "VID_9.mp4", mime: "video/mp4" };
-  let d = plain(C.dragData(jpg, { origin: "http://192.168.1.20:8089" }));
-  assert.equal(d.downloadUrl, "image/jpeg:IMG_7.jpg:http://192.168.1.20:8089/api/file?id=7&dl=1");
-  assert.equal(d.url, "http://192.168.1.20:8089/api/file?id=7&dl=1");
-  d = plain(C.dragData(heic, { origin: "http://h:1", reduced: true, q: 85 }));
-  assert.equal(d.downloadUrl, "image/jpeg:IMG_8.jpg:http://h:1/api/file?id=8&dl=1&q=85&max=2048", "zmenšené = JPEG 2048 px s kvalitou, prípona .jpg");
-  assert.equal(C.dragData(heic, { origin: "http://h:1" }).downloadUrl, "image/heic:IMG_8.HEIC:http://h:1/api/file?id=8&dl=1", "originál bez prekódovania");
-  assert.equal(C.dragData(vid, { origin: "http://h:1", reduced: true }).downloadUrl, "video/mp4:VID_9.mp4:http://h:1/api/file?id=9&dl=1", "video sa nezmenšuje");
-  assert.equal(C.dragData(jpg, { origin: "http://h:1", token: "123456" }).url, "http://h:1/api/file?id=7&dl=1&token=123456", "bez cookie token v adrese ako pri priamom odkaze");
-  assert.equal(C.dragData({ id: 1, name: "a:b/c\\d.jpg", mime: "image/png" }, { origin: "" }).name, "a_b_c_d.jpg", "dvojbodka by rozbila formát");
-  assert.equal(C.dragData({ id: 1, name: "", mime: "" }, {}).downloadUrl, "application/octet-stream:foto:/api/file?id=1&dl=1");
+test("parametre sťahovania a hlásenie pri ťahaní viacerých fotiek", () => {
+  const jpg = { id: 7, name: "IMG_7.jpg", mime: "image/jpeg" }, vid = { id: 9, name: "VID_9.mp4", mime: "video/mp4" };
+  assert.equal(C.dragData, undefined, "DownloadURL (0.67.2) Claude neprijal – ťahá sa natívny obrázok");
   // rovnaké parametre ako sťahovanie tlačidlom ⬇ (dlJob)
   assert.deepEqual(plain(C.fileParams(jpg, true, 70)), { id: 7, dl: 1, q: 70, max: 2048 });
   assert.deepEqual(plain(C.fileParams(vid, true, 70)), { id: 9, dl: 1 });
   assert.equal(C.query({ id: 1, a: null, b: "x y" }, "t"), "?id=1&b=x%20y&token=t");
   assert.equal(C.query({}, ""), "");
-  assert.match(C.DRAG_MULTI_TXT, /^Do inej aplikácie sa dá z prehliadača pretiahnuť len 1 fotka naraz\. Viac fotiek: 📁 Uložiť do priečinka \(cez USB\)/);
+  assert.match(C.DRAG_MULTI_TXT, /^Chrome prenesie do inej aplikácie len 1 fotku naraz\. Celý výber priprav cez 💬 Do chatu \(Shift\+D\)/);
+});
+
+test("medzerník = výber: štítok výberu a tlačidlo 🗑 (ako X: výber naraz, inak táto)", () => {
+  const sel = new Set([1, 2, 3]), none = new Set();
+  assert.equal(C.selLabel(sel, 2), "✓ vybraná · vybraných 3");
+  assert.equal(C.selLabel(sel, "2"), "✓ vybraná · vybraných 3", "id ako text z DOM");
+  assert.equal(C.selLabel(sel, 7), "vybraných 3");
+  assert.equal(C.selLabel(none, 2), "");
+  const it = (id) => ({ id: id });
+  assert.equal(C.markBtnText([], it(5), new Set()), "🗑 Označiť");
+  assert.equal(C.markBtnText([], it(5), new Set([5])), "↩ Zrušiť 🗑");
+  assert.equal(C.markBtnText([it(1), it(2)], it(5), new Set([1])), "🗑 Označiť výber (2)");
+  assert.equal(C.markBtnText([it(1), it(2)], it(5), new Set([1, 2])), "↩ Zrušiť 🗑 výberu (2)");
 });
 
 test("schránka (Ctrl+C): čo sa načíta, tip chrome://flags", () => {

@@ -71,18 +71,23 @@
   var y0 = cell(0).getBoundingClientRect().top;
   var sp = key(" ");
   await sleep(150);
-  ok("medzerník označí fotku pod kurzorom na zmazanie", cell(0).classList.contains("ismark") && sp.defaultPrevented, cell(0).className);
+  ok("medzerník vyberie fotku pod kurzorom (nie na zmazanie)", cell(0).classList.contains("sel") && !cell(0).classList.contains("ismark") && sp.defaultPrevented, cell(0).className);
   ok("medzerník neposunul mriežku", Math.abs(cell(0).getBoundingClientRect().top - y0) < 1, y0 + " -> " + cell(0).getBoundingClientRect().top);
   key(" "); await sleep(150);
-  ok("druhý medzerník zruší označenie", !cell(0).classList.contains("ismark"), cell(0).className);
+  ok("druhý medzerník fotku z výberu odoberie", !cell(0).classList.contains("sel"), cell(0).className);
   key(" ", { repeat: true }); key(" ", { repeat: true }); await sleep(150);
-  ok("držaný medzerník (repeat) neprepína", !cell(0).classList.contains("ismark"), cell(0).className);
+  ok("držaný medzerník (repeat) neprepína", !cell(0).classList.contains("sel"), cell(0).className);
   $("#selBtn").focus();
   var pr = $("#selBtn").getAttribute("aria-pressed");
   var sp2 = key(" "); await sleep(150);
-  ok("medzerník s fokusom na tlačidle ho nestlačí a označí fotku", $("#selBtn").getAttribute("aria-pressed") === pr && sp2.defaultPrevented && cell(0).classList.contains("ismark"), pr + "/" + $("#selBtn").getAttribute("aria-pressed"));
-  key(" "); await sleep(150);
+  ok("medzerník s fokusom na tlačidle ho nestlačí a vyberie fotku", $("#selBtn").getAttribute("aria-pressed") === pr && sp2.defaultPrevented && cell(0).classList.contains("sel"), pr + "/" + $("#selBtn").getAttribute("aria-pressed") + " " + cell(0).className);
   document.activeElement.blur();
+  key("ArrowRight"); key(" "); await sleep(150); // vybrané 0 a 1
+  key("x"); await sleep(250);
+  ok("X označí celý výber naraz na zmazanie", cell(0).classList.contains("ismark") && cell(1).classList.contains("ismark"), cell(0).className + " | " + cell(1).className);
+  key("z", { ctrl: true }); await sleep(250);
+  ok("Ctrl+Z vráti dávku (fotka 1 ostáva označená zo začiatku testu)", !cell(0).classList.contains("ismark") && cell(1).classList.contains("ismark"), cell(0).className + " | " + cell(1).className);
+  key("Escape"); await sleep(50); key("Home"); await sleep(50);
   // myš: bunka pod myšou sa stane kurzorom
   cell(7).dispatchEvent(new MouseEvent("mousemove", { bubbles: true, clientX: 400 + Math.random() * 50, clientY: 300 + Math.random() * 50 }));
   ok("myš nad bunkou presunie kurzor", curIdx() === 7, curIdx());
@@ -130,7 +135,7 @@
   ok("názvy majú predponu Claude_ a príponu .jpg", dl.every(function (x) { return /^Claude_IMG_\d+\.jpg$/.test(x.name); }), JSON.stringify(dl));
   var fl = (await fileLog()).slice(-2);
   ok("zmenšené JPEG, dlhá strana 2048 px, po jednom (nie naraz)", fl.length === 2 && fl.every(function (x) { return x.max === "2048" && Number(x.q) > 0 && x.dl === "1"; }), JSON.stringify(fl));
-  ok("toast s pokynom", /2 fotky pre chat v Stiahnutých súboroch – pretiahni ich do Claude/.test($("#toast").textContent), $("#toast").textContent);
+  ok("toast s pokynom", /2 fotky pre chat v Stiahnutých \(Claude_…\) – v Prieskumníkovi ich označ a pretiahni do Claude naraz/.test($("#toast").textContent), $("#toast").textContent);
   dl.length = 0;
   click($("#selChat")); await sleep(2500);
   ok("tlačidlo 💬 Do chatu v lište výberu", dl.length === 2, JSON.stringify(dl));
@@ -144,7 +149,7 @@
   dl.length = 0;
   click(cell(0), { ctrl: true }); click(cell(22), { shift: true });
   key("D", { shift: true }); await sleep(200);
-  ok("nad 20 fotiek sa pýta", $("#ask").classList.contains("on") && /Naozaj stiahnuť všetky/.test($("#askM").textContent) && dl.length === 0, $("#askM").textContent);
+  ok("nad 20 fotiek sa pýta", $("#ask").classList.contains("on") && /Naozaj pripraviť všetky/.test($("#askM").textContent) && dl.length === 0, $("#askM").textContent);
   $("#askNo").click(); await sleep(1200);
   ok("Zrušiť = nič sa nestiahlo", dl.length === 0, dl.length);
   key("D", { shift: true }); await sleep(200);
@@ -160,11 +165,12 @@
   key("Enter"); await sleep(300);
   ok("Enter otvorí prehliadač", overlays().indexOf("viewer") >= 0, overlays());
   key(" "); await sleep(200);
-  ok("medzerník v prehliadači označí aktuálnu fotku", /na zmazanie/.test($("#vState").textContent), $("#vState").textContent);
+  ok("medzerník v prehliadači vyberie aktuálnu fotku", /✓ vybraná · vybraných 1/.test($("#vState").textContent) && !/na zmazanie/.test($("#vState").textContent), $("#vState").textContent);
+  ok("tlačidlo 🗑 v prehliadači ukáže výber", /Označiť výber \(1\)/.test($("#vMark").textContent), $("#vMark").textContent);
   $("#vNext").focus();
   var info0 = $("#vInfo").textContent;
   key(" "); await sleep(200);
-  ok("medzerník nestlačí fokusované tlačidlo › a zruší označenie", $("#vInfo").textContent === info0 && !/na zmazanie/.test($("#vState").textContent), $("#vState").textContent);
+  ok("medzerník nestlačí fokusované tlačidlo › a fotku z výberu odoberie", $("#vInfo").textContent === info0 && !/vybraná/.test($("#vState").textContent), $("#vState").textContent);
   key("ArrowRight"); await sleep(100);
   ok("→ ďalšia fotka", /2 \//.test($("#vInfo").textContent), $("#vInfo").textContent);
   dl.length = 0; key("D", { shift: true }); await sleep(900);
@@ -245,10 +251,17 @@
   key("ArrowLeft"); await sleep(250);
   ok("← v druhom paneli mení len druhý (2→1), prvý ostáva 4", pName(1) === "IMG_0001.jpg" && pName(0) === "IMG_0004.jpg", pName(0) + "," + pName(1));
   // medzerník
+  // porovnanie výberu (4 vybrané): medzerník prepne výber fotky aktívneho panela, X označí celý výber naraz
+  var st1 = function () { return $('#cmp .pane[data-p="1"] .st').textContent; }, st0 = function () { return $('#cmp .pane[data-p="0"] .st').textContent; };
+  ok("fotky porovnania výberu sú „✓ vybraná“", /vybraná/.test(st1()) && /vybraná/.test(st0()), st1() + " | " + st0());
   key(" "); await sleep(250);
-  ok("medzerník označí fotku aktívneho panela", /na zmazanie/.test($('#cmp .pane[data-p="1"] .st').textContent) && $('#cmp .pane[data-p="0"] .st').textContent.indexOf("na zmazanie") < 0, $('#cmp .pane[data-p="1"] .st').textContent);
+  ok("medzerník odoberie z výberu len fotku aktívneho panela", !/vybraná/.test(st1()) && /vybraná/.test(st0()), st1() + " | " + st0());
   key(" "); await sleep(250);
-  ok("druhý medzerník označenie zruší", $('#cmp .pane[data-p="1"] .st').textContent.indexOf("na zmazanie") < 0, $('#cmp .pane[data-p="1"] .st').textContent);
+  ok("druhý medzerník ju znova vyberie", /vybraná/.test(st1()), st1());
+  key("x"); await sleep(250);
+  ok("X s výberom označí celý výber naraz (oba panely)", /na zmazanie/.test(st1()) && /na zmazanie/.test(st0()), st1() + " | " + st0());
+  key("x"); await sleep(250);
+  ok("druhé X značky výberu zruší", !/na zmazanie/.test(st1()) && !/na zmazanie/.test(st0()), st1() + " | " + st0());
   // koliesko = listovanie v paneli pod kurzorom
   var st0 = $('#cmp .pane[data-p="0"] .stage'), n0 = pName(0);
   var cw = new WheelEvent("wheel", { deltaY: -100, bubbles: true, cancelable: true, clientX: 200, clientY: 300 });
@@ -327,8 +340,8 @@
   ok("F (bez Shift) ostáva prepnutie filtra", $("#filter").value === "new", $("#filter").value);
   $("#filter").value = "all"; $("#filter").dispatchEvent(new Event("change", { bubbles: true })); await sleep(150);
   var dt = new DataTransfer(), dev = new DragEvent("dragstart", { bubbles: true, cancelable: true, dataTransfer: dt });
-  cell(0).dispatchEvent(dev);
-  ok("ťahanie dlaždice: DownloadURL na /api/file (originál, meno súboru)", dt.getData("DownloadURL") === "image/jpeg:IMG_0001.jpg:" + location.origin + "/api/file?id=1&dl=1", dt.getData("DownloadURL"));
+  cell(0).querySelector("img").dispatchEvent(dev);
+  ok("ťahanie dlaždice: natívny obrázok (nie DownloadURL, ťahanie sa nezruší)", !dev.defaultPrevented && !dt.getData("DownloadURL") && cell(0).querySelector("img").draggable, dt.getData("DownloadURL"));
   click(cell(2)); await sleep(600); // #3 = živá podľa zoznamu
   var lv = $("#vStage .live");
   ok("živá fotka v prehliadači: odznak ŽIVÁ a ▶ Prehrať", overlays().indexOf("viewer") >= 0 && lv && !lv.hidden, lv && lv.hidden);
