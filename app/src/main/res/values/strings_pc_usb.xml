@@ -9,5 +9,4 @@
     <string name="pc_usb_help_title">Pripojenie PC káblom</string>
     <string name="pc_usb_help_text">Telefón nie je na Wi-Fi, PC sa preto pripojí USB káblom:\n\n1. Zapoj telefón káblom do PC.\n2. Zapni na telefóne Zdieľanie pripojenia cez USB (tlačidlo nižšie; v HyperOS Nastavenia → Pripojenie a zdieľanie → Zdieľanie pripojenia cez USB).\n3. O pár sekúnd sa tu aj v notifikácii ukáže adresa a Galéria+ ju skopíruje – v PC ju vlož do Chrome.\n\nAk má telefón zapnuté mobilné dáta, PC cez ne môže ísť aj na internet. Ak nechceš, mobilné dáta na ten čas vypni.</string>
     <string name="pc_usb_open_tethering">Otvoriť zdieľanie pripojenia</string>
-    <string name="pc_usb_running_via">%1$s (%2$s)</string>
 </resources>

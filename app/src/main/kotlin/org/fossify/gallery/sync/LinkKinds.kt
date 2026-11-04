@@ -1,12 +1,13 @@
 package org.fossify.gallery.sync
 
 // Cez čo sa PC dostane k Serveru pre PC: podľa mena sieťového rozhrania telefónu (čistá logika, LinkKindsTest).
+//  • USB – zdieľanie pripojenia cez USB (USB tethering: rndis0 / usb0 / ncm0) – kábel, funguje s Wi-Fi aj bez nej;
+//    má prednosť (priame spojenie, rýchlejšie a stabilnejšie ako Wi-Fi; pri zapnutej Wi-Fi ide PC na internet cez ňu),
 //  • WIFI – telefón je na Wi-Fi (wlan0),
-//  • USB – zdieľanie pripojenia cez USB (USB tethering: rndis0 / usb0 / ncm0) – funguje aj bez Wi-Fi, stačí kábel,
 //  • HOTSPOT – telefón robí Wi-Fi hotspot a PC je pripojené naň (ap0, swlan0, wlan1…),
 //  • ETHERNET – USB sieťový adaptér, OTHER – iné rozhranie s lokálnou adresou.
 // Mobilné dáta (rmnet, ccmni), VPN (tun) a pomocné rozhrania sa nikdy neponúkajú.
-enum class LinkKind { WIFI, USB, HOTSPOT, ETHERNET, OTHER }
+enum class LinkKind { USB, WIFI, HOTSPOT, ETHERNET, OTHER }
 
 object LinkKinds {
     private val SKIP = listOf("rmnet", "ccmni", "tun", "dummy", "lo", "v4-", "ipsec", "p2p", "aware", "bt-pan", "clat")
@@ -23,7 +24,7 @@ object LinkKinds {
         }
     }
 
-    // poradie ponuky: Wi-Fi, potom USB kábel, hotspot, ethernet, ostatné; v rámci druhu podľa poradia nájdenia
+    // poradie ponuky: USB kábel, Wi-Fi, hotspot, ethernet, ostatné; v rámci druhu podľa poradia nájdenia
     fun <T> sorted(found: List<Pair<LinkKind, T>>): List<Pair<LinkKind, T>> = found.sortedBy { it.first.ordinal }
 
     // adresa servera pre prehliadač v PC

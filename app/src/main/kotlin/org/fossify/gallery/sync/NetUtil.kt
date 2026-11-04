@@ -29,8 +29,11 @@ object NetUtil {
             .forEach { out.add(kind to it) }
     }
 
-    // najlepšia adresa (Wi-Fi, inak USB kábel, hotspot…) – pre párovanie a staršie volania
-    fun getWifiIpv4(context: Context): String? = addresses(context).firstOrNull()?.second
+    // adresa pre párovanie telefónov: Wi-Fi (druhý telefón je na nej), inak čokoľvek
+    fun getWifiIpv4(context: Context): String? {
+        val all = addresses(context)
+        return (all.firstOrNull { it.first == LinkKind.WIFI } ?: all.firstOrNull())?.second
+    }
 
     @Suppress("DEPRECATION")
     private fun wifiManagerFallback(context: Context): String? {

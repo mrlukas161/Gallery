@@ -1792,6 +1792,7 @@ class SettingsActivity : SimpleActivity() {
     // Server bez Wi-Fi: PC sa pripojí USB káblom cez Zdieľanie pripojenia cez USB (žiadny adb ani program navyše).
     // Návod s tlačidlom do nastavení zdieľania; adresa sa po zapnutí ukáže sama (služba ju sleduje) a skopíruje sa.
     private var pcLinkMissing = false
+    private var pcLastLink: String? = null
 
     private fun showPcUsbHelp() {
         val pad = (resources.displayMetrics.density * 20).toInt()
@@ -1834,7 +1835,10 @@ class SettingsActivity : SimpleActivity() {
         if (isDestroyed) return
         val sync = org.fossify.gallery.services.HttpSyncService
         val error = sync.lastError
-        if (!sync.isRunning) pcLinkMissing = false
+        if (!sync.isRunning) {
+            pcLinkMissing = false
+            pcLastLink = null
+        }
         binding.settingsPcServerSummary.text = when {
             sync.isRunning -> {
                 val link = sync.shareUrl()
@@ -1843,13 +1847,12 @@ class SettingsActivity : SimpleActivity() {
                     pcLinkMissing = true
                     getString(R.string.porovnavac_server_len_kabel_beziaci)
                 } else {
-                    // adresa sa práve objavila (zapnuté zdieľanie cez USB / Wi-Fi) -> rovno ju skopírovať
-                    if (pcLinkMissing) {
-                        pcLinkMissing = false
-                        copyServerLink(silent = false)
-                    }
-                    val via = getString(R.string.pc_usb_running_via, link, sync.kindLabel(this, sync.currentKind))
-                    getString(R.string.pc_server_running_at, via)
+                    // adresa sa práve objavila alebo zmenila (zapnuté zdieľanie cez USB má prednosť pred Wi-Fi)
+                    // -> rovno skopírovať tú najlepšiu
+                    if (pcLinkMissing || (pcLastLink != null && pcLastLink != link)) copyServerLink(silent = false)
+                    pcLinkMissing = false
+                    pcLastLink = link
+                    getString(R.string.pc_server_running_at, sync.linksText(this))
                 }
             }
             // server sa naposledy nespustil (obsadený port, bez WiFi…) — dôvod nechať viditeľný

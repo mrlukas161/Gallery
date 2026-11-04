@@ -27,10 +27,10 @@ class LinkKindsTest {
     }
 
     @Test
-    fun orderWifiThenUsbThenHotspot() {
+    fun orderUsbCableFirstThenWifiThenHotspot() {
         val found = listOf(LinkKind.HOTSPOT to "a", LinkKind.USB to "b", LinkKind.WIFI to "c", LinkKind.USB to "d")
         val s = LinkKinds.sorted(found)
-        assertEquals(listOf("c", "b", "d", "a"), s.map { it.second })
+        assertEquals(listOf("b", "d", "c", "a"), s.map { it.second })
         assertEquals("http://192.168.42.129:8089", LinkKinds.url("192.168.42.129", 8089))
     }
 }

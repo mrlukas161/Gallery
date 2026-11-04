@@ -76,11 +76,10 @@ class HttpSyncService : Service() {
     }
 
     private fun refreshLink() {
-        val best = NetUtil.addresses(this).firstOrNull()
-        val url = best?.let { LinkKinds.url(it.second, MediaServer.DEFAULT_PORT) }
-        if (url == currentUrl && best?.first == currentKind) return
-        currentUrl = url
-        currentKind = best?.first
+        val links = NetUtil.addresses(this).map { it.first to LinkKinds.url(it.second, MediaServer.DEFAULT_PORT) }
+        if (links == currentLinks) return
+        setLinks(links)
+        val url = currentUrl
         val pin = currentPin ?: return
         try {
             getSystemService(NotificationManager::class.java)?.notify(NOTIF_ID, buildNotification(url, pin))
@@ -116,12 +115,11 @@ class HttpSyncService : Service() {
         currentEpoch = epoch
         Persisted.save(this, pin, epoch)
         val port = MediaServer.DEFAULT_PORT
-        val best = NetUtil.addresses(this).firstOrNull()
         currentPin = pin
-        // bez Wi-Fi server beží tiež: PC sa pripojí káblom cez Zdieľanie pripojenia cez USB (adresa sa ukáže, keď ho
-        // Lukáš zapne – linkWatch), pre pokročilých aj cez adb forward na localhost
-        currentUrl = best?.let { LinkKinds.url(it.second, port) }
-        currentKind = best?.first
+        // server počúva na všetkých rozhraniach: Wi-Fi aj USB kábel (Zdieľanie pripojenia cez USB, aj pri zapnutej
+        // Wi-Fi; kábel má prednosť). Adresa, ktorá sa objaví neskôr, príde cez linkWatch; pre pokročilých
+        // aj adb forward.
+        setLinks(NetUtil.addresses(this).map { it.first to LinkKinds.url(it.second, port) })
         startForegroundCompat(buildNotification(currentUrl, pin))
         mainHandler.removeCallbacks(linkWatch)
         mainHandler.postDelayed(linkWatch, LINK_POLL_NO_ADDR_MS)
@@ -210,8 +208,7 @@ class HttpSyncService : Service() {
         }
         server = null
         isRunning = false
-        currentUrl = null
-        currentKind = null
+        setLinks(emptyList())
         currentPin = null
         currentEpoch = null
         // výslovné zastavenie (alebo zámok po hádaní PIN-u): ďalší štart = nový PIN a nový epoch
@@ -246,7 +243,11 @@ class HttpSyncService : Service() {
         } else {
             getString(R.string.porovnavac_server_len_kabel, pin)
         }
-        val longText = if (fullLink != null) getString(R.string.pc_server_notif_text, fullLink, pin) else shortText
+        val longText = if (fullLink != null) {
+            getString(R.string.pc_server_notif_text, linksText(this, pin), pin)
+        } else {
+            shortText
+        }
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.stat_sys_upload)
             .setContentTitle(getString(R.string.pc_server_notif_title))
@@ -343,6 +344,22 @@ class HttpSyncService : Service() {
         @Volatile
         var currentKind: LinkKind? = null
             private set
+
+        // všetky adresy servera (USB kábel, Wi-Fi…) – prvá = currentUrl
+        @Volatile
+        var currentLinks: List<Pair<LinkKind, String>> = emptyList()
+            private set
+
+        private fun setLinks(links: List<Pair<LinkKind, String>>) {
+            currentLinks = links
+            currentUrl = links.firstOrNull()?.second
+            currentKind = links.firstOrNull()?.first
+        }
+
+        // „USB kábel: http://…/?token=PIN“ pod sebou pre každú adresu (notifikácia, Nastavenia)
+        fun linksText(c: Context, pin: String? = currentPin): String = currentLinks.joinToString("\n") {
+            kindLabel(c, it.first) + ": " + it.second + (if (pin != null) "/?token=$pin" else "")
+        }
 
         @Volatile
         private var currentEpoch: String? = null
