@@ -18,6 +18,8 @@ import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import org.fossify.commons.helpers.ensureBackgroundThread
 import org.fossify.gallery.R
+import org.fossify.gallery.sync.LinkKind
+import org.fossify.gallery.sync.LinkKinds
 import org.fossify.gallery.sync.MediaServer
 import org.fossify.gallery.sync.NetUtil
 import org.fossify.gallery.sync.ServerTransport
@@ -62,6 +64,30 @@ class HttpSyncService : Service() {
         }
     }
 
+    // Adresa sa môže objaviť až po štarte (Lukáš zapne Zdieľanie pripojenia cez USB alebo Wi-Fi) alebo zmeniť.
+    // Len kým server beží: každé 3 s (keď adresu ešte nemá), inak každých 10 s sa pozrie na rozhrania a pri zmene
+    // obnoví adresu aj notifikáciu. Zastavením servera končí.
+    private val linkWatch = object : Runnable {
+        override fun run() {
+            if (stopped || !isRunning) return
+            refreshLink()
+            mainHandler.postDelayed(this, if (currentUrl == null) LINK_POLL_NO_ADDR_MS else LINK_POLL_MS)
+        }
+    }
+
+    private fun refreshLink() {
+        val best = NetUtil.addresses(this).firstOrNull()
+        val url = best?.let { LinkKinds.url(it.second, MediaServer.DEFAULT_PORT) }
+        if (url == currentUrl && best?.first == currentKind) return
+        currentUrl = url
+        currentKind = best?.first
+        val pin = currentPin ?: return
+        try {
+            getSystemService(NotificationManager::class.java)?.notify(NOTIF_ID, buildNotification(url, pin))
+        } catch (ignored: Throwable) {
+        }
+    }
+
     private fun unregisterMediaObserver() {
         mediaObserver?.let {
             try {
@@ -90,11 +116,15 @@ class HttpSyncService : Service() {
         currentEpoch = epoch
         Persisted.save(this, pin, epoch)
         val port = MediaServer.DEFAULT_PORT
-        val ip = NetUtil.getWifiIpv4(this)
+        val best = NetUtil.addresses(this).firstOrNull()
         currentPin = pin
-        // bez Wi-Fi sa dá spojiť USB káblom (PC si port presmeruje cez adb) -> server spustiť aj tak
-        currentUrl = if (ip != null) "http://$ip:$port" else null
+        // bez Wi-Fi server beží tiež: PC sa pripojí káblom cez Zdieľanie pripojenia cez USB (adresa sa ukáže, keď ho
+        // Lukáš zapne – linkWatch), pre pokročilých aj cez adb forward na localhost
+        currentUrl = best?.let { LinkKinds.url(it.second, port) }
+        currentKind = best?.first
         startForegroundCompat(buildNotification(currentUrl, pin))
+        mainHandler.removeCallbacks(linkWatch)
+        mainHandler.postDelayed(linkWatch, LINK_POLL_NO_ADDR_MS)
 
         lastError = null
         if (server == null && !starting) {
@@ -172,6 +202,7 @@ class HttpSyncService : Service() {
 
     private fun stopEverything() {
         stopped = true
+        mainHandler.removeCallbacks(linkWatch)
         unregisterMediaObserver()
         try {
             server?.stop()
@@ -180,6 +211,7 @@ class HttpSyncService : Service() {
         server = null
         isRunning = false
         currentUrl = null
+        currentKind = null
         currentPin = null
         currentEpoch = null
         // výslovné zastavenie (alebo zámok po hádaní PIN-u): ďalší štart = nový PIN a nový epoch
@@ -190,6 +222,7 @@ class HttpSyncService : Service() {
 
     override fun onDestroy() {
         stopped = true
+        mainHandler.removeCallbacks(linkWatch)
         unregisterMediaObserver()
         try {
             server?.stop()
@@ -207,8 +240,12 @@ class HttpSyncService : Service() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
         val fullLink = if (url != null) "$url/?token=$pin" else null
-        // bez Wi-Fi adresy niet -> v notifikácii len PIN a poznámka, že spojenie ide káblom
-        val shortText = fullLink ?: getString(R.string.porovnavac_server_len_kabel, pin)
+        // bez adresy (žiadna Wi-Fi ani zdieľanie cez USB) -> v notifikácii návod, ako PC pripojiť káblom, a PIN
+        val shortText = if (fullLink != null) {
+            kindLabel(this, currentKind) + ": " + fullLink
+        } else {
+            getString(R.string.porovnavac_server_len_kabel, pin)
+        }
         val longText = if (fullLink != null) getString(R.string.pc_server_notif_text, fullLink, pin) else shortText
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.stat_sys_upload)
@@ -302,8 +339,26 @@ class HttpSyncService : Service() {
         var currentUrl: String? = null
             private set
 
+        // cez čo sa PC pripája (Wi-Fi, USB kábel = zdieľanie pripojenia cez USB, hotspot…); null = zatiaľ nijako
+        @Volatile
+        var currentKind: LinkKind? = null
+            private set
+
         @Volatile
         private var currentEpoch: String? = null
+
+        private const val LINK_POLL_NO_ADDR_MS = 3_000L
+        private const val LINK_POLL_MS = 10_000L
+
+        fun kindLabel(c: Context, kind: LinkKind?): String = c.getString(
+            when (kind) {
+                LinkKind.USB -> R.string.pc_link_usb
+                LinkKind.HOTSPOT -> R.string.pc_link_hotspot
+                LinkKind.ETHERNET -> R.string.pc_link_eth
+                LinkKind.OTHER -> R.string.pc_link_other
+                else -> R.string.pc_link_wifi
+            }
+        )
 
         // hotová adresa pre PC prehliadač — stačí prilepiť (Ctrl+V), token je v nej
         fun shareUrl(): String? {

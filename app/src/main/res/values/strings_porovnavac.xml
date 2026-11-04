@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!-- Server bez Wi-Fi: PC sa spojí USB káblom (adb forward) -->
-    <string name="porovnavac_server_len_kabel">Wi-Fi nie je – spojenie len USB káblom. PIN: %1$s</string>
-    <string name="porovnavac_server_len_kabel_beziaci">Beží len pre USB kábel (bez Wi-Fi)\nŤuknutím zastavíš</string>
+    <string name="porovnavac_server_len_kabel">Bez Wi-Fi: zapoj telefón káblom do PC a zapni na ňom Zdieľanie pripojenia cez USB – adresa sa ukáže sama. PIN: %1$s</string>
+    <string name="porovnavac_server_len_kabel_beziaci">Beží, ale PC sa zatiaľ nemá ako pripojiť (telefón nie je na Wi-Fi)\nŤuknutím otvoríš návod na pripojenie káblom</string>
 </resources>

@@ -1666,15 +1666,19 @@ class SettingsActivity : SimpleActivity() {
     private fun setupPcServer() {
         updatePcServerSummary()
         binding.settingsPcServerHolder.setOnClickListener {
-            if (org.fossify.gallery.services.HttpSyncService.isRunning) {
-                org.fossify.gallery.services.HttpSyncService.stop(this)
+            val sync = org.fossify.gallery.services.HttpSyncService
+            if (sync.isRunning && sync.shareUrl() == null) {
+                // beží, ale PC sa nemá ako pripojiť (bez Wi-Fi) -> návod na kábel, zastavenie je v dialógu
+                showPcUsbHelp()
+            } else if (sync.isRunning) {
+                sync.stop(this)
                 binding.settingsPcServerSummary.postDelayed({ updatePcServerSummary() }, 400)
             } else {
-                org.fossify.gallery.services.HttpSyncService.start(this)
-                // po nabehnutí servera rovno skopíruj hotovú adresu s tokenom do schránky
+                sync.start(this)
+                // po nabehnutí servera rovno skopíruj hotovú adresu s tokenom do schránky; bez adresy návod na kábel
                 binding.settingsPcServerSummary.postDelayed({
                     updatePcServerSummary()
-                    copyServerLink(silent = false)
+                    if (sync.shareUrl() != null) copyServerLink(silent = false) else if (sync.isRunning) showPcUsbHelp()
                 }, 900)
             }
         }
@@ -1785,14 +1789,68 @@ class SettingsActivity : SimpleActivity() {
         }
     }
 
+    // Server bez Wi-Fi: PC sa pripojí USB káblom cez Zdieľanie pripojenia cez USB (žiadny adb ani program navyše).
+    // Návod s tlačidlom do nastavení zdieľania; adresa sa po zapnutí ukáže sama (služba ju sleduje) a skopíruje sa.
+    private var pcLinkMissing = false
+
+    private fun showPcUsbHelp() {
+        val pad = (resources.displayMetrics.density * 20).toInt()
+        val tv = TextView(this).apply {
+            text = getString(R.string.pc_usb_help_text)
+            setTextColor(getProperTextColor())
+            setPadding(pad, pad, pad, 0)
+        }
+        getAlertDialogBuilder()
+            .setPositiveButton(R.string.pc_usb_open_tethering) { _, _ -> openTetherSettings() }
+            .setNegativeButton(R.string.pc_server_stop) { _, _ ->
+                org.fossify.gallery.services.HttpSyncService.stop(this)
+                binding.settingsPcServerSummary.postDelayed({ updatePcServerSummary() }, 400)
+            }
+            .setNeutralButton(org.fossify.commons.R.string.cancel, null)
+            .apply {
+                setupDialogStuff(tv, this, R.string.pc_usb_help_title)
+            }
+    }
+
+    // Zdieľanie pripojenia: HyperOS / AOSP obrazovka tetheringu, náhradne Bezdrôtové siete
+    private fun openTetherSettings() {
+        val intents = listOf(
+            Intent().setClassName("com.android.settings", "com.android.settings.Settings\$TetherSettingsActivity"),
+            Intent().setClassName("com.android.settings", "com.android.settings.TetherSettings"),
+            Intent(android.provider.Settings.ACTION_WIRELESS_SETTINGS),
+        )
+        for (intent in intents) {
+            try {
+                startActivity(intent)
+                return
+            } catch (ignored: android.content.ActivityNotFoundException) {
+            } catch (ignored: SecurityException) {
+            }
+        }
+        toast(org.fossify.commons.R.string.system_service_disabled, android.widget.Toast.LENGTH_LONG)
+    }
+
     private fun updatePcServerSummary() {
         if (isDestroyed) return
-        val error = org.fossify.gallery.services.HttpSyncService.lastError
+        val sync = org.fossify.gallery.services.HttpSyncService
+        val error = sync.lastError
+        if (!sync.isRunning) pcLinkMissing = false
         binding.settingsPcServerSummary.text = when {
-            org.fossify.gallery.services.HttpSyncService.isRunning -> {
-                val link = org.fossify.gallery.services.HttpSyncService.shareUrl()
-                // bez Wi-Fi adresa nie je, server ide len cez USB kábel
-                if (link != null) getString(R.string.pc_server_running_at, link) else getString(R.string.porovnavac_server_len_kabel_beziaci)
+            sync.isRunning -> {
+                val link = sync.shareUrl()
+                if (link == null) {
+                    // bez Wi-Fi a bez zdieľania cez USB: PC sa nemá ako pripojiť -> ťuk otvorí návod
+                    pcLinkMissing = true
+                    getString(R.string.porovnavac_server_len_kabel_beziaci)
+                } else {
+                    // adresa sa práve objavila (zapnuté zdieľanie cez USB / Wi-Fi) -> rovno ju skopírovať
+                    if (pcLinkMissing) {
+                        pcLinkMissing = false
+                        copyServerLink(silent = false)
+                    }
+                    val via = getString(R.string.pc_usb_running_via, link, sync.kindLabel(this, sync.currentKind))
+                    getString(R.string.pc_server_running_at, via)
+                }
             }
             // server sa naposledy nespustil (obsadený port, bez WiFi…) — dôvod nechať viditeľný
             error != null -> getString(R.string.a3_pc_server_error_summary, error)

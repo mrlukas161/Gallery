@@ -8,24 +8,29 @@ import java.net.NetworkInterface
 // Zistenie LAN IPv4 adresy telefónu na zobrazenie URL servera.
 object NetUtil {
 
-    // Preferované: prejde sieťové rozhrania a vráti prvú non-loopback site-local IPv4 (žiadne povolenie).
-    fun getWifiIpv4(context: Context): String? {
+    // Všetky lokálne IPv4 adresy telefónu, cez ktoré sa dá dostať k serveru (Wi-Fi, USB kábel = zdieľanie pripojenia
+    // cez USB, hotspot…), zoradené podľa LinkKinds. Bez povolenia; prázdne = PC sa nemá ako pripojiť.
+    fun addresses(context: Context): List<Pair<LinkKind, String>> {
+        val found = ArrayList<Pair<LinkKind, String>>()
         try {
-            val ifaces = NetworkInterface.getNetworkInterfaces() ?: return wifiManagerFallback(context)
-            for (nif in ifaces.toList()) {
-                if (!nif.isUp || nif.isLoopback || nif.isVirtual) continue
-                val name = nif.name.lowercase()
-                if (name.startsWith("rmnet") || name.startsWith("tun") || name.startsWith("dummy")) continue
-                for (addr in nif.inetAddresses.toList()) {
-                    if (addr is Inet4Address && !addr.isLoopbackAddress && addr.isSiteLocalAddress) {
-                        return addr.hostAddress
-                    }
-                }
-            }
-        } catch (e: Exception) {
+            NetworkInterface.getNetworkInterfaces()?.toList()?.forEach { nif -> addIfUsable(nif, found) }
+        } catch (ignored: Exception) {
         }
-        return wifiManagerFallback(context)
+        if (found.isEmpty()) wifiManagerFallback(context)?.let { found.add(LinkKind.WIFI to it) }
+        return LinkKinds.sorted(found)
     }
+
+    private fun addIfUsable(nif: NetworkInterface, out: MutableList<Pair<LinkKind, String>>) {
+        if (!nif.isUp || nif.isLoopback || nif.isVirtual) return
+        val kind = LinkKinds.kindOf(nif.name) ?: return
+        nif.inetAddresses.toList()
+            .filter { it is Inet4Address && !it.isLoopbackAddress && it.isSiteLocalAddress }
+            .mapNotNull { it.hostAddress }
+            .forEach { out.add(kind to it) }
+    }
+
+    // najlepšia adresa (Wi-Fi, inak USB kábel, hotspot…) – pre párovanie a staršie volania
+    fun getWifiIpv4(context: Context): String? = addresses(context).firstOrNull()?.second
 
     @Suppress("DEPRECATION")
     private fun wifiManagerFallback(context: Context): String? {

@@ -148,6 +148,12 @@ Bez parametrov (pôvodný formát) — pole položiek, zoradené **podľa dátum
   (nad ~25 Mpx, napr. HEIC 50 Mpx) môže byť dlhá strana o kúsok menšia ako `max` (8160 px → 4080 namiesto 4096) —
   mobil tak nedekóduje celých ~200 MB. Pri preťažení `503 {"error":"busy"}` + `Retry-After: 1` (viď nižšie).
 
+**Pripojenie bez Wi-Fi (od 0.67.3):** telefón zapojený káblom do PC so zapnutým *Zdieľaním pripojenia cez USB*
+(USB tethering) dostane na rozhraní `rndis0` / `usb0` / `ncm0` lokálnu IPv4 adresu a server je na nej dostupný
+ako cez Wi-Fi (`http://<ip>:<port>`, prihlásenie PIN-om). Služba kým beží sleduje rozhrania (bez adresy každé 3 s,
+inak 10 s) a adresu aj druh spojenia (`LinkKinds`: Wi-Fi, USB kábel, hotspot telefónu, ethernet) ukáže v notifikácii
+a v Nastaveniach. `adb forward` na localhost ostáva pre pokročilých (bezpečný kontext pre schránku a priečinky).
+
 ## `GET /api/thumb?id=<id>`
 
 - `&s=<64–1024>` (predvolene 300) — malý náhľad (mriežka). Do 512 px z `ContentResolver.loadThumbnail`
