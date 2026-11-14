@@ -16,7 +16,8 @@ import java.io.IOException
 // Nastavenia → „Automatická záloha osôb“ (zapnutá, posledná záloha <dátum>; zapnúť/vypnúť,
 // zálohovať teraz) a „Obnoviť zo zálohy“ (výber automatickej zálohy → existujúca F6 obnova, ktorá
 // len dopĺňa). Keď sa automatická záloha nenájde (napr. po preinštalovaní bez prístupu ku všetkým
-// súborom), otvorí sa ručný výber súboru.
+// súborom), otvorí sa ručný výber súboru. V zozname je pri zálohe počet osôb a priradení (N8); ak ZIP
+// k vybranej zálohe obsahuje obľúbené, ponúkne sa doplnenie chýbajúcich (N13).
 class AutoBackupSettings(
     private val activity: BaseSimpleActivity,
     private val backupUi: PeopleBackupUi,
@@ -50,7 +51,17 @@ class AutoBackupSettings(
         } else {
             ""
         }
-        view.text = text + omitted + failed
+        view.text = text + omitted + failed + healthNote(s)
+    }
+
+    // N8: automatická záloha čaká na obnovu poškodenej DB, alebo posledná má výrazne menej osôb
+    private fun healthNote(s: AutoBackup.Status): String = when {
+        !s.enabled -> ""
+        s.lastSkippedAt > s.lastAt && s.lastSkippedAt >= s.lastFailedAt ->
+            " " + activity.getString(R.string.fix068_auto_backup_skipped)
+
+        s.lastAt > 0L && s.lastSuspect -> " " + activity.getString(R.string.fix068_auto_backup_suspect)
+        else -> ""
     }
 
     private fun showOptions() {
@@ -79,7 +90,7 @@ class AutoBackupSettings(
         activity.toast(R.string.fb_backup_running)
         ensureBackgroundThread {
             val summary = try {
-                AutoBackup.run(app)
+                AutoBackup.run(app, manual = true)
             } catch (e: IOException) {
                 Log.w(TAG, "záloha osôb zlyhala", e)
                 null
@@ -105,12 +116,18 @@ class AutoBackupSettings(
     @Suppress("TooGenericExceptionCaught")
     private fun chooseBackup() {
         ensureBackgroundThread {
-            val backups = try {
-                AutoBackupStore(app).list().filter { it.kind == AutoBackupNames.Kind.F6 }
+            val store = AutoBackupStore(app)
+            var all: List<AutoBackupStore.Item> = emptyList()
+            var metas: Map<String, AutoBackupHealth.Meta> = emptyMap()
+            try {
+                all = store.list()
+                metas = AutoBackupMeta.metasFor(app, store, all)
             } catch (e: RuntimeException) {
                 Log.w(TAG, "zálohy sa nepodarilo načítať", e)
-                emptyList()
             }
+            val backups = all.filter { it.kind == AutoBackupNames.Kind.F6 }
+            val zips = all.filter { it.kind == AutoBackupNames.Kind.DB }
+                .mapNotNull { z -> AutoBackupNames.stampOf(z.name)?.let { it to z } }.toMap()
             activity.runOnUiThread {
                 if (activity.isDestroyed || activity.isFinishing) return@runOnUiThread
                 if (backups.isEmpty()) {
@@ -118,10 +135,61 @@ class AutoBackupSettings(
                     pickFile()
                     return@runOnUiThread
                 }
-                val items = ArrayList(backups.mapIndexed { i, b -> RadioItem(i, DataSafetyUi.formatDate(b.createdAt)) })
+                val items = ArrayList(
+                    backups.mapIndexed { i, b ->
+                        val meta = AutoBackupNames.stampOf(b.name)?.let { metas[it] }
+                        RadioItem(i, AutoBackupMeta.label(activity, b.createdAt, meta))
+                    },
+                )
                 RadioGroupDialog(activity, items, titleId = R.string.ta1_restore_auto_title) { choice ->
-                    backups.getOrNull(choice as Int)?.let { backupUi.confirmRestore(it.uri) }
+                    backups.getOrNull(choice as Int)?.let { b ->
+                        val zip = AutoBackupNames.stampOf(b.name)?.let { zips[it] }
+                        offerFavorites(store, zip) { backupUi.confirmRestore(b.uri) }
+                    }
                 }
+            }
+        }
+    }
+
+    // N13: obľúbené zo ZIP-u tej istej zálohy — ponúkne doplnenie chýbajúcich, potom pokračuje obnovou osôb
+    @Suppress("TooGenericExceptionCaught")
+    private fun offerFavorites(store: AutoBackupStore, zip: AutoBackupStore.Item?, then: () -> Unit) {
+        if (zip == null) {
+            then()
+            return
+        }
+        ensureBackgroundThread {
+            val missing = try {
+                AutoBackupFavorites.read(store, zip)?.let { AutoBackupFavorites.missing(app, it) }.orEmpty()
+            } catch (e: IOException) {
+                Log.w(TAG, "obľúbené zo zálohy sa nepodarilo prečítať", e)
+                emptyList()
+            } catch (e: RuntimeException) {
+                Log.w(TAG, "obľúbené zo zálohy sa nepodarilo prečítať", e)
+                emptyList()
+            }
+            activity.runOnUiThread {
+                if (activity.isDestroyed || activity.isFinishing) return@runOnUiThread
+                if (missing.isEmpty()) {
+                    then()
+                    return@runOnUiThread
+                }
+                val text = activity.getString(R.string.fix068_favorites_restore, missing.size)
+                DataSafetyUi.messageDialog(activity, text) {
+                    setPositiveButton(R.string.fix068_favorites_restore_yes) { _, _ -> restoreFavorites(missing, then) }
+                    setNegativeButton(R.string.fix068_favorites_restore_skip) { _, _ -> then() }
+                }
+            }
+        }
+    }
+
+    private fun restoreFavorites(paths: List<String>, then: () -> Unit) {
+        ensureBackgroundThread {
+            val done = AutoBackupFavorites.restore(app, paths)
+            activity.runOnUiThread {
+                if (activity.isDestroyed || activity.isFinishing) return@runOnUiThread
+                activity.toast(activity.getString(R.string.fix068_favorites_restored, done))
+                then()
             }
         }
     }

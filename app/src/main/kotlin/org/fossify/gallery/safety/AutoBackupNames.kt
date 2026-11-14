@@ -52,6 +52,15 @@ object AutoBackupNames {
         return Parsed(name, kind, millis)
     }
 
+    // spoločný čas zálohy (F6 aj ZIP), kľúč metadát (AutoBackupHealth); null = nie je automatická záloha
+    fun stampOf(name: String): String? {
+        if (parse(name) == null) return null
+        return when {
+            name.startsWith(F6_PREFIX) -> name.removePrefix(F6_PREFIX).removeSuffix(F6_SUFFIX)
+            else -> name.removePrefix(DB_PREFIX).removeSuffix(DB_SUFFIX)
+        }
+    }
+
     // najnovšie prvé, len automatické zálohy daného druhu
     fun sorted(names: Collection<String>, kind: Kind): List<Parsed> =
         names.mapNotNull { parse(it) }.filter { it.kind == kind }.distinctBy { it.name }
