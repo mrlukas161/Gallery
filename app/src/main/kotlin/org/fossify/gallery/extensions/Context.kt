@@ -147,6 +147,8 @@ val Context.favoritesDB: FavoritesDao
 val Context.dateTakensDB: DateTakensDao
     get() = GalleryDatabase.getInstance(applicationContext).DateTakensDao()
 
+// Koreň Koša = filesDir (ako recycleBinPath v commons). Sú tu aj dáta appky — nikdy ho nemazať celý,
+// len cez deleteRecycleBinCopies (RecycleBinRules).
 val Context.recycleBin: File get() = filesDir
 
 fun Context.movePinnedDirectoriesToFront(dirs: ArrayList<Directory>): ArrayList<Directory> {

@@ -3,6 +3,7 @@ package org.fossify.gallery.extensions
 import android.app.Activity
 import android.content.ContentProviderOperation
 import android.content.ContentValues
+import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.Bitmap.CompressFormat
@@ -47,6 +48,7 @@ import org.fossify.gallery.dialogs.ResizeWithPathDialog
 import org.fossify.gallery.faces.FaceRotation
 import org.fossify.gallery.helpers.DIRECTORY
 import org.fossify.gallery.helpers.RECYCLE_BIN
+import org.fossify.gallery.helpers.RecycleBinRules
 import org.fossify.gallery.helpers.TEMP_FOLDER_NAME
 import org.fossify.gallery.models.DateTaken
 import java.io.*
@@ -492,13 +494,32 @@ fun BaseSimpleActivity.restoreRecycleBinPaths(paths: ArrayList<String>, callback
 fun BaseSimpleActivity.emptyTheRecycleBin(callback: (() -> Unit)? = null) {
     ensureBackgroundThread {
         try {
-            recycleBin.deleteRecursively()
+            // N1: len kópie z Koša, nikdy celý filesDir (CLIP modely, tessdata, výrezy z Picasy …)
+            deleteRecycleBinCopies()
             mediaDB.clearRecycleBin()
             directoryDB.deleteRecycleBin()
             toast(org.fossify.commons.R.string.recycle_bin_emptied)
             callback?.invoke()
         } catch (e: Exception) {
             toast(org.fossify.commons.R.string.unknown_error_occurred)
+        }
+    }
+}
+
+// Zmaže súbory Koša podľa RecycleBinRules: kópie položiek z mediaDB, podstromy koreňov úložísk
+// (storage/sdcard/mnt) a dočasné „.tmp_…“. Ostatné v koreni filesDir (dáta appky) ostáva.
+fun Context.deleteRecycleBinCopies() {
+    val root = recycleBin
+    val deleted = mediaDB.getDeletedMedia().map { it.path }
+    val targets = RecycleBinRules.plan(deleted, root.list()?.toList().orEmpty(), RECYCLE_BIN)
+    val rootCanonical = root.canonicalPath
+    targets.forEach { target ->
+        val file = File(root, target.relative)
+        if (!RecycleBinRules.isInsideBin(rootCanonical, file.canonicalPath)) return@forEach
+        if (target.recursive) {
+            file.deleteRecursively()
+        } else if (file.isFile) {
+            file.delete()
         }
     }
 }

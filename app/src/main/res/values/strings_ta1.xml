@@ -7,8 +7,6 @@
 
     <!-- A1: poškodená databáza; %1$s = názov uloženého poškodeného súboru, %2$s = dátum a čas zálohy -->
     <string name="ta1_corrupt_title">Databáza osôb je poškodená – obnoviť zo zálohy?</string>
-    <string name="ta1_corrupt_detail">Poškodený súbor ostal uložený (%1$s), nič sa nezmazalo. Posledná automatická záloha je z %2$s.</string>
-    <string name="ta1_corrupt_no_backup">Poškodený súbor ostal uložený (%1$s), nič sa nezmazalo. Automatická záloha sa nenašla. Ak máš súbor .galeria-family, obnov osoby v Nastaveniach cez „Obnoviť osoby“.</string>
     <string name="ta1_corrupt_faces">Databáza tvárí bola poškodená. Poškodený súbor ostal uložený (%1$s). Tváre sa pri spracovaní knižnice rozpoznajú nanovo. Potom v Nastaveniach použi „Obnoviť zo zálohy“, aby sa mená vrátili k tváram.</string>
     <string name="ta1_restore_from_backup">Obnoviť zo zálohy</string>
     <string name="ta1_later">Neskôr</string>

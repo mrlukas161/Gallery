@@ -19,6 +19,7 @@
         <!-- záznamy o poškodení, čakajúcej obnove a čase poslednej automatickej zálohy patria len tomuto telefónu -->
         <exclude domain="sharedpref" path="galeria_db_safety.xml" />
         <exclude domain="sharedpref" path="galeria_auto_backup.xml" />
+        <exclude domain="sharedpref" path="galeria_auto_backup_meta.xml" />
     </cloud-backup>
     <device-transfer>
         <include domain="database" path="people.db" />
@@ -37,5 +38,6 @@
         <!-- záznamy o poškodení, čakajúcej obnove a čase poslednej automatickej zálohy patria len tomuto telefónu -->
         <exclude domain="sharedpref" path="galeria_db_safety.xml" />
         <exclude domain="sharedpref" path="galeria_auto_backup.xml" />
+        <exclude domain="sharedpref" path="galeria_auto_backup_meta.xml" />
     </device-transfer>
 </data-extraction-rules>
