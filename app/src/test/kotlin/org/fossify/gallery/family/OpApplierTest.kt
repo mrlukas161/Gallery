@@ -45,6 +45,10 @@ class OpApplierTest {
 
         override fun groupMembers(name: String): Set<Long>? = groups[name]
 
+        val removedFromGroups = HashMap<String, Set<String>>()
+
+        override fun removedFromGroup(name: String): Set<String> = removedFromGroups[name].orEmpty()
+
         override fun anchors(localId: Long, source: String): List<FloatArray> =
             anchorsBySource[localId to source].orEmpty()
 
@@ -421,6 +425,41 @@ class OpApplierTest {
         val again = applier.process(emptyList(), world, world, flaky)
         assertEquals(1, again.applied)
         assertEquals(1, world.persons.size)
+    }
+
+    // revízia 11/2026: odobratý člen skupiny sa celým zoznamom z druhého telefónu nevráti
+    @Test
+    fun locallyRemovedGroupMemberIsNotAddedBack() {
+        val a = world.person("Lukáš", "ua")
+        world.person("Jano", "uj")
+        val m = world.person("Mária", "um")
+        world.groups["Rodina"] = mutableSetOf(a)
+        world.removedFromGroups["Rodina"] = setOf("uj")
+        receive(op(GroupSet("Rodina", listOf("ua", "uj", "um"))))
+        assertEquals(setOf(a, m), world.groups["Rodina"])
+    }
+
+    // „toto nie je on“ k tvári, ktorá tu zatiaľ nikomu nepatrí, ostane ako pravidlo
+    @Test
+    fun rejectingUnassignedFaceKeepsTheRule() {
+        val p = world.person("Mama", "u1")
+        world.faces["k1"] = 1L
+        receive(op(UnassignFace(ref("k1"), "u1")))
+        assertNull(world.assignments[1L])
+        assertTrue(world.cannotLinks.contains(1L to p))
+        assertTrue(world.proposals.isEmpty())
+    }
+
+    // zlúčenie a zmazanie osoby, ktorá tu ešte nie je (čaká na rozhodnutie), sa nezahodí — počká
+    @Test
+    fun mergeAndDeleteOfNotYetKnownPersonWait() {
+        world.person("Juraj", "ub")
+        val r = receive(op(PersonMerge("ua", "ub")), op(PersonDelete("ux", "Sused")))
+        assertEquals(2, r.deferred)
+        assertTrue(world.proposals.isEmpty())
+        val a = world.person("Ďuri", "ua")
+        receive()
+        assertEquals(1, world.proposals.count { it is MergeProposal && it.fromLocalId == a })
     }
 
     companion object {

@@ -10,6 +10,7 @@ import org.fossify.gallery.helpers.PersonMerges
 // Rozhodnutia o návrhoch z druhého telefónu (lišta a zoznam v Ľuďoch). Volá sa len z pozadia.
 // Do people.db/extras.db zapisuje len cez existujúce DAO metódy a len na výslovné rozhodnutie
 // používateľa (zmazanie osoby až po ConfirmationDialog v UI).
+@Suppress("TooManyFunctions")
 class FamilyProposals(context: Context) {
     private val app = context.applicationContext
     private val family = FamilyDatabase.getInstance(app)
@@ -40,8 +41,20 @@ class FamilyProposals(context: Context) {
     // mená lokálnych osôb pre texty návrhov
     fun personNames(): Map<Long, String?> = people.getPersons().associate { it.id to it.name }
 
-    // „Prijať / Prevziať / Zlúčiť / Zmazať aj tu“
-    fun accept(item: Item) {
+    // „Prijať / Prevziať / Zlúčiť / Zmazať aj tu“. Pod FamilyLock: rozhodnutie aj následné aplikovanie
+    // odložených operácií nesmie bežať naraz s príjmom zo servera alebo klienta.
+    fun accept(item: Item) = familyExclusive {
+        acceptOne(item)
+        retry()
+    }
+
+    // „Zlúčiť všetky s rovnakým menom“: každý návrh rovnakého mena prepojí ich osobu s mojou (nevznikne dvojník)
+    fun mergeAllSameName(items: List<Item>) = familyExclusive {
+        items.filter { it.proposal is SameNameProposal }.forEach { acceptOne(it) }
+        retry()
+    }
+
+    private fun acceptOne(item: Item) {
         val persons = personNames()
         when (val p = item.proposal) {
             is RenameProposal -> if (persons.containsKey(p.localId)) {
@@ -71,13 +84,21 @@ class FamilyProposals(context: Context) {
                 extras.removePersonFromGroups(p.localId)
             }
         }
-        close(item, ProposalEntity.STATE_ACCEPTED)
+        family.proposalDao().setProposalState(item.id, ProposalEntity.STATE_ACCEPTED)
     }
 
-    // „Ponechať / Ponechať oddelene“
-    fun keep(item: Item) = keepAll(listOf(item))
+    // „Ponechať / Ponechať oddelene“ jedného návrhu (aj „rovnaké meno“: ich osoba vznikne ako samostatná)
+    fun keep(item: Item) = familyExclusive {
+        keepItems(listOf(item))
+    }
 
-    fun keepAll(items: List<Item>) {
+    // Hromadné „Ponechať všetky“: návrhy rovnakého mena VYNECHÁ (ostanú otvorené) — inak by ku každej osobe
+    // vznikol dvojník s rovnakým menom. Na tie je „Zlúčiť všetky s rovnakým menom“ alebo voľba po jednom.
+    fun keepAll(items: List<Item>) = familyExclusive {
+        keepItems(items.filter { it.proposal !is SameNameProposal })
+    }
+
+    private fun keepItems(items: List<Item>) {
         val sink = FamilyLocal(app).sink
         items.forEach { item ->
             val p = item.proposal
@@ -85,9 +106,11 @@ class FamilyProposals(context: Context) {
                 // ich osoba vznikne tu ako samostatná (s rovnakým menom)
                 sink.createPerson(ApplyAction.CreatePerson(p.uuid, p.name), null)
             }
-            // D8: „ponechať“ moje meno je tiež novšia zmena — inak by telefóny ostali s rôznymi menami
+            // D8: „ponechať“ moje meno je tiež novšia zmena — inak by telefóny ostali s rôznymi menami. Pošle sa
+            // AKTUÁLNE meno (osobu mohol niekto medzičasom premenovať znova), nie meno z čias vzniku návrhu.
             if (p is RenameProposal && !PeopleBackupFormat.isBackupDevice(item.fromDeviceId)) {
-                RenameResolution.onKeep(p)?.let { recordRename(p.localId, it) }
+                val current = people.getPerson(p.localId)?.name ?: p.myName
+                RenameResolution.onKeep(p.copy(myName = current))?.let { recordRename(p.localId, it) }
             }
             family.proposalDao().setProposalState(item.id, ProposalEntity.STATE_REJECTED)
         }
@@ -104,14 +127,13 @@ class FamilyProposals(context: Context) {
         if (existing == null) {
             family.familyPersonDao().upsertPerson(FamilyPersonEntity(p.uuid, p.localId))
         } else if (existing.familyUuid != p.uuid) {
-            // lokálna osoba už má vlastné rodinné UUID → ich UUID sa naň prepojí ako zlúčenie
-            OpRecorder(app).append(PersonMerge(p.uuid, existing.familyUuid))
+            // lokálna osoba už má vlastné rodinné UUID → ich UUID sa naň prepojí ako zlúčenie (moja osoba sa
+            // pritom zverejní, ak má tvár z povoleného priečinka — inak by druhý telefón cieľ zlúčenia nepoznal)
+            OpRecorder(app).use {
+                it.publishedUuid(p.localId)
+                it.append(PersonMerge(p.uuid, existing.familyUuid))
+            }
         }
-    }
-
-    private fun close(item: Item, state: String) {
-        family.proposalDao().setProposalState(item.id, state)
-        retry()
     }
 
     // rozhodnutie mohlo odblokovať odložené operácie (napr. priradenia osoby s rovnakým menom)

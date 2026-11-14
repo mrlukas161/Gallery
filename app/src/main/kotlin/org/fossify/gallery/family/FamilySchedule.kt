@@ -22,6 +22,7 @@ object FamilySchedule {
     const val NEXT_WINDOW_DELAY_MS = 6 * 60 * 60 * 1000L
     const val RESUME_MIN_INTERVAL_MS = 15 * 60 * 1000L
     const val RESUME_PENDING_MIN_INTERVAL_MS = 60 * 1000L
+    const val RESUME_PENDING_BACKOFF_MS = 5 * 60 * 1000L
     const val RESUME_TIMEOUT_MS = 5_000L
 
     // odložené operácie (napr. z obnovy zálohy, čakajú na fotky) sa skúšajú znova najviac takto často
@@ -68,7 +69,16 @@ object FamilySchedule {
         return Plan(sync = c.paired && c.unmetered, process = c.processingPending)
     }
 
+    // Pri čakajúcej fronte sa skúša skôr, no po neúspechoch čoraz zriedkavejšie (1 → 5 → 15 min), aby sa mimo
+    // dosahu druhého telefónu nehľadal pri každom návrate do appky. failures = neúspešné pokusy za sebou.
+    fun pendingInterval(failures: Int): Long = when {
+        failures <= 0 -> RESUME_PENDING_MIN_INTERVAL_MS
+        failures == 1 -> RESUME_PENDING_BACKOFF_MS
+        else -> RESUME_MIN_INTERVAL_MS
+    }
+
     // outboxPending = vo fronte čaká niečo na odoslanie (fotky, zrušené prepojenie)
+    @Suppress("LongParameterList")
     fun shouldTryOnResume(
         paired: Boolean,
         charging: Boolean,
@@ -76,8 +86,9 @@ object FamilySchedule {
         lastAttemptAt: Long,
         now: Long,
         outboxPending: Boolean = false,
+        failures: Int = 0,
     ): Boolean {
-        val interval = if (outboxPending) RESUME_PENDING_MIN_INTERVAL_MS else RESUME_MIN_INTERVAL_MS
+        val interval = if (outboxPending) pendingInterval(failures) else RESUME_MIN_INTERVAL_MS
         // posunuté hodiny (posledný pokus „v budúcnosti“) nesmú pokusy zablokovať
         val paused = lastAttemptAt <= 0 || lastAttemptAt > now || now - lastAttemptAt >= interval
         return paired && !lowBattery(charging, batteryPct) && paused

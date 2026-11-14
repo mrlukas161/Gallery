@@ -48,6 +48,11 @@ class LocalFamilyState(context: Context) : FamilyState {
     private var assignmentsCache: MutableMap<Long, FaceAssignmentEntity>? = null
     private var aliasesCache: Map<String, String>? = null
     private var pairedCache: Set<String>? = null
+    private var anchorsCache: List<AnchorEmbeddingEntity>? = null
+
+    // odtlačky osôb sa načítajú raz na príjem (nie 2–4× pri každej operácii s odtlačkami)
+    private val allAnchors: List<AnchorEmbeddingEntity>
+        get() = anchorsCache ?: people.getAllAnchors().also { anchorsCache = it }
 
     private val persons: Map<Long, String?>
         get() = personsCache ?: people.getPersons().associate { it.id to it.name }.also { personsCache = it }
@@ -68,6 +73,10 @@ class LocalFamilyState(context: Context) : FamilyState {
     fun onPersonsChanged() {
         personsCache = null
         aliasesCache = null
+    }
+
+    fun onAnchorsChanged() {
+        anchorsCache = null
     }
 
     fun onAssignmentChanged(faceId: Long, value: FaceAssignmentEntity?) {
@@ -110,7 +119,7 @@ class LocalFamilyState(context: Context) : FamilyState {
     }
 
     override fun anchorSources(localId: Long): Set<String> =
-        people.getAllAnchors().filter { it.personId == localId }.mapTo(HashSet()) { it.source }
+        allAnchors.filter { it.personId == localId }.mapTo(HashSet()) { it.source }
 
     override fun isPairedDevice(deviceId: String): Boolean {
         val paired = pairedCache
@@ -122,8 +131,12 @@ class LocalFamilyState(context: Context) : FamilyState {
         extras.groupByName(name)?.let { extras.getMembers(it.id).toSet() }
 
     override fun anchors(localId: Long, source: String): List<FloatArray> =
-        people.getAllAnchors().filter { it.personId == localId && it.source == source }
+        allAnchors.filter { it.personId == localId && it.source == source }
             .map { FaceEmbedder.toFloats(it.embedding) }
+
+    // lokálne odobratí členovia skupiny (OpRecorder.trackRemovedMembers) — prijatý GroupSet ich nevráti
+    override fun removedFromGroup(name: String): Set<String> =
+        PublishRules.decodeSet(family.metaDao().get(OpRecorder.removedKey(name)))
 
     companion object {
         private const val MAX_ALIAS_HOPS = 8
@@ -149,13 +162,21 @@ class LocalOpStore(private val dao: OpDao, private val clock: () -> Long, privat
         val now = clock()
         dao.parkStale(now - PARK_AFTER_MS, now)
         return dao.getPendingOps(OpApplier.modelWait(faceModelId)).mapNotNull { e ->
+            if (e.deferredAt != null) deferredWith[e.opId] = e.waitKey
             OpCodec.decode(e.type, e.payloadJson)?.let { LoggedOp(e.opId, e.deviceId, e.lamport, it) }
         }
     }
 
+    // už odložené operácie s rovnakým kľúčom čakania sa pri každom opakovaní znova nezapisujú
+    private val deferredWith = HashMap<String, String?>()
+
     override fun markApplied(opId: String) = dao.markOpApplied(opId, clock())
 
-    override fun deferred(op: LoggedOp, waitKey: String?) = dao.deferOp(op.opId, waitKey, clock())
+    override fun deferred(op: LoggedOp, waitKey: String?) {
+        if (deferredWith.containsKey(op.opId) && deferredWith[op.opId] == waitKey) return
+        dao.deferOp(op.opId, waitKey, clock())
+        deferredWith[op.opId] = waitKey
+    }
 
     // nahradené sady odtlačkov tej istej osoby z toho istého telefónu (staršie, aj odložené pre iný model)
     override fun supersede(op: LoggedOp) = dropSupersededAnchors(dao, op)
@@ -228,6 +249,8 @@ class LocalActionSink(context: Context, private val state: LocalFamilyState, pri
     }
 
     // nová osoba z druhého telefónu (aj „ponechať oddelene“ pri rovnakom mene, vtedy op = null)
+    // Volá sa len pod FamilyLock (jeden vlastník aplikovania, FamilySync.retryPending), takže dve vlákna tú istú
+    // osobu nevytvoria dvakrát.
     //
     // A7: osoba (people.db) a mapa UUID (family.db) sú v dvoch DB, spolu sa atomicky zapísať nedajú.
     // Preto sa najprv do family.db zapíše „rozpracované“ UUID s časom vzniku, potom osoba s tým istým
@@ -257,6 +280,7 @@ class LocalActionSink(context: Context, private val state: LocalFamilyState, pri
             val bytes = FaceEmbedder.toBytes(it)
             people.insertAnchor(AnchorEmbeddingEntity(0, action.localId, bytes, action.source, clock()))
         }
+        state.onAnchorsChanged()
     }
 
     // osoba vytvorená pred pádom: rovnaký čas vzniku a meno, bez rodinného UUID

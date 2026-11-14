@@ -42,6 +42,52 @@
     <string name="family_unpair_button">Zrušiť prepojenie</string>
     <string name="family_unpaired">Prepojenie s telefónom „%s“ je zrušené</string>
 
+    <!-- revízia 0.68: overenie párovania, stav prepojenia a fronty -->
+    <!-- %1$s = názov druhého telefónu, %2$s = jeho adresa v lokálnej sieti -->
+    <string name="f068_pair_confirm">Prepojiť tento telefón s telefónom „%1$s“ (%2$s)? Prepojené telefóny si budú vymieňať osoby a mená a fotky, ktoré tam pošleš.</string>
+    <string name="f068_verify_title">Over kód prepojenia</string>
+    <!-- %1$s = názov druhého telefónu, %2$s = štvorciferný overovací kód -->
+    <string name="f068_verify_text">Prepojené s telefónom „%1$s“.\n\nOverovací kód: %2$s\n\nRovnaký kód musí ukázať aj druhý telefón. Ak je iný, prepojenie hneď zruš.</string>
+    <string name="f068_verify_ok">Kód sedí</string>
+    <!-- %1$s = posledná synchronizácia, %2$d = vo fronte, %3$d = nepodarilo sa poslať -->
+    <string name="f068_peer_status">Posledná synchronizácia: %1$s\nVo fronte: %2$d\nNepodarilo sa poslať: %3$d</string>
+    <!-- doplnok k riadku prepojeného telefónu; %1$d = vo fronte, %2$d = zlyhalo -->
+    <string name="f068_peer_queue">Vo fronte %1$d · nepodarilo sa poslať %2$d</string>
+    <string name="f068_sync_now">Synchronizovať teraz</string>
+    <string name="f068_retry">Skúsiť znova</string>
+    <string name="f068_syncing">Synchronizujem…</string>
+    <string name="f068_synced">Synchronizované</string>
+    <!-- %s = názov druhého telefónu -->
+    <string name="f068_sync_unreachable">Telefón „%s“ teraz nie je dostupný. Skús to, keď budú oba telefóny na rovnakej Wi-Fi a druhý bude mať otvorenú Galériu+.</string>
+    <string name="f068_sync_incompatible">Telefón „%s“ má inú verziu Galérie+. Aktualizuj appku na oboch telefónoch.</string>
+    <!-- %1$d = hotové osoby, %2$d = všetky osoby -->
+    <string name="f068_snapshot_progress">Pripravujem Ľudí pre prepojený telefón… %1$d / %2$d</string>
+    <string name="f068_send_failed_title">Fotky sa nepodarilo poslať</string>
+    <!-- %1$d = počet fotiek, %2$s = názov telefónu -->
+    <plurals name="f068_send_failed">
+        <item quantity="one">%1$d fotku sa nepodarilo poslať do telefónu „%2$s“. Skús to znova v Nastaveniach → Prepojiť telefón.</item>
+        <item quantity="few">%1$d fotky sa nepodarilo poslať do telefónu „%2$s“. Skús to znova v Nastaveniach → Prepojiť telefón.</item>
+        <item quantity="many">%1$d fotky sa nepodarilo poslať do telefónu „%2$s“. Skús to znova v Nastaveniach → Prepojiť telefón.</item>
+        <item quantity="other">%1$d fotiek sa nepodarilo poslať do telefónu „%2$s“. Skús to znova v Nastaveniach → Prepojiť telefón.</item>
+    </plurals>
+    <!-- %d = počet fotiek zaradených znova -->
+    <plurals name="f068_retry_queued">
+        <item quantity="one">%d fotka je znova vo fronte</item>
+        <item quantity="few">%d fotky sú znova vo fronte</item>
+        <item quantity="many">%d fotky je znova vo fronte</item>
+        <item quantity="other">%d fotiek je znova vo fronte</item>
+    </plurals>
+
+    <!-- návrhy z druhého telefónu: hromadné zlúčenie osôb s rovnakým menom -->
+    <string name="f068_merge_all_same_name">Zlúčiť všetky s rovnakým menom</string>
+    <!-- %d = počet návrhov rovnakého mena -->
+    <plurals name="f068_merge_all_confirm">
+        <item quantity="one">%d osoba z druhého telefónu sa spojí s tvojou osobou s rovnakým menom. Odteraz to bude na oboch telefónoch jedna osoba.</item>
+        <item quantity="few">%d osoby z druhého telefónu sa spoja s tvojimi osobami s rovnakým menom. Odteraz to bude na oboch telefónoch vždy jedna osoba.</item>
+        <item quantity="many">%d osoby z druhého telefónu sa spojí s tvojimi osobami s rovnakým menom. Odteraz to bude na oboch telefónoch vždy jedna osoba.</item>
+        <item quantity="other">%d osôb z druhého telefónu sa spojí s tvojimi osobami s rovnakým menom. Odteraz to bude na oboch telefónoch vždy jedna osoba.</item>
+    </plurals>
+
     <!-- ladenie (len debug build) -->
     <string name="family_debug_manual">Ručná adresa (ladenie)</string>
     <string name="family_debug_manual_off">Vypnutá, telefón sa hľadá na Wi-Fi (NSD)</string>
