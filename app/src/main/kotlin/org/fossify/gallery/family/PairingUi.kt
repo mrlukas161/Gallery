@@ -101,6 +101,29 @@ internal fun Activity.showFamilyMessageDialog(
         .apply { setupDialogStuff(view, this, titleRes) }
 }
 
+// Dialóg s tromi voľbami (napr. stav prepojeného telefónu): positive / neutral / zavrieť
+@Suppress("LongParameterList")
+internal fun Activity.showFamilyChoiceDialog(
+    title: String,
+    message: String,
+    positive: String,
+    onPositive: () -> Unit,
+    neutral: String?,
+    onNeutral: () -> Unit,
+) {
+    val padding = resources.getDimensionPixelSize(org.fossify.commons.R.dimen.activity_margin)
+    val view = TextView(this).apply {
+        text = message
+        setTextColor(getProperTextColor())
+        setPadding(padding, padding, padding, 0)
+    }
+    getAlertDialogBuilder()
+        .setPositiveButton(positive) { _, _ -> onPositive() }
+        .setNegativeButton(org.fossify.commons.R.string.cancel, null)
+        .apply { if (neutral != null) setNeutralButton(neutral) { _, _ -> onNeutral() } }
+        .apply { setupDialogStuff(view, this, titleText = title) }
+}
+
 internal fun Activity.promptFamilyText(titleRes: Int, current: String, hintRes: Int, onText: (String) -> Unit) {
     val input = MyEditText(this).apply {
         setSingleLine()

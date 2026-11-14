@@ -2,7 +2,8 @@ package org.fossify.gallery.family
 
 // Obsah párovacieho QR kódu (čistá logika, bez android.net.Uri):
 //   galeriaplus://family/pair?v=1&id=<deviceId>&name=<názov>&t=<token>&ip=<adresa>&port=<port>
-// Token je 256-bitový jednorazový (PairingTokens), Base64url bez paddingu. Trvalý kľúč páru v QR nie je.
+// ip musí byť lokálna adresa (LocalNet), inak sa odkaz odmietne. Token je 256-bitový jednorazový
+// (PairingTokens), Base64url bez paddingu. Trvalý kľúč páru v QR nie je.
 class PairUri(
     val deviceId: String,
     val name: String,
@@ -45,7 +46,8 @@ class PairUri(
             val id = query["id"]?.takeIf { DEVICE_ID.matches(it) }
             val token = query["t"]?.let { FamilyBytes.unb64(it) }?.takeIf { it.size == FamilyCrypto.TOKEN_BYTES }
             if (id == null || token == null) return null
-            val host = query["ip"]?.takeIf { it.length <= MAX_HOST && HOST_CHARS.matches(it) }
+            // len IP adresa v lokálnej sieti: odkaz z webu či správy nesmie spárovať telefón so serverom na internete
+            val host = query["ip"]?.takeIf { it.length <= MAX_HOST && HOST_CHARS.matches(it) && LocalNet.isLocal(it) }
             val port = query["port"]?.toIntOrNull()?.takeIf { it in 1..MAX_PORT }
             if (host == null || port == null) return null
             return PairUri(id, cleanName(query["name"].orEmpty()), token, host, port)

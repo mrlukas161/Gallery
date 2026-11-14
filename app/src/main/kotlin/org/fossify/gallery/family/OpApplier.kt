@@ -61,6 +61,9 @@ interface FamilyState {
     fun anchorSources(localId: Long): Set<String> = emptySet()
 
     fun isPairedDevice(deviceId: String): Boolean = true
+
+    // rodinné UUID členov, ktorých tu niekto zo skupiny odobral (GroupSet druhého telefónu ich späť nepridá)
+    fun removedFromGroup(name: String): Set<String> = emptySet()
 }
 
 // Návrh pre používateľa (ProposalEntity). Typ = ProposalEntity.type.
@@ -303,8 +306,9 @@ private object PersonRules {
         }
     }
 
+    // neznáme UUID (napr. čaká na rozhodnutie o rovnakom mene) počká; známe, ale zmazané sa preskočí
     fun merge(op: PersonMerge, state: FamilyState): Decision {
-        val from = state.localPersonId(op.fromUuid) ?: return Decision.Skip(Reason.PERSON_GONE)
+        val from = state.localPersonId(op.fromUuid) ?: return missingPerson(op.fromUuid, state)
         val to = state.localPersonId(op.toUuid) ?: return missingPerson(op.toUuid, state)
         return if (from == to) {
             Decision.Skip(Reason.NO_CHANGE)
@@ -315,7 +319,7 @@ private object PersonRules {
 
     // mazanie sa NIKDY nevykoná automaticky, vznikne len návrh
     fun delete(op: PersonDelete, state: FamilyState): Decision {
-        val local = state.localPersonId(op.uuid) ?: return Decision.Skip(Reason.PERSON_GONE)
+        val local = state.localPersonId(op.uuid) ?: return missingPerson(op.uuid, state)
         return propose(DeleteProposal(op.uuid, local, op.name ?: state.personName(local)))
     }
 }
@@ -345,7 +349,10 @@ private object FaceRules {
         val face = state.findFace(op.face) ?: return waitForPhoto(op.face)
         val current = state.assignment(face)
         return when {
-            current == null || current.personId != person -> Decision.Skip(Reason.NO_CHANGE)
+            // tvár tu zatiaľ nikomu nepatrí: „nie je to on“ ostane ako pravidlo (inak by ju neskôr automatické
+            // priradenie dalo práve tejto osobe)
+            current == null -> Decision.Apply(listOf(ApplyAction.Reject(face, person)))
+            current.personId != person -> Decision.Skip(Reason.NO_CHANGE)
             !current.manual -> Decision.Apply(listOf(ApplyAction.Reject(face, person)))
             // D6: chybné priradenie, ktoré sem poslal ten istý telefón a tu sa ho nikto nedotkol → potichu
             state.assignmentOrigin(face) == from -> Decision.Apply(listOf(ApplyAction.Reject(face, person)))
@@ -403,10 +410,12 @@ private object AnchorRules {
 }
 
 private object GroupRules {
-    // členovia sa len pridávajú, nikdy neodoberajú
+    // Členovia sa len pridávajú, nikdy neodoberajú. GroupSet nesie celý zoznam, preto člen, ktorého tu
+    // niekto zo skupiny odobral, sa späť nepridá (inak by ho vrátila každá zmena skupiny na druhom telefóne).
     fun set(op: GroupSet, state: FamilyState): Decision {
         if (op.memberUuids.any { !state.isKnown(it) }) return Decision.Defer(Reason.UNKNOWN_PERSON)
-        val members = op.memberUuids.mapNotNull { state.localPersonId(it) }.distinct()
+        val removed = state.removedFromGroup(op.name)
+        val members = op.memberUuids.filter { it !in removed }.mapNotNull { state.localPersonId(it) }.distinct()
         val existing = state.groupMembers(op.name)
             ?: return Decision.Apply(listOf(ApplyAction.CreateGroup(op.name, members)))
         val added = members.filter { it !in existing }

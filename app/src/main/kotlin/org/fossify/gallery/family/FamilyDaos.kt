@@ -19,7 +19,11 @@ interface PeerDao {
     @Query("SELECT * FROM peers WHERE device_id = :deviceId")
     fun getPeer(deviceId: String): PeerEntity?
 
-    @Query("UPDATE peers SET last_seen_at = :seenAt, last_lamport_seen = :lamport WHERE device_id = :deviceId")
+    // „have“ sa nikdy nevráti späť (súbeh príjmu so starším čítaním riadku by ho inak znížil)
+    @Query(
+        "UPDATE peers SET last_seen_at = :seenAt, last_lamport_seen = MAX(last_lamport_seen, :lamport) " +
+            "WHERE device_id = :deviceId"
+    )
     fun markPeerSeen(deviceId: String, seenAt: Long, lamport: Long)
 
     @Query("DELETE FROM peers WHERE device_id = :deviceId")
@@ -103,6 +107,26 @@ interface OpDao {
 
     @Query("SELECT MAX(lamport) FROM ops")
     fun getMaxLamport(): Long?
+
+    // operácie jedného typu zo všetkých telefónov (napr. GroupSet: kto v skupine bol)
+    @Query("SELECT * FROM ops WHERE type = :type ORDER BY lamport, op_id")
+    fun getAllOpsOfType(type: String): List<OpEntity>
+
+    // Je osoba (rodinné UUID) druhému telefónu známa? = PersonCreate s týmto UUID v op-logu, nie zo zálohy osôb.
+    // pattern = „%<uuid>%“, notDevicePattern = „backup:%“
+    @Query(
+        "SELECT COUNT(*) FROM ops WHERE type = 'person_create' AND device_id NOT LIKE :notDevicePattern " +
+            "AND payload_json LIKE :pattern"
+    )
+    fun countPersonCreates(pattern: String, notDevicePattern: String): Int
+
+    // zrušené prepojenie: neaplikované operácie toho telefónu sa odložia nabok (nemažú sa), po novom
+    // spárovaní toho istého telefónu sa vrátia (unparkFromDevice; 90 dní starých sa pending() znova zbaví)
+    @Query("UPDATE ops SET parked_at = :now WHERE device_id = :deviceId AND applied_at IS NULL AND parked_at IS NULL")
+    fun parkFromDevice(deviceId: String, now: Long): Int
+
+    @Query("UPDATE ops SET parked_at = NULL WHERE device_id = :deviceId AND applied_at IS NULL")
+    fun unparkFromDevice(deviceId: String): Int
 }
 
 // podmienka „operácia sa dá skúsiť znova“ (OpDao.getPendingOps/countPendingOps)
@@ -129,6 +153,13 @@ interface OutboxDao {
     // koľko položiek čaká na odoslanie (FamilyAutoSync: pokus pri otvorení appky hneď)
     @Query("SELECT COUNT(*) FROM outbox WHERE state = :state")
     fun countOutbox(state: String): Int
+
+    // celá fronta pre telefón (všetky stavy), v poradí odoslania
+    @Query("SELECT * FROM outbox WHERE peer_device_id = :peerDeviceId ORDER BY id")
+    fun getOutboxForPeer(peerDeviceId: String): List<OutboxEntity>
+
+    @Query("SELECT COUNT(*) FROM outbox WHERE peer_device_id = :peerDeviceId AND state = :state")
+    fun countOutboxForPeer(peerDeviceId: String, state: String): Int
 }
 
 // návrhy z druhého telefónu
@@ -145,6 +176,10 @@ interface ProposalDao {
 
     @Query("UPDATE proposals SET state = :state WHERE id = :id")
     fun setProposalState(id: Long, state: String)
+
+    // zrušené prepojenie: otvorené návrhy toho telefónu sa uzavrú (ostanú v histórii)
+    @Query("UPDATE proposals SET state = :state WHERE from_device_id = :deviceId AND state = 'open'")
+    fun closeFromDevice(deviceId: String, state: String): Int
 }
 
 // prijaté balíky výsledkov k fotkám (F4)

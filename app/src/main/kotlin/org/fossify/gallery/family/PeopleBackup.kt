@@ -44,15 +44,16 @@ class PeopleBackup(context: Context) {
         data object Invalid : RestoreResult
     }
 
-    // Zostaví zálohu z aktuálneho stavu. Osoby bez rodinného UUID ho dostanú (zapíše sa ich PersonCreate
-    // do vlastného op-logu ako pri spárovaní), aby obnova tej istej zálohy osoby nezdvojila.
+    // Zostaví zálohu z aktuálneho stavu. Osoby bez rodinného UUID ho dostanú (len lokálne, nič neodchádza —
+    // druhému telefónu sa osoba ukáže až s tvárou z povoleného priečinka), aby obnova tej istej zálohy osoby
+    // nezdvojila.
     fun create(): Pair<PeopleBackupFormat.Backup, Summary> {
         val people = PeopleDatabase.getInstance(app).PeopleDao()
         val faceDao = FacesDatabase.getInstance(app).FaceDao()
         val extras = ExtrasDatabase.getInstance(app).ExtrasDao()
         val recorder = OpRecorder(app)
         val persons = people.getPersons()
-        val uuids = persons.associate { it.id to recorder.uuidFor(it.id) }
+        val uuids = persons.associate { it.id to recorder.localUuid(it.id) }
 
         // ručné priradenia (tváre zo zamknutých a vylúčených priečinkov sa nezálohujú, spec 2.5)
         // D2/D3: nejasná tvár (priestor rámčeka sa nedá overiť ani odtlačkom) sa vynechá sama
@@ -164,17 +165,20 @@ class PeopleBackup(context: Context) {
         val report = FamilyAutoSync.exclusive {
             val sync = FamilySync(app)
             // tváre sa hľadajú podľa obsahového kľúča fotky (lenivo, potom z cache)
-            sync.prepareFaceKeys()
-            val local = FamilyLocal(app)
-            val report = PeopleRestore.restore(
-                backup,
-                OpApplier(local.ownDeviceId, FaceEmbedder.MODEL_ID),
-                local.store,
-                local.state,
-                local.sink,
-            )
-            afterRestore(backup, local)
-            report
+            sync.prepareFaceKeys(force = true)
+            // jeden vlastník aplikovania operácií (FamilyLock) — rovnako ako príjem zo servera aj klienta
+            familyExclusive {
+                val local = FamilyLocal(app)
+                val report = PeopleRestore.restore(
+                    backup,
+                    OpApplier(local.ownDeviceId, FaceEmbedder.MODEL_ID),
+                    local.store,
+                    local.state,
+                    local.sink,
+                )
+                afterRestore(backup, local)
+                report
+            }
         }
         val extras = try {
             restoreExtras(backup.extras)
@@ -233,9 +237,8 @@ class PeopleBackup(context: Context) {
                 val ids = PeopleRestore.restoredUuids(PeopleRestore.logged(backup))
                     .mapNotNull { state.localPersonId(it) }
                 val created = if (recorder.hasPeers()) local.sink.createdUuids else emptyList()
-                created.forEach { uuid ->
-                    recorder.append(PersonCreate(uuid, state.localPersonId(uuid)?.let(state::personName)))
-                }
+                // zverejní sa len osoba s tvárou z povoleného priečinka (spec 2.5)
+                created.mapNotNull { state.localPersonId(it) }.forEach { recorder.publishedUuid(it) }
                 recorder.anchors.markDirty(ids.distinct())
             }
         } catch (e: RuntimeException) {

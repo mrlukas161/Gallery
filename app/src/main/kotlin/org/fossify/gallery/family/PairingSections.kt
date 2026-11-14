@@ -4,7 +4,9 @@ import android.app.Activity
 import android.os.Handler
 import android.os.Looper
 import android.text.format.DateUtils
+import android.widget.TextView
 import org.fossify.commons.extensions.beVisibleIf
+import org.fossify.commons.extensions.getProperTextColor
 import org.fossify.commons.extensions.toast
 import org.fossify.commons.extensions.updateTextColors
 import org.fossify.commons.helpers.ensureBackgroundThread
@@ -97,59 +99,151 @@ internal class PairingQrSection(
     }
 }
 
-// Zoznam prepojených telefónov a zrušenie prepojenia.
+// Zoznam prepojených telefónov so stavom (posledná synchronizácia, vo fronte, zlyhané fotky). Ťuk na telefón
+// ukáže stav a voľby „Synchronizovať teraz“ / „Skúsiť znova“ a „Zrušiť prepojenie“. Počas snapshotu Ľudí po
+// spárovaní je pod zoznamom priebeh.
 internal class PairingPeersSection(private val activity: Activity, private val binding: ActivityPairingBinding) {
+    private val ticker = Handler(Looper.getMainLooper())
+    private var progressView: TextView? = null
+
+    private class PeerStatus(
+        val peer: PeerEntity,
+        val needsRepair: Boolean,
+        val lastSync: Long,
+        val queue: OutboxRules.Summary,
+    )
+
+    private val tick = object : Runnable {
+        override fun run() {
+            updateProgress()
+            ticker.postDelayed(this, PROGRESS_TICK_MS)
+        }
+    }
+
+    fun startProgress() {
+        ticker.removeCallbacks(tick)
+        ticker.post(tick)
+    }
+
+    fun stopProgress() = ticker.removeCallbacks(tick)
 
     fun load() {
         ensureBackgroundThread {
-            val store = FamilyStore(activity.applicationContext)
-            val peers = store.peers()
-            val repair = peers.filter { store.needsRepairing(it.deviceId) }.mapTo(HashSet()) { it.deviceId }
-            activity.runOnUiThread { if (!activity.isDestroyed) render(peers, repair) }
+            val app = activity.applicationContext
+            val store = FamilyStore(app)
+            val statuses = store.peers().map {
+                val id = it.deviceId
+                PeerStatus(it, store.needsRepairing(id), store.lastSync(id), FamilySend.status(app, id))
+            }
+            activity.runOnUiThread { if (!activity.isDestroyed) render(statuses) }
         }
     }
 
-    private fun render(peers: List<PeerEntity>, repair: Set<String>) {
+    private fun render(statuses: List<PeerStatus>) {
         val container = binding.pairingPeers
         container.removeAllViews()
-        for (peer in peers) {
+        for (status in statuses) {
+            val peer = status.peer
             val row = ItemFamilyPeerBinding.inflate(activity.layoutInflater, container, false)
             row.familyPeerName.text = peer.name
             val paired = DateUtils.formatDateTime(activity, peer.pairedAt, DateUtils.FORMAT_SHOW_DATE)
-            val seen = if (peer.lastSeenAt > 0) {
-                DateUtils.getRelativeTimeSpanString(peer.lastSeenAt).toString()
-            } else {
-                activity.getString(R.string.family_peer_never)
-            }
-            row.familyPeerSummary.text = if (peer.deviceId in repair) {
+            val summary = if (status.needsRepair) {
                 activity.getString(R.string.d_family_peer_needs_pairing)
             } else {
-                activity.getString(R.string.family_peer_summary, paired, seen)
+                activity.getString(R.string.family_peer_summary, paired, relative(peer.lastSeenAt))
             }
-            row.root.setOnClickListener { confirmUnpair(peer) }
+            val queue = status.queue
+            row.familyPeerSummary.text = if (queue.queued + queue.failed > 0) {
+                summary + "\n" + activity.getString(R.string.f068_peer_queue, queue.queued, queue.failed)
+            } else {
+                summary
+            }
+            row.root.setOnClickListener { showStatus(status) }
             container.addView(row.root)
             activity.updateTextColors(row.root)
         }
-        binding.pairingNoPeers.beVisibleIf(peers.isEmpty())
+        progressView = TextView(activity).also {
+            val padding = activity.resources.getDimensionPixelSize(org.fossify.commons.R.dimen.activity_margin)
+            it.setPadding(padding, padding / 2, padding, padding / 2)
+            container.addView(it)
+            it.setTextColor(activity.getProperTextColor())
+        }
+        updateProgress()
+        binding.pairingNoPeers.beVisibleIf(statuses.isEmpty())
     }
 
-    private fun confirmUnpair(peer: PeerEntity) {
+    private fun relative(time: Long): String = if (time > 0) {
+        DateUtils.getRelativeTimeSpanString(time).toString()
+    } else {
+        activity.getString(R.string.family_peer_never)
+    }
+
+    private fun updateProgress() {
+        val view = progressView ?: return
+        val progress = FamilySnapshot.progress
+        view.beVisibleIf(progress != null)
+        if (progress != null) {
+            view.text = activity.getString(R.string.f068_snapshot_progress, progress.first, progress.second)
+        }
+    }
+
+    // stav prepojenia a voľby: synchronizovať teraz (pri zlyhaných fotkách „Skúsiť znova“) a zrušiť prepojenie
+    private fun showStatus(status: PeerStatus) {
+        val peer = status.peer
+        val queue = status.queue
+        val lastSync = relative(status.lastSync)
+        val message = activity.getString(R.string.f068_peer_status, lastSync, queue.queued, queue.failed)
+        val retry = queue.failed > 0
+        activity.showFamilyChoiceDialog(
+            peer.name,
+            message,
+            activity.getString(if (retry) R.string.f068_retry else R.string.f068_sync_now),
+            { syncNow(peer, retry) },
+            activity.getString(R.string.family_unpair_button),
+        ) { confirmUnpair(peer.deviceId, peer.name) }
+    }
+
+    private fun syncNow(peer: PeerEntity, retryFailed: Boolean) {
+        val app = activity.applicationContext
+        activity.toast(R.string.f068_syncing)
+        ensureBackgroundThread {
+            val requeued = if (retryFailed) FamilySend.retryFailed(app, peer) else 0
+            if (requeued > 0) {
+                app.toast(app.resources.getQuantityString(R.plurals.f068_retry_queued, requeued, requeued))
+            }
+            val result = FamilySend.syncNow(app, peer.deviceId)
+            val text = when (result?.status) {
+                FamilyClient.Status.OK -> app.getString(R.string.f068_synced)
+                FamilyClient.Status.NEEDS_PAIRING -> app.getString(R.string.d_family_send_needs_pairing, peer.name)
+                FamilyClient.Status.INCOMPATIBLE -> app.getString(R.string.f068_sync_incompatible, peer.name)
+                else -> app.getString(R.string.f068_sync_unreachable, peer.name)
+            }
+            app.toast(text)
+            activity.runOnUiThread { if (!activity.isDestroyed) load() }
+        }
+    }
+
+    fun confirmUnpair(deviceId: String, name: String) {
         activity.showFamilyMessageDialog(
             R.string.family_unpair_title,
-            activity.getString(R.string.family_unpair_text, peer.name),
+            activity.getString(R.string.family_unpair_text, name),
             R.string.family_unpair_button,
         ) {
             val context = activity.applicationContext
             ensureBackgroundThread {
-                FamilyStore(context).unpair(peer.deviceId)
+                FamilyStore(context).unpair(deviceId)
                 activity.runOnUiThread {
-                    activity.toast(activity.getString(R.string.family_unpaired, peer.name))
+                    activity.toast(activity.getString(R.string.family_unpaired, name))
                     load()
                 }
                 // ak je druhý telefón práve dostupný, dozvie sa to hneď (inak pri najbližšom stretnutí)
                 FamilyClient(context).notifyUnpairs()
             }
         }
+    }
+
+    private companion object {
+        const val PROGRESS_TICK_MS = 1000L
     }
 }
 

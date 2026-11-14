@@ -26,6 +26,10 @@ object FamilyCrypto {
     private const val MAX_HKDF_BLOCKS = 255
     private const val PUBLIC_TAG_BYTES = 8
     private const val HMAC = "HmacSHA256"
+    private const val BYTE_MASK = 0xff
+    private const val BYTE_BITS = 8
+    private const val CODE_MODULO = 10_000
+    private const val CODE_DIGITS = 4
     private const val AES_GCM = "AES/GCM/NoPadding"
 
     internal val random = SecureRandom()
@@ -76,6 +80,14 @@ object FamilyCrypto {
         } catch (ignored: GeneralSecurityException) {
             null
         }
+    }
+
+    // Overovací kód páru (4 číslice): oba telefóny ho po spárovaní ukážu a používateľ porovná, že sú rovnaké
+    // (inak sa spárovali s niečím iným). Odvodený z kľúča páru, ktorý v QR ani na sieti nie je.
+    fun verificationCode(pairKey: ByteArray): String {
+        val h = hmacSha256(pairKey, "galeriaf-verify".utf8())
+        val n = ((h[0].toInt() and BYTE_MASK) shl BYTE_BITS) or (h[1].toInt() and BYTE_MASK)
+        return (n % CODE_MODULO).toString().padStart(CODE_DIGITS, '0')
     }
 
     fun constantTimeEquals(a: ByteArray, b: ByteArray): Boolean = MessageDigest.isEqual(a, b)

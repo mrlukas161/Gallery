@@ -11,6 +11,7 @@ import java.io.IOException
 //
 // Všetky metódy blokujú (sieť, DB, NSD) → volať len na pozadí. Nič tu nebeží trvalo; kedy sa
 // synchronizuje, určujú spúšťače (F5: onResume, okno pri nabíjaní, fronta).
+@Suppress("TooManyFunctions")
 class FamilyClient(context: Context) {
     private val appContext = context.applicationContext
     private val store = FamilyStore(appContext)
@@ -18,17 +19,26 @@ class FamilyClient(context: Context) {
     private val sync = OpExchange(db)
     private val locator = FamilyLocator(appContext, store.prefs)
 
-    // NEEDS_PAIRING = spárovaný telefón nemá kľúč (po obnove zálohy Androidu), treba ho znova spárovať
-    enum class Status { OK, UNREACHABLE, REJECTED, UNPAIRED, ERROR, NEEDS_PAIRING }
+    // NEEDS_PAIRING = spárovaný telefón nemá kľúč (po obnove zálohy Androidu), treba ho znova spárovať;
+    // INCOMPATIBLE = druhý telefón má appku s iným (nezlučiteľným) protokolom — treba aktualizovať
+    enum class Status { OK, UNREACHABLE, REJECTED, UNPAIRED, ERROR, NEEDS_PAIRING, INCOMPATIBLE }
 
-    class PairOutcome(val status: Status, val peerName: String? = null)
+    // code = overovací kód páru (rovnaký musí ukázať aj druhý telefón)
+    class PairOutcome(
+        val status: Status,
+        val peerName: String? = null,
+        val code: String? = null,
+        val peerId: String? = null,
+    )
 
+    // outboxLeft = koľko položiek fronty pre tento telefón ešte čaká (synchronizácia nie je celá hotová)
     class SyncResult(
         val deviceId: String,
         val status: Status,
         val opsReceived: Int = 0,
         val opsSent: Int = 0,
         val bundlesSent: Int = 0,
+        val outboxLeft: Int = 0,
     )
 
     // spojenie počas jednej synchronizácie
@@ -38,6 +48,7 @@ class FamilyClient(context: Context) {
         var received = 0
         var sent = 0
         var bundles = 0
+        var failedTransfers = 0
     }
 
     // Spáruje tento telefón s telefónom z naskenovaného QR kódu.
@@ -51,7 +62,11 @@ class FamilyClient(context: Context) {
             ?: return PairOutcome(Status.REJECTED)
         val saved = store.savePairing(result)
         if (saved) store.prefs.rememberAddress(result.peerId, FamilyEndpoint(uri.host, uri.port))
-        return if (saved) PairOutcome(Status.OK, result.peerName) else PairOutcome(Status.ERROR)
+        return if (saved) {
+            PairOutcome(Status.OK, result.peerName, FamilyCrypto.verificationCode(result.pairKey), result.peerId)
+        } else {
+            PairOutcome(Status.ERROR)
+        }
     }
 
     // Synchronizuje so všetkými spárovanými telefónmi (a oznámi zrušené prepojenia).
@@ -69,14 +84,19 @@ class FamilyClient(context: Context) {
             .put("v", OpExchange.VERSION)
             .put("lamport", sync.clock())
             .put("have", peer.lastLamportSeen)
+        // port môjho servera: druhý telefón sa po synchronizácii vie hneď pripojiť späť (moja fronta pre neho)
+        FamilyServer.port()?.let { hello.put("port", it) }
         val opened = openSession(peer.deviceId, peer.publicTag, timeoutMs, handshake, hello)
         val (link, response) = when (opened) {
             is Opened.Ok -> opened.link to opened.response
-            is Opened.Failed -> return SyncResult(peer.deviceId, opened.status)
+            is Opened.Failed -> return SyncResult(peer.deviceId, opened.status, outboxLeft = outboxLeft(peer))
         }
         if (response.optBoolean("unpaired")) {
             store.forget(peer.deviceId)
             return SyncResult(peer.deviceId, Status.UNPAIRED)
+        }
+        if (response.optBoolean("incompatible") || !OpExchange.compatible(response.optInt("v", 0))) {
+            return SyncResult(peer.deviceId, Status.INCOMPATIBLE, outboxLeft = outboxLeft(peer))
         }
         val counters = Counters()
         val serverHave = response.optLong("have", 0)
@@ -87,12 +107,20 @@ class FamilyClient(context: Context) {
                 sendOutbox(peer, link, counters) &&
                 finish(peer, link)
             val status = if (ok) Status.OK else Status.REJECTED
-            SyncResult(peer.deviceId, status, counters.received, counters.sent, counters.bundles)
+            SyncResult(peer.deviceId, status, counters.received, counters.sent, counters.bundles, outboxLeft(peer))
         } catch (ignored: IOException) {
             // prerušené: čo sa stihlo, je uložené; nabudúce sa pokračuje od posledného potvrdeného bodu
-            SyncResult(peer.deviceId, Status.UNREACHABLE, counters.received, counters.sent, counters.bundles)
+            // (rozpracovaná položka fronty sa neráta ako pokus, kúsky súboru pokračujú od prvého nepotvrdeného)
+            SyncResult(
+                peer.deviceId, Status.UNREACHABLE, counters.received, counters.sent, counters.bundles, outboxLeft(peer),
+            )
+        } finally {
+            if (counters.failedTransfers > 0) FamilySend.notifyFailed(appContext, peer, counters.failedTransfers)
         }
     }
+
+    private fun outboxLeft(peer: PeerEntity): Int =
+        db.outboxDao().countOutboxForPeer(peer.deviceId, OutboxEntity.STATE_PENDING)
 
     // Oznámi zrušené prepojenia telefónom, ktoré o tom ešte nevedia. Po potvrdení sa zmaže aj kľúč.
     fun notifyUnpairs(timeoutMs: Long = DEFAULT_TIMEOUT_MS) {
@@ -167,11 +195,16 @@ class FamilyClient(context: Context) {
         return true
     }
 
-    // odošle čakajúce položky fronty; stav každej sa uloží hneď po odpovedi
+    // Odošle čakajúce položky fronty; stav každej sa uloží hneď po odpovedi. Zlyhaná položka označí celý
+    // prenos fotky ako zlyhaný (ostane vo fronte, notifikácia, „Skúsiť znova“ na obrazovke prepojenia).
+    // Keď neprejde záverečný balík fotky (prijímateľ medzičasom prišiel o rozpracovaný súbor), kúsky pôjdu znova.
     @Throws(IOException::class)
     private fun sendOutbox(peer: PeerEntity, link: Link, counters: Counters): Boolean {
         val dao = db.outboxDao()
+        val failedNow = HashSet<String>()
         for (item in dao.getOutbox(peer.deviceId, OutboxEntity.STATE_PENDING)) {
+            val transferId = BundleTransfer.decode(item.refKey)?.transferId
+            if (transferId != null && transferId in failedNow) continue
             val attempts = item.attempts + 1
             val data = FamilyHandlers.buildBundle(peer, item)
             val meta = mapOf("kind" to item.kind, "ref" to item.refKey, "id" to item.id.toString())
@@ -183,7 +216,17 @@ class FamilyClient(context: Context) {
                 else -> OutboxEntity.STATE_PENDING
             }
             dao.updateOutbox(item.id, state, attempts)
-            if (ok) counters.bundles++
+            when {
+                ok -> counters.bundles++
+                transferId == null -> Unit
+                state == OutboxEntity.STATE_FAILED -> {
+                    failedNow.add(transferId)
+                    FamilySend.failTransfer(db, peer.deviceId, transferId)
+                    counters.failedTransfers++
+                }
+
+                item.kind != BundleTransfer.KIND_CHUNK -> FamilySend.resendChunks(db, peer.deviceId, transferId)
+            }
         }
         return true
     }
@@ -193,6 +236,7 @@ class FamilyClient(context: Context) {
         val have = store.peer(peer.deviceId)?.lastLamportSeen ?: return false
         call(link, FamilyServer.PATH_ACK, OpExchange.bytes(JSONObject().put("have", have))) ?: return false
         db.peerDao().markPeerSeen(peer.deviceId, System.currentTimeMillis(), have)
+        store.markSynced(peer.deviceId)
         FamilyHandlers.syncFinished(peer.copy(lastLamportSeen = have))
         return true
     }

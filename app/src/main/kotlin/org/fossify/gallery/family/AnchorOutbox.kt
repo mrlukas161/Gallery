@@ -24,7 +24,7 @@ class AnchorOutbox(context: Context, private val recorder: OpRecorder) {
         val dirty = dirtyIds()
         if (dirty.isEmpty()) return
         for ((localId, picked) in pick(app, dirty)) {
-            val uuid = recorder.existingUuid(localId)
+            val uuid = recorder.existingUuid(localId)?.takeIf { recorder.isPublished(it) }
             if (uuid != null && picked.isNotEmpty()) send(uuid, picked)
         }
         // medzičasom označené osoby ostanú na ďalšie odovzdanie

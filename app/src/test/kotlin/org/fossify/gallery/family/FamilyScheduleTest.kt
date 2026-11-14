@@ -142,4 +142,20 @@ class FamilyScheduleTest {
         // nič spárované, nič nečaká → zrušiť
         assertEquals(FamilySchedule.Next.Cancel, FamilySchedule.next(false, false, 0, 1000, true, true))
     }
+
+    // revízia 11/2026: pri čakajúcej fronte a neúspechoch sa pokusy pri otvorení appky riedia 1 → 5 → 15 min
+    @Test
+    fun pendingOutboxBacksOffAfterFailures() {
+        assertEquals(60_000L, FamilySchedule.pendingInterval(0))
+        assertEquals(5 * 60_000L, FamilySchedule.pendingInterval(1))
+        assertEquals(FamilySchedule.RESUME_MIN_INTERVAL_MS, FamilySchedule.pendingInterval(2))
+        assertEquals(FamilySchedule.RESUME_MIN_INTERVAL_MS, FamilySchedule.pendingInterval(9))
+        val now = 100_000_000L
+        val twoMinAgo = now - 2 * 60 * 1000L
+        assertTrue(FamilySchedule.shouldTryOnResume(true, false, 80, twoMinAgo, now, true, failures = 0))
+        assertFalse(FamilySchedule.shouldTryOnResume(true, false, 80, twoMinAgo, now, true, failures = 1))
+        val sixMinAgo = now - 6 * 60 * 1000L
+        assertTrue(FamilySchedule.shouldTryOnResume(true, false, 80, sixMinAgo, now, true, failures = 1))
+        assertFalse(FamilySchedule.shouldTryOnResume(true, false, 80, sixMinAgo, now, true, failures = 3))
+    }
 }

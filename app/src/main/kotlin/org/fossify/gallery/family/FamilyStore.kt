@@ -54,8 +54,23 @@ class FamilyStore(context: Context) {
                 lastLamportSeen = previous?.lastLamportSeen ?: 0,
             ),
         )
+        if (previous == null) afterNewPairing(result.peerId)
         refreshSchedule(appContext)
         return true
+    }
+
+    // Nový telefón: operácie odložené pri zrušení starého prepojenia s ním sa vrátia a Ľudia sa zverejnia znova
+    // (snapshot na pozadí s priebehom, nie v obsluhe požiadavky) — inak by nový telefón nedostal zmeny z času,
+    // keď nebol spárovaný žiadny telefón a recorder nič nezapisoval.
+    @Suppress("TooGenericExceptionCaught")
+    private fun afterNewPairing(peerId: String) {
+        try {
+            db.opDao().unparkFromDevice(peerId)
+            FamilySync(appContext).resetSnapshot()
+            FamilySnapshot.start(appContext)
+        } catch (e: RuntimeException) {
+            android.util.Log.w("FamilyStore", "príprava po spárovaní zlyhala", e)
+        }
     }
 
     // Zrušenie prepojenia na tomto telefóne. Riadok zmizne hneď, kľúč sa podrží, kým sa to pri
@@ -63,8 +78,33 @@ class FamilyStore(context: Context) {
     fun unpair(deviceId: String) {
         db.peerDao().deletePeer(deviceId)
         prefs.setPendingUnpair(deviceId, true)
+        cleanupAfterUnpair(deviceId)
         FamilyHandlers.unpaired(deviceId)
     }
+
+    // Upratanie po zrušení prepojenia (plán F2.2): fronta pre ten telefón sa zahodí (fotky na disku ostanú),
+    // jeho neaplikované operácie sa odložia nabok (nemažú sa, op-log je nenahraditeľný), otvorené návrhy od neho
+    // sa uzavrú. Pri zrušení posledného prepojenia sa snapshot pri ďalšom spárovaní zopakuje.
+    @Suppress("TooGenericExceptionCaught")
+    private fun cleanupAfterUnpair(deviceId: String) {
+        try {
+            FamilySend.dropQueue(db, deviceId)
+            familyExclusive { db.opDao().parkFromDevice(deviceId, System.currentTimeMillis()) }
+            db.proposalDao().closeFromDevice(deviceId, ProposalEntity.STATE_DISMISSED)
+            db.metaDao().delete(lastSyncKey(deviceId))
+            if (peers().isEmpty()) FamilySync(appContext).resetSnapshot()
+        } catch (e: RuntimeException) {
+            android.util.Log.w("FamilyStore", "upratanie po zrušení prepojenia zlyhalo", e)
+        }
+    }
+
+    // posledná celá synchronizácia s telefónom (po /f/ack na oboch stranách); 0 = ešte nikdy
+    fun markSynced(deviceId: String) =
+        db.metaDao().put(MetaEntity(lastSyncKey(deviceId), System.currentTimeMillis().toString()))
+
+    fun lastSync(deviceId: String): Long = db.metaDao().get(lastSyncKey(deviceId))?.toLongOrNull() ?: 0
+
+    private fun lastSyncKey(deviceId: String) = "f068_last_sync:$deviceId"
 
     // druhý telefón sa dozvedel o zrušení → zmaž aj kľúč
     fun finishUnpair(deviceId: String) {
@@ -80,7 +120,10 @@ class FamilyStore(context: Context) {
         val known = peer(deviceId) != null
         db.peerDao().deletePeer(deviceId)
         finishUnpair(deviceId)
-        if (known) FamilyHandlers.unpaired(deviceId)
+        if (known) {
+            cleanupAfterUnpair(deviceId)
+            FamilyHandlers.unpaired(deviceId)
+        }
     }
 }
 

@@ -48,7 +48,17 @@ class PairUriTest {
         assertEquals("?", PairUri.cleanName(" \n "))
         assertEquals("ab", PairUri.cleanName("a\u0000b"))
         assertEquals(PairUri.MAX_NAME, PairUri.cleanName("x".repeat(100)).length)
-        val parsed = PairUri.parse(PairUri(id, "a\nb", token, "h", 1).toUri())
+        val parsed = PairUri.parse(PairUri(id, "a\nb", token, "10.0.0.2", 1).toUri())
         assertEquals("ab", parsed!!.name)
+    }
+
+    // odkaz z webu alebo zo správy nesmie spárovať telefón so serverom na internete
+    @Test
+    fun onlyLocalAddressesAreAccepted() {
+        fun parsedWith(ip: String) = PairUri.parse(PairUri(id, "x", token, ip, 8090).toUri())
+        listOf("192.168.1.23", "10.1.2.3", "172.16.0.5", "172.31.255.1", "169.254.10.10", "fe80::1", "fd12:3456::1")
+            .forEach { assertNotNull(it, parsedWith(it)) }
+        listOf("8.8.8.8", "172.32.0.1", "evil.example.com", "localhost", "127.0.0.1", "2001:db8::1", "h")
+            .forEach { assertNull(it, parsedWith(it)) }
     }
 }

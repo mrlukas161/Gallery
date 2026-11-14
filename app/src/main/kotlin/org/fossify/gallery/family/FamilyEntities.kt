@@ -116,6 +116,9 @@ data class ProposalEntity(
         const val STATE_OPEN = "open"
         const val STATE_ACCEPTED = "accepted"
         const val STATE_REJECTED = "rejected"
+
+        // prepojenie s telefónom, od ktorého návrh prišiel, sa zrušilo (návrh ostane len v histórii)
+        const val STATE_DISMISSED = "dismissed"
     }
 }
 
