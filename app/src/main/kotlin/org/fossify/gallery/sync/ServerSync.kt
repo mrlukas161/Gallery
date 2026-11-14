@@ -359,6 +359,6 @@ class ServerGroups(
 
     // údaje pre pravidlo presných kópií z indexu servera (rozlíšenie, cesta, čas zmeny)
     private fun measureOf(item: MediaServer.Item?): PhotoMeasure? = item?.let {
-        PhotoMeasure(it.path, 0.0, 0.0, width = it.w, height = it.h, modified = it.mtime * MS)
+        PhotoMeasure(it.path, 0.0, 0.0, width = it.w, height = it.h, modified = it.mtime * MS, sizeBytes = it.size)
     }
 }
