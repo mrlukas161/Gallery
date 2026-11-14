@@ -305,7 +305,10 @@ class MediaFetcher(val context: Context) {
         val fileSizes = if (checkProperFileSize || checkFileExistence) getFolderSizes(folder) else HashMap()
 
         val files = when (folder) {
-            FAVORITES -> favoritePaths.filter { showHidden || !it.contains("/.") }.map { File(it) }.toMutableList() as ArrayList<File>
+            // Galéria+ (súkromie): Obľúbené (album aj dlaždica na Domove) bez fotiek zo zamknutých, vylúčených
+            // a skrytých priečinkov — spoločný filter viditeľnosti ako v ostatných zoznamoch mimo priečinkov
+            FAVORITES -> Visibility(context).filterPaths(favoritePaths)
+                .map { File(it) }.toMutableList() as ArrayList<File>
             RECYCLE_BIN -> deletedMedia.map { File(it.path) }.toMutableList() as ArrayList<File>
             else -> File(folder).listFiles()?.toMutableList() ?: return media
         }

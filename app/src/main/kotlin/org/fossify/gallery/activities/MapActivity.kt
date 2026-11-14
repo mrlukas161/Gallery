@@ -194,6 +194,10 @@ class MapActivity : SimpleActivity() {
             emptyList()
         }
         var result = filterPaths?.let { fp -> all.filter { fp.contains(it.path) } } ?: all
+        // súkromie: geo.db môže ešte obsahovať body z priečinka zamknutého/vylúčeného/skrytého až po
+        // indexovaní (prvé vykreslenie ide zo starých riadkov) — filtrovať pri zobrazení
+        val visibility = org.fossify.gallery.helpers.Visibility(this)
+        result = result.filter { visibility.isVisible(it.path) }
         result = applyMapFilters(result)
         return result
     }

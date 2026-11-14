@@ -515,13 +515,53 @@ class ViewPagerActivity : BaseViewerActivity(), ViewPager.OnPageChangeListener, 
         showSystemUI()
 
         if (intent.getBooleanExtra(SKIP_AUTHENTICATION, false)) {
-            initContinue()
+            continueWithoutAuthentication()
         } else {
             handleLockedFolderOpening(mPath.getParentPath()) { success ->
                 if (success) {
                     initContinue()
                 } else {
                     finish()
+                }
+            }
+        }
+    }
+
+    // Galéria+ (súkromie): uzavretý zoznam (Ľudia, hľadanie, Spomienky, Špeciálne, Dokumenty, mapa, Posledné…)
+    // sa otvára bez PIN-u. Poistka pre prípad, že by doň obrazovka pustila fotku zo zamknutého, vylúčeného
+    // alebo skrytého priečinka: takú zo zoznamu vyradí; ak je to práve otváraná fotka zo zamknutého
+    // priečinka, vyžiada PIN (po odomknutí sa ukáže len ona), inak prehliadač zavrie.
+    private fun continueWithoutAuthentication() {
+        val restricted = org.fossify.gallery.helpers.PathTransfer.forViewer
+        if (restricted.isNullOrEmpty()) {
+            initContinue()
+            return
+        }
+
+        val path = mPath
+        ensureBackgroundThread {
+            val visibility = org.fossify.gallery.helpers.Visibility(applicationContext)
+            val kept = restricted.filter { visibility.isVisible(it) }
+            val pathVisible = visibility.isVisible(path)
+            val lockedFolder = if (pathVisible) null else visibility.lockedFolderOf(path)
+            runOnUiThread {
+                if (isDestroyed || isFinishing) return@runOnUiThread
+                when {
+                    pathVisible -> {
+                        org.fossify.gallery.helpers.PathTransfer.forViewer = kept
+                        initContinue()
+                    }
+
+                    lockedFolder != null -> handleLockedFolderOpening(lockedFolder) { success ->
+                        if (success) {
+                            org.fossify.gallery.helpers.PathTransfer.forViewer = listOf(path)
+                            initContinue()
+                        } else {
+                            finish()
+                        }
+                    }
+
+                    else -> finish()
                 }
             }
         }
