@@ -19,6 +19,7 @@ import org.fossify.gallery.R
 import org.fossify.gallery.adapters.PhotoPathsAdapter
 import org.fossify.gallery.databinding.ActivityPeopleSearchBinding
 import org.fossify.gallery.faces.FaceMediaMeta
+import org.fossify.gallery.faces.FaceVisibility
 import org.fossify.gallery.faces.OcrDatabase
 import org.fossify.gallery.faces.PeopleDatabase
 import org.fossify.gallery.faces.PeopleIndex
@@ -51,7 +52,11 @@ class PeopleSearchActivity : SimpleActivity() {
 
     // fotky zmazané z výsledkov (kôš) — OCR/osobný index o nich ešte vie, no do výsledkov sa vrátiť nesmú
     private val deletedPaths = HashSet<String>()
-    private var indexLoaded = false
+
+    // súkromie: výsledky idú z indexov (tváre, OCR, QR), ktoré poznajú aj fotky zo zamknutých/vylúčených
+    // priečinkov a skryté fotky — pred zobrazením ich vyradí spoločný filter. Nová inštancia pri každom
+    // načítaní indexu (aj po návrate na obrazovku), nech sa prejaví práve zamknutý priečinok.
+    private var visibility: FaceVisibility? = null
     private var resumedOnce = false
     private val prefs by lazy { getSharedPreferences("galeria_faces", android.content.Context.MODE_PRIVATE) }
 
@@ -194,15 +199,16 @@ class PeopleSearchActivity : SimpleActivity() {
             // C9: fotky osoby z jedného zdroja pravdy (ručne aj automaticky zaradené, rovnako ako v Ľuďoch)
             val pp = PeopleIndex.get(this).photoPersons
             val m = FaceMediaMeta.load(this, pp.keys)
+            val vis = FaceVisibility(this)
             runOnUiThread {
                 if (isDestroyed || isFinishing) return@runOnUiThread
-                // výsledky sa prepočítajú len pri prvom načítaní alebo keď sa index naozaj zmenil
-                val changed = !indexLoaded || pers != persons || pp != photoPersons
-                indexLoaded = true
                 persons = pers
                 photoPersons = pp
                 meta = m
-                if (changed) runSearch()
+                visibility = vis
+                // vždy prepočítať (aj bez zmeny indexu) — medzitým sa mohol zamknúť priečinok; rovnaké
+                // výsledky sa mriežky nedotknú (showResults porovná zoznamy)
+                runSearch()
             }
         }
     }
@@ -226,7 +232,9 @@ class PeopleSearchActivity : SimpleActivity() {
         val from = timeFrom
         val to = timeTo
         val metaSnapshot = meta
+        val visibilitySnapshot = visibility
         ensureBackgroundThread {
+            val vis = visibilitySnapshot ?: FaceVisibility(this)
             val qrSet: HashSet<String>? = if (onlyQr) {
                 try {
                     QrDatabase.getInstance(this).QrDao().getPathsWithQr().toHashSet()
@@ -253,6 +261,7 @@ class PeopleSearchActivity : SimpleActivity() {
             fun taken(p: String) = metaSnapshot[p]?.taken ?: extra[p]?.taken ?: 0L
             val filtered = rawPaths
                 .filter { val t = taken(it); t in from..to }
+                .filter { vis.isVisible(it) }
                 .sortedByDescending { taken(it) }
             runOnUiThread {
                 if (isDestroyed || isFinishing) return@runOnUiThread

@@ -109,7 +109,7 @@ class BundleReceiver(context: Context) {
         )
         FamilyInbox.invalidate()
         // čakajúce priradenia tvárí z op-logu (F3) teraz nájdu fotku (rovnako ako OpLogHandler na vlákne servera)
-        FamilySync(app).retryPending()
+        FamilySync(app).retryPending(withKeys = false)
     }
 
     // Uloží súbor do MediaStore (ako Server pre PC, saveMediaScoped). Vráti (cesta, MediaStore id) alebo null.

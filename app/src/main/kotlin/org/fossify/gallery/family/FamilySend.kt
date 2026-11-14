@@ -2,7 +2,9 @@ package org.fossify.gallery.family
 
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.app.PendingIntent
 import android.content.Context
+import android.content.Intent
 import android.os.Build
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
@@ -14,10 +16,13 @@ import java.util.UUID
 // pokus o odoslanie hneď (FamilyClient.syncAll na pozadí) a notifikácia po odoslaní. Ak druhý telefón
 // nie je dostupný, položky ostanú vo fronte a odídu pri najbližšej synchronizácii (spúšťače F5).
 // Nič tu nebeží trvalo: synchronizácia je jednorazová a skončí sa sama.
+@Suppress("TooManyFunctions")
 object FamilySend {
     private const val CHANNEL_ID = "family_link"
     private const val NOTIF_BASE_ID = 49300
     private const val NOTIF_ID_RANGE = 100
+    private const val NOTIF_FAILED_BASE_ID = 49400
+    private const val STATE_PENDING = OutboxEntity.STATE_PENDING
     private const val PAIRED_TTL_MS = 30_000L
     private const val OWNER_SEND = "send"
 
@@ -62,7 +67,7 @@ object FamilySend {
             if (!ok || keys.keyFor(path) == null) continue
             // osoby na fotke dostanú rodinné UUID hneď: PersonCreate odíde v tej istej synchronizácii pred balíkom
             try {
-                builder.assignedPersons(path).forEach { recorder.uuidFor(it) }
+                builder.assignedPersons(path).forEach { recorder.publishedUuid(it) }
             } catch (ignored: RuntimeException) {
                 // bez UUID len nepríde priradenie; tváre a ostatné výsledky odídu aj tak
             }
@@ -110,22 +115,114 @@ object FamilySend {
     }
 
     // Po celej synchronizácii (FamilyHandler.onSyncFinished, obe strany): notifikácia o odoslaných fotkách
-    // a upratanie odoslaných položiek fronty (aj kúskov súborov) a ciest k nim.
+    // a upratanie HOTOVÝCH prenosov (záverečná položka prešla) aj s kúskami súborov a cestou k súboru.
+    // Kúsky nedokončeného prenosu ostávajú, aby sa dali poslať znova (OutboxRules).
     fun onSynced(context: Context, peer: PeerEntity) {
         val app = context.applicationContext
         val db = FamilyDatabase.getInstance(app)
-        val sent = db.outboxDao().getOutbox(peer.deviceId, OutboxEntity.STATE_SENT)
-            .filter { it.kind in BundleHandler.KINDS }
-        if (sent.isEmpty()) return
-        val finals = sent.filter { it.kind != BundleTransfer.KIND_CHUNK }
+        val items = db.outboxDao().getOutboxForPeer(peer.deviceId).filter { it.kind in BundleHandler.KINDS }
+        val rows = items.map { OutboxRules.row(it) }
+        val finished = OutboxRules.finishedTransfers(rows)
+        if (finished.isEmpty()) return
         db.runInTransaction(
             Runnable {
-                sent.forEach { db.outboxDao().deleteOutbox(it.id) }
-                finals.mapNotNull { BundleTransfer.decode(it.refKey) }
-                    .forEach { db.metaDao().delete(BundleTransfer.pathKey(it.transferId)) }
+                rows.filter { it.transferId in finished }.forEach { db.outboxDao().deleteOutbox(it.id) }
+                finished.forEach { db.metaDao().delete(BundleTransfer.pathKey(it)) }
             },
         )
-        if (finals.isNotEmpty()) notifySent(app, peer, finals.size)
+        notifySent(app, peer, finished.size)
+    }
+
+    // Položka fronty definitívne zlyhala: celý prenos (kúsky aj balík) sa označí ako zlyhaný a ostane vo fronte
+    // (s cestou k súboru) pre „Skúsiť znova“. Vráti true, keď prenos zlyhal práve teraz.
+    fun failTransfer(db: FamilyDatabase, peerId: String, transferId: String): Boolean {
+        val rows = db.outboxDao().getOutboxForPeer(peerId).map { OutboxRules.row(it) }
+        val ids = OutboxRules.toFail(rows, transferId)
+        db.runInTransaction(Runnable { ids.forEach { db.outboxDao().updateOutbox(it, OutboxEntity.STATE_FAILED, 0) } })
+        return ids.isNotEmpty()
+    }
+
+    // záverečný balík neprešiel (prijímateľ nemá všetky kúsky súboru) → odoslané kúsky pôjdu znova
+    fun resendChunks(db: FamilyDatabase, peerId: String, transferId: String) {
+        val rows = db.outboxDao().getOutboxForPeer(peerId).map { OutboxRules.row(it) }
+        OutboxRules.chunksToResend(rows, transferId).forEach { db.outboxDao().updateOutbox(it, STATE_PENDING, 0) }
+    }
+
+    // stav fronty pre obrazovku prepojenia (vo fronte / zlyhané fotky). Len z pozadia.
+    fun status(context: Context, peerId: String): OutboxRules.Summary {
+        val db = FamilyDatabase.getInstance(context.applicationContext)
+        return OutboxRules.summary(db.outboxDao().getOutboxForPeer(peerId).map { OutboxRules.row(it) })
+    }
+
+    // „Skúsiť znova“: zlyhané fotky sa zaradia nanovo (aktuálna veľkosť a čas súboru, ako pri prvom poslaní).
+    // Fotka, ktorá už neexistuje alebo je teraz v zamknutom priečinku, z fronty vypadne. Vráti počet zaradených.
+    fun retryFailed(context: Context, peer: PeerEntity): Int {
+        val app = context.applicationContext
+        val db = FamilyDatabase.getInstance(app)
+        val items = db.outboxDao().getOutboxForPeer(peer.deviceId).filter { it.kind in BundleHandler.KINDS }
+        val rows = items.map { OutboxRules.row(it) }
+        val failed = OutboxRules.failedTransfers(rows)
+        if (failed.isEmpty()) return 0
+        val again = failed.mapNotNull { transferId ->
+            val path = db.metaDao().get(BundleTransfer.pathKey(transferId))
+            val withFile = items.any {
+                it.kind == BundleTransfer.KIND_PHOTO && OutboxRules.row(it).transferId == transferId
+            }
+            path?.let { Triple(transferId, it, withFile) }
+        }
+        db.runInTransaction(
+            Runnable {
+                rows.filter { it.transferId in failed }.forEach { db.outboxDao().deleteOutbox(it.id) }
+                failed.forEach { db.metaDao().delete(BundleTransfer.pathKey(it)) }
+            },
+        )
+        return again.groupBy { it.third }.entries.sumOf { (withFile, list) ->
+            enqueue(app, list.map { it.second }, peer, withFile)
+        }
+    }
+
+    // prepojenie zrušené: fronta pre ten telefón sa zahodí (aj cesty k súborom); fotky na disku ostávajú
+    fun dropQueue(db: FamilyDatabase, peerId: String) {
+        val items = db.outboxDao().getOutboxForPeer(peerId)
+        db.runInTransaction(
+            Runnable {
+                items.forEach { db.outboxDao().deleteOutbox(it.id) }
+                items.mapNotNull { BundleTransfer.decode(it.refKey)?.transferId }.distinct()
+                    .forEach { db.metaDao().delete(BundleTransfer.pathKey(it)) }
+            },
+        )
+    }
+
+    // N fotiek sa nepodarilo poslať (po opakovaných pokusoch alebo sa súbor zmenil) — nezmiznú potichu
+    fun notifyFailed(context: Context, peer: PeerEntity, count: Int) {
+        if (count <= 0) return
+        try {
+            ensureChannel(context)
+            val text = context.resources.getQuantityString(R.plurals.f068_send_failed, count, count, peer.name)
+            val notification = NotificationCompat.Builder(context, CHANNEL_ID)
+                .setSmallIcon(android.R.drawable.stat_notify_error)
+                .setContentTitle(context.getString(R.string.f068_send_failed_title))
+                .setContentText(text)
+                .setStyle(NotificationCompat.BigTextStyle().bigText(text))
+                .setContentIntent(pairingIntent(context))
+                .setAutoCancel(true)
+                .build()
+            val id = NOTIF_FAILED_BASE_ID + Math.floorMod(peer.deviceId.hashCode(), NOTIF_ID_RANGE)
+            NotificationManagerCompat.from(context).notify(id, notification)
+        } catch (ignored: SecurityException) {
+            // bez povolenia na notifikácie (Android 13+) — stav je vidieť na obrazovke prepojenia
+        }
+    }
+
+    // ťuk na notifikáciu otvorí Nastavenia → Prepojiť telefón (stav fronty, „Skúsiť znova“)
+    private fun pairingIntent(context: Context): PendingIntent {
+        val intent = Intent(context, PairingActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        return PendingIntent.getActivity(
+            context,
+            NOTIF_FAILED_BASE_ID,
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
     }
 
     private fun notifySent(context: Context, peer: PeerEntity, count: Int) {

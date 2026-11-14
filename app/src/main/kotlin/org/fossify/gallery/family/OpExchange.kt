@@ -6,7 +6,7 @@ import org.json.JSONObject
 
 // Spoločná logika výmeny opov pre server aj klienta (obsah zašifrovaných rámcov je JSON).
 //
-//  /f/hello  req {v, lamport, have, unpair}        res {v, lamport, have, unpaired}
+//  /f/hello  req {v, lamport, have, unpair, port}  res {v, lamport, have, unpaired, incompatible}
 //  /f/ops    req {since, limit, push:[op…]}         res {ops:[op…], more, have}
 //  /f/bundle req packBlob({kind, ref, id}, dáta)    res {ok}
 //  /f/ack    req {have}                             res {ok}
@@ -54,8 +54,13 @@ internal class OpExchange(private val db: FamilyDatabase) {
     fun clock(): Long = db.metaDao().get(MetaEntity.KEY_LAMPORT)?.toLongOrNull() ?: 0
 
     companion object {
+        // Verzia protokolu. Nové voliteľné polia (napr. „port“ v hello) verziu nemenia — staršia appka ich ignoruje.
+        // Zvýši sa len pri nezlučiteľnej zmene formátu; telefóny s inou verziou sa potom nesynchronizujú
+        // (obe strany to kontrolujú v hello) a obrazovka prepojenia vyzve na aktualizáciu.
         const val VERSION = 1
         const val BATCH_LIMIT = 200
+
+        fun compatible(version: Int): Boolean = version == VERSION
 
         // tvar zoznamu opov je spoločný s zálohou osôb (OpJson)
         fun opsToJson(ops: List<OpEntity>): JSONArray = OpJson.toJson(ops)

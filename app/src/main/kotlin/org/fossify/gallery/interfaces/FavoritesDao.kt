@@ -17,6 +17,10 @@ interface FavoritesDao {
     @Query("SELECT favorites.full_path FROM favorites INNER JOIN media ON favorites.full_path = media.full_path WHERE media.deleted_ts = 0")
     fun getValidFavoritePaths(): List<String>
 
+    // všetky obľúbené (aj tie, ktorých fotka ešte nie je v cache media) — automatická záloha
+    @Query("SELECT full_path FROM favorites")
+    fun getAllFavoritePaths(): List<String>
+
     @Query("SELECT id FROM favorites WHERE full_path = :path COLLATE NOCASE")
     fun isFavorite(path: String): Boolean
 

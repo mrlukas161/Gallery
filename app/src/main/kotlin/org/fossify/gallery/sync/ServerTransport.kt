@@ -100,6 +100,9 @@ class LimitedRunner(private val max: Int, private val onReject: () -> Unit) : Na
             ClientConn.bind(socket)
             try {
                 handler.run()
+            } catch (ignored: OutOfMemoryError) {
+                // pamäť došla pri odosielaní (nie v obsluhe): spojenie sa zavrie (finally v ClientHandler),
+                // appka beží ďalej — inak by Error z vlákna ukončil celý proces
             } finally {
                 ClientConn.unbind()
             }

@@ -24,6 +24,7 @@ import org.fossify.gallery.R
 import org.fossify.gallery.extensions.config
 import org.fossify.gallery.extensions.deleteDBPath
 import org.fossify.gallery.extensions.movePathsInRecycleBin
+import org.fossify.gallery.helpers.Visibility
 import java.io.File
 
 // Fotky označené na zmazanie z webu (PC) — potvrdenie v mobile (MainActivity.onResume).
@@ -42,15 +43,20 @@ object PcMarkedPrompt {
     @Volatile
     private var lastPrompt = -1
 
-    // existujúce označené cesty (zmiznuté sa tíško upracú) a ich veľkosť — mimo hlavného vlákna
+    // existujúce označené cesty (zmiznuté sa tíško upracú) a ich veľkosť — mimo hlavného vlákna.
+    // Súkromie: fotky zo zamknutých a vylúčených priečinkov (aj zamknutých až po označení na PC) a skryté
+    // fotky sa v dialógu neukážu, nerátajú sa ani sa nezmažú; ich značka ostáva (zruší ju „Zrušiť označenia").
     fun load(context: android.content.Context): Summary {
         val prefs = SyncStore.prefs(context)
         val all = SyncStore.markedPaths(prefs)
         val gone = all.filter { !File(it).exists() }
         if (gone.isNotEmpty()) SyncStore.removeMarked(prefs, gone)
-        val paths = (all - gone.toSet()).sorted()
+        val paths = visibleOnly(context, all - gone.toSet()).sorted()
         return Summary(paths, paths.sumOf { File(it).length() })
     }
+
+    private fun visibleOnly(context: android.content.Context, paths: Collection<String>): List<String> =
+        Visibility(context).filterPaths(paths)
 
     // onDone: po zmazaní (obnoviť zoznam priečinkov)
     fun check(activity: BaseSimpleActivity, onDone: () -> Unit) {
@@ -129,7 +135,16 @@ object PcMarkedPrompt {
             org.fossify.commons.R.string.deletion_confirmation
         }
         val message = String.format(res.getString(base), "$count (${s.bytes.formatSize()})")
-        ConfirmationDialog(activity, message) { delete(activity, ArrayList(s.paths), onDone) }
+        ConfirmationDialog(activity, message) {
+            // priečinok sa mohol zamknúť/vylúčiť, kým bol dialóg otvorený — overiť tesne pred mazaním
+            ensureBackgroundThread {
+                val paths = ArrayList(visibleOnly(activity, s.paths))
+                activity.runOnUiThread {
+                    if (activity.isDestroyed || activity.isFinishing) return@runOnUiThread
+                    delete(activity, paths, onDone)
+                }
+            }
+        }
     }
 
     private fun delete(activity: BaseSimpleActivity, paths: ArrayList<String>, onDone: () -> Unit) {

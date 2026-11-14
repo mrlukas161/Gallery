@@ -29,6 +29,20 @@ class FamilyPrefs(context: Context) {
         }.apply()
     }
 
+    // Najvyššia hodnota lamport hodín, akú tento telefón kedy rozdal vlastnej operácii. Je MIMO family.db, aby
+    // po obnove staršej family.db (záloha) nové operácie nedostali lamport, ktorý druhá strana už „má“ — inak by
+    // si ich nikdy nevypýtala (kurzor prenosu je lamport).
+    var lamportHighWater: Long
+        get() = prefs.getLong(KEY_LAMPORT_HIGH, 0)
+        set(value) {
+            if (value > lamportHighWater) prefs.edit().putLong(KEY_LAMPORT_HIGH, value).apply()
+        }
+
+    // posledné pokusy pri otvorení appky skončili bez spojenia (predlžovanie intervalu, FamilySchedule)
+    var resumeFailures: Int
+        get() = prefs.getInt(KEY_RESUME_FAILURES, 0)
+        set(value) = prefs.edit().putInt(KEY_RESUME_FAILURES, value).apply()
+
     // ladenie (len debug build): ručná IP:port namiesto NSD, napr. emulátor + `adb forward`
     var manualEndpoint: String
         get() = prefs.getString(KEY_MANUAL, "").orEmpty()
@@ -39,5 +53,7 @@ class FamilyPrefs(context: Context) {
         private const val KEY_UNPAIR_PENDING = "unpair_pending"
         private const val KEY_ADDR = "addr_"
         private const val KEY_MANUAL = "debug_manual_endpoint"
+        private const val KEY_LAMPORT_HIGH = "lamport_high_water"
+        private const val KEY_RESUME_FAILURES = "resume_failures"
     }
 }

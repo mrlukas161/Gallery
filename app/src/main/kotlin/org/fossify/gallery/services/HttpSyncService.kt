@@ -18,16 +18,20 @@ import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import org.fossify.commons.helpers.ensureBackgroundThread
 import org.fossify.gallery.R
+import org.fossify.gallery.sync.IdleClock
 import org.fossify.gallery.sync.LinkKind
 import org.fossify.gallery.sync.LinkKinds
 import org.fossify.gallery.sync.MediaServer
 import org.fossify.gallery.sync.NetUtil
+import org.fossify.gallery.sync.PinGuard
 import org.fossify.gallery.sync.ServerTransport
 import java.security.SecureRandom
 
 // Foreground služba (typ specialUse) bežiaca lokálny HTTP server pre PC sync cez WiFi LAN.
 // Štandardne VYPNUTÁ; spúšťa ju používateľ v Nastaveniach. Chránená 6-miestnym PIN-om (nový pri každom
-// ručnom štarte); po 20 rôznych zlých PIN-och sa server sám zastaví (ochrana pred hádaním na LAN).
+// ručnom štarte). Ochrana pred hádaním na LAN je v MediaServer/PinGuard (pauza po adresách, spoločná pauza
+// s oznámením, až po 100 rôznych zlých PIN-och sa server zastaví). fix068-web: server prijíma len lokálnu sieť
+// a po 30 min bez práce sa sám vypne (oznámenie); PIN je v notifikácii len na odomknutej obrazovke.
 // server-rychlost: PIN a epoch sú v prefs — keď systém službu reštartuje (START_STICKY), server beží
 // s tými istými (web ani PC sa neodhlásia). Výslovné zastavenie (aj zámok po hádaní PIN-u) ich zmaže.
 // specialUse zvolené zámerne: nepodlieha 6h/24h limitu typu dataSync (Android 15) -> neumrie pri zhasnutej obrazovke.
@@ -87,6 +91,21 @@ class HttpSyncService : Service() {
         }
     }
 
+    // Automatické vypnutie po nečinnosti (IdleClock.IDLE_STOP_MS bez práce): kontrola raz za minútu, len kým
+    // server beží. Nič nebeží trvalo na pozadí – zabudnutý server sa sám zastaví.
+    private val idleWatch = object : Runnable {
+        override fun run() {
+            if (stopped || !isRunning) return
+            val s = server
+            if (s != null && s.idleMs() >= IdleClock.IDLE_STOP_MS) {
+                val minutes = (IdleClock.IDLE_STOP_MS / MINUTE_MS).toInt()
+                stopWithNotice(getString(R.string.web068_server_idle_stopped, minutes))
+                return
+            }
+            mainHandler.postDelayed(this, IDLE_CHECK_MS)
+        }
+    }
+
     private fun unregisterMediaObserver() {
         mediaObserver?.let {
             try {
@@ -123,6 +142,8 @@ class HttpSyncService : Service() {
         startForegroundCompat(buildNotification(currentUrl, pin))
         mainHandler.removeCallbacks(linkWatch)
         mainHandler.postDelayed(linkWatch, LINK_POLL_NO_ADDR_MS)
+        mainHandler.removeCallbacks(idleWatch)
+        mainHandler.postDelayed(idleWatch, IDLE_CHECK_MS)
 
         lastError = null
         if (server == null && !starting) {
@@ -130,12 +151,22 @@ class HttpSyncService : Service() {
             isRunning = true
             ensureBackgroundThread {
                 try {
-                    // hádanie PIN-u na sieti -> server sa zamkne a tu sa zastaví s viditeľným dôvodom
-                    val s = MediaServer(applicationContext, pin, port, epoch, resumed) {
-                        Handler(Looper.getMainLooper()).post {
-                            failWith(getString(R.string.c1_pc_server_locked))
-                        }
-                    }
+                    // hádanie PIN-u na sieti -> spoločná pauza (oznámenie), po HARD_LIMIT sa server zamkne a tu
+                    // sa zastaví s viditeľným dôvodom
+                    val s = MediaServer(
+                        applicationContext, pin, port, epoch, resumed,
+                        onTooManyBadPins = {
+                            Handler(Looper.getMainLooper()).post {
+                                failWith(getString(R.string.c1_pc_server_locked))
+                            }
+                        },
+                        onPinPause = {
+                            Handler(Looper.getMainLooper()).post {
+                                val minutes = (PinGuard.GLOBAL_PAUSE_MS / MINUTE_MS).toInt()
+                                notice(getString(R.string.web068_pin_paused, minutes))
+                            }
+                        },
+                    )
                     s.start(ServerTransport.READ_TIMEOUT_MS, false)
                     // štart trvá sekundy (prvý prepočet indexu) — medzitým sa služba mohla zastaviť (Štart -> Stop);
                     // server vtedy nepriraďovať ani nič nehlásiť, inak by osirel na porte a rušil nový beh
@@ -185,9 +216,20 @@ class HttpSyncService : Service() {
             android.widget.Toast.makeText(applicationContext, msg, android.widget.Toast.LENGTH_LONG).show()
         } catch (ignored: Throwable) {
         }
+        notice(msg, android.R.drawable.stat_notify_error)
+    }
+
+    // server sa zastavil sám (nečinnosť) – nie chyba: len oznámenie, Nastavenia ukážu „vypnutý“
+    private fun stopWithNotice(msg: String) {
+        stopEverything()
+        notice(msg)
+    }
+
+    // samostatná notifikácia (nie foreground) s dôvodom; bez PIN-u, takže smie byť aj na zamknutej obrazovke
+    private fun notice(msg: String, icon: Int = android.R.drawable.stat_sys_upload_done) {
         try {
             val n = NotificationCompat.Builder(this, CHANNEL_ID)
-                .setSmallIcon(android.R.drawable.stat_notify_error)
+                .setSmallIcon(icon)
                 .setContentTitle(getString(R.string.pc_server_title))
                 .setContentText(msg)
                 .setStyle(NotificationCompat.BigTextStyle().bigText(msg))
@@ -201,6 +243,7 @@ class HttpSyncService : Service() {
     private fun stopEverything() {
         stopped = true
         mainHandler.removeCallbacks(linkWatch)
+        mainHandler.removeCallbacks(idleWatch)
         unregisterMediaObserver()
         try {
             server?.stop()
@@ -220,6 +263,7 @@ class HttpSyncService : Service() {
     override fun onDestroy() {
         stopped = true
         mainHandler.removeCallbacks(linkWatch)
+        mainHandler.removeCallbacks(idleWatch)
         unregisterMediaObserver()
         try {
             server?.stop()
@@ -248,6 +292,14 @@ class HttpSyncService : Service() {
         } else {
             shortText
         }
+        // na zamknutej obrazovke verejná verzia bez PIN-u a bez odkazu s tokenom (PIN až po odomknutí)
+        val publicText = getString(R.string.web068_notif_public)
+        val publicVersion = NotificationCompat.Builder(this, CHANNEL_ID)
+            .setSmallIcon(android.R.drawable.stat_sys_upload)
+            .setContentTitle(getString(R.string.pc_server_notif_title))
+            .setContentText(publicText)
+            .setOngoing(true)
+            .build()
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.stat_sys_upload)
             .setContentTitle(getString(R.string.pc_server_notif_title))
@@ -255,6 +307,8 @@ class HttpSyncService : Service() {
             .setStyle(NotificationCompat.BigTextStyle().bigText(longText))
             .setOngoing(true)
             .setOnlyAlertOnce(true)
+            .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
+            .setPublicVersion(publicVersion)
             .addAction(0, getString(R.string.pc_server_stop), stopIntent)
             .build()
     }
@@ -366,6 +420,8 @@ class HttpSyncService : Service() {
 
         private const val LINK_POLL_NO_ADDR_MS = 3_000L
         private const val LINK_POLL_MS = 10_000L
+        private const val IDLE_CHECK_MS = 60_000L
+        private const val MINUTE_MS = 60_000L
 
         fun kindLabel(c: Context, kind: LinkKind?): String = c.getString(
             when (kind) {

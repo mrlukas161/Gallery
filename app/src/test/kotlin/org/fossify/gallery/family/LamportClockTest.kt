@@ -59,4 +59,17 @@ class LamportClockTest {
         assertEquals(3, batch.size)
         assertTrue(more)
     }
+
+    // Revízia 11/2026: zmena urobená po obnove staršej family.db, ešte PRED prvým hello, tiež odíde — hodiny
+    // idú nad najvyššiu kedy rozdanú hodnotu uloženú mimo DB (FamilyPrefs.lamportHighWater, OpRecorder.append).
+    @Test
+    fun opBeforeFirstHelloAfterRestoreIsSent() {
+        val peerHave = 10L
+        val highWater = 10L // naposledy rozdaný lamport pred obnovou (mimo family.db)
+        val restored = FakeMeta().apply { put(MetaEntity(MetaEntity.KEY_LAMPORT, "5")) }
+        val fresh = restored.nextLamport(highWater)
+        assertEquals(11L, fresh)
+        val ownOps = (1L..5L).map { op(it) } + op(fresh)
+        assertEquals(listOf(11L), LamportClock.page(ownOps, peerHave, 100).first.map { it.lamport })
+    }
 }

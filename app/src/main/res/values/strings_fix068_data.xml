@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Revízia 11/2026 (fix068-data): zdravie automatických záloh (N8) a obľúbené v zálohe (N13) -->
+    <string name="fix068_backup_counts">%1$s · osôb: %2$d, priradení: %3$d</string>
+    <string name="fix068_backup_suspect">· výrazne menej osôb ako predtým</string>
+    <string name="fix068_corrupt_detail">Poškodený súbor ostal uložený (%1$s), nič sa nezmazalo. Odporúčaná záloha spred poškodenia: %2$s.</string>
+    <string name="fix068_corrupt_no_backup">Poškodený súbor ostal uložený (%1$s), nič sa nezmazalo. Automatická záloha spred poškodenia sa nenašla. Ak máš súbor .galeria-family, obnov osoby v Nastaveniach cez „Obnoviť osoby“.</string>
+    <string name="fix068_corrupt_choose_hint">Ponúkajú sa len zálohy spred poškodenia. Inú zálohu vyberieš po stlačení „Obnoviť zo zálohy“.</string>
+    <string name="fix068_auto_backup_suspect">· posledná záloha má výrazne menej osôb, staršia sa ponechá. Ak je to v poriadku, daj „Zálohovať teraz“.</string>
+    <string name="fix068_auto_backup_skipped">· automatická záloha čaká, kým sa poškodená databáza osôb neobnoví</string>
+    <string name="fix068_favorites_restore">Záloha obsahuje aj obľúbené. Na telefóne chýba %d obľúbených fotiek zo zálohy. Vrátiť ich medzi Obľúbené? Nič sa neodoberie.</string>
+    <string name="fix068_favorites_restore_yes">Vrátiť</string>
+    <string name="fix068_favorites_restore_skip">Preskočiť</string>
+    <string name="fix068_favorites_restored">Vrátené obľúbené: %d</string>
+</resources>

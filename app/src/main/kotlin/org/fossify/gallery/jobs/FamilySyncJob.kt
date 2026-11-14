@@ -11,6 +11,7 @@ import android.util.Log
 import org.fossify.gallery.clip.ClipModels
 import org.fossify.gallery.family.FamilyAutoSync
 import org.fossify.gallery.family.FamilySchedule
+import org.fossify.gallery.family.FamilyServer
 import org.fossify.gallery.helpers.IndexPerf
 import org.fossify.gallery.services.IndexingService
 import java.util.concurrent.CountDownLatch
@@ -30,7 +31,8 @@ import java.util.concurrent.TimeUnit
 //  - Bežný job má limit 10 minút na beh. Okno sa preto skladá z behov po najviac 9 minútach
 //    (FamilySchedule.SEGMENT_MS), ktoré na seba nadväzujú, kým neuplynie hodina alebo kým sa
 //    nestihne synchronizovať so všetkými telefónmi. Ak systém beh zastaví skôr (odpojená nabíjačka,
-//    Wi-Fi, kvóta jobov na Androide 16), onStopJob server hneď vypne a job sa zopakuje neskôr.
+//    Wi-Fi, kvóta jobov na Androide 16), onStopJob server hneď uvoľní (dobehne len rozbehnuté sedenie
+//    druhého telefónu, FamilyServer.release) a job sa zopakuje neskôr.
 //  - Po okne ďalšie najskôr o 6 h. Keď nie je nič spárované a nič nečaká na nabíjanie, job sa zruší.
 // Server (FamilyServer) beží len počas behu jobu (acquire/release), nikdy trvalo.
 class FamilySyncJob : JobService() {
@@ -108,9 +110,12 @@ class FamilySyncJob : JobService() {
     }
 
     // Server je počas behu prijímateľný a synchronizácia sa opakuje každé ~2 min do konca behu.
-    // true = so všetkými telefónmi prebehla celá synchronizácia.
+    // true = so všetkými telefónmi prebehla celá synchronizácia a fronta je prázdna.
+    // Ani po vlastnom úspechu sa server neuvoľní hneď: kým druhý telefón posiela (prenos videa po kúskoch)
+    // alebo sa po mojej synchronizácii pripája so svojou frontou, beh počká (FamilyServer.awaitQuiet, najviac
+    // do konca behu) — inak by sa jeho prenos pretrhol a jeho fronta by neodišla.
     private fun syncUntil(app: Context, end: Long, stop: CountDownLatch): Boolean {
-        org.fossify.gallery.family.FamilyServer.acquire(app, FamilyAutoSync.OWNER_WINDOW)
+        FamilyServer.acquire(app, FamilyAutoSync.OWNER_WINDOW)
         try {
             while (stop.count > 0) {
                 if (FamilyAutoSync.syncNow(app, FamilyAutoSync.OWNER_WINDOW_CLIENT, FamilyAutoSync.WINDOW_TIMEOUT_MS)) {
@@ -123,7 +128,8 @@ class FamilySyncJob : JobService() {
             }
             return false
         } finally {
-            org.fossify.gallery.family.FamilyServer.release(FamilyAutoSync.OWNER_WINDOW)
+            FamilyServer.awaitQuiet(end) { stop.count == 0L }
+            FamilyServer.release(FamilyAutoSync.OWNER_WINDOW)
         }
     }
 

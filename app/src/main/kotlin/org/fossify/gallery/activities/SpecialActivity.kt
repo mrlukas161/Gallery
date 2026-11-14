@@ -21,6 +21,7 @@ import org.fossify.gallery.helpers.PathTransfer
 import org.fossify.gallery.helpers.SHOW_ALL
 import org.fossify.gallery.helpers.SKIP_AUTHENTICATION
 import org.fossify.gallery.helpers.SpecialPhoto
+import org.fossify.gallery.helpers.Visibility
 
 // Album „Špeciálne fotky": panorámy, pohyblivé fotky, HDR a RAW — rozpoznané z metadát.
 class SpecialActivity : SimpleActivity() {
@@ -152,7 +153,10 @@ class SpecialActivity : SimpleActivity() {
         prefs.edit().putInt("special_count", count).apply()
     }
 
+    // súkromie: fotky zo zamknutých/vylúčených priečinkov a skryté fotky sa do albumu (ani do počtu na karte
+    // Preskúmať) nedostanú — spoločný filter viditeľnosti hneď po dopyte do MediaStore
     private fun queryImages(): List<String> {
+        val visibility = Visibility(this)
         val list = ArrayList<String>()
         try {
             contentResolver.query(
@@ -161,7 +165,7 @@ class SpecialActivity : SimpleActivity() {
                 null, null, "${MediaStore.Images.Media.DATE_MODIFIED} DESC",
             )?.use { c ->
                 val d = c.getColumnIndexOrThrow(MediaStore.Images.Media.DATA)
-                while (c.moveToNext()) c.getString(d)?.let { list.add(it) }
+                while (c.moveToNext()) c.getString(d)?.takeIf { visibility.isVisible(it) }?.let { list.add(it) }
             }
         } catch (ignored: Throwable) {
         }

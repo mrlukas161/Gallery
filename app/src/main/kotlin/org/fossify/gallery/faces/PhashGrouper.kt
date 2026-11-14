@@ -15,21 +15,23 @@ package org.fossify.gallery.faces
 // o prah. Reťaz A~B~C, v ktorej sú A a C ďaleko, tak A s C nespojí a skupina nevzniká „okolo prvej
 // fotky“. Fotky sa najprv zoradia podľa cesty, takže výsledok nezávisí od poradia vstupu.
 //
-// TYPY — najprv „Presné kópie“ (≤ 2 bity a rovnaké rozlíšenie alebo pomer strán), zo zvyšku „Podobné“
-// (≤ 6 bitov). Average hash zlepuje takmer jednofarebné obrázky (tmavé fotky, prázdne obrazovky — hash
-// je takmer samé jednotky) a snímky obrazovky (rovnaké rozloženie aplikácie): tie sa berú len ako presné
-// kópie a navyše musia mať rovnakú veľkosť súboru, nikdy nie ako „Podobné“.
+// TYPY — najprv „Presné kópie“, zo zvyšku „Podobné“ (≤ 6 bitov). „Presná kópia“ = naozaj ten istý obsah
+// (revízia 11/2026: hash 8×8 ± 2 bity zlepil aj dva zábery po sebe a ponúkal ich na hromadné mazanie):
+//  - rovnaká veľkosť súboru a rovnaký obsah (sameContent, v appke ContentKey; bez neho rovnaký pHash
+//    aj rozmery), alebo
+//  - rovnaký pHash (0 bitov), rovnaké rozmery a rovnaký dátum nasnímania (tá istá fotka uložená znova).
+// Zmenšená kópia (WhatsApp) alebo blízky záber je už len „Podobné“, kde sa rozhoduje podľa kvality.
+// Average hash zlepuje takmer jednofarebné obrázky (tmavé fotky, prázdne obrazovky — hash je takmer samé
+// jednotky) a snímky obrazovky (rovnaké rozloženie aplikácie): tie sa berú len ako presné kópie podľa
+// prvého pravidla (rovnaký súbor), nikdy nie ako „Podobné“.
 object PhashGrouper {
     const val SIMILAR_THRESHOLD = 6
-    const val EXACT_THRESHOLD = 2
+    const val EXACT_THRESHOLD = 0
 
     private const val HASH_BITS = 64
 
     // hash s nanajvýš toľkými jednotkami (alebo nulami) = obrázok bez štruktúry (takmer jedna farba)
     private const val LOW_INFO_BITS = 6
-
-    // presná kópia: pomer strán po zmenšení sa môže posunúť zaokrúhlením
-    private const val EXACT_ASPECT_TOLERANCE = 0.02
 
     // podobné fotky s výrazne iným pomerom strán (na výšku vs. panoráma) nie sú tá istá scéna
     private const val SIMILAR_ASPECT_TOLERANCE = 0.25
@@ -44,13 +46,15 @@ object PhashGrouper {
     private const val MIN_BLOCKS = 4
     private const val INITIAL_CAPACITY = 256
 
-    // width/height = rozmery z MediaStore (0 = neznáme), sizeBytes = veľkosť súboru (0 = neznáma)
+    // width/height = rozmery z MediaStore (0 = neznáme), sizeBytes = veľkosť súboru (0 = neznáma),
+    // takenMs = dátum nasnímania (0 = neznámy)
     data class Photo(
         val path: String,
         val hash: Long,
         val width: Int = 0,
         val height: Int = 0,
         val sizeBytes: Long = 0L,
+        val takenMs: Long = 0L,
     )
 
     enum class Kind { EXACT, SIMILAR }
@@ -64,7 +68,14 @@ object PhashGrouper {
             .map { it.paths }
             .sortedByDescending { it.size }
 
-    fun group(photos: List<Photo>, similar: Int = SIMILAR_THRESHOLD, exact: Int = EXACT_THRESHOLD): List<Group> {
+    // sameContent(a, b) = súbory s rovnakou veľkosťou majú aj rovnaký obsah (volá sa len pre takéto dvojice;
+    // volajúci si výsledok pamätá). null = obsah sa neoveruje, stačí rovnaká veľkosť, rozmery a pHash.
+    fun group(
+        photos: List<Photo>,
+        similar: Int = SIMILAR_THRESHOLD,
+        exact: Int = EXACT_THRESHOLD,
+        sameContent: ((String, String) -> Boolean)? = null,
+    ): List<Group> {
         // pevné poradie (podľa cesty) — pri rovnakých vzdialenostiach rozhoduje poradie hrán, nie vstupu
         val valid = photos.filter { it.hash != 0L }.distinctBy { it.path }.sortedBy { it.path }
         if (valid.size < 2) return emptyList()
@@ -74,7 +85,8 @@ object PhashGrouper {
         val active = BooleanArray(valid.size) { true }
 
         val exactClusters = link(valid.size, edges, active) { a, b ->
-            distance(hashes[a], hashes[b]) <= exact && sameImage(valid[a], valid[b], strict[a] || strict[b])
+            val d = distance(hashes[a], hashes[b])
+            d <= exact && sameImage(valid[a], valid[b], d, strict[a] || strict[b], sameContent)
         }
         exactClusters.forEach { cluster -> cluster.forEach { active[it] = false } }
 
@@ -99,15 +111,19 @@ object PhashGrouper {
         return lower.substringAfterLast('/').startsWith("screenshot") || lower.contains("/screenshots/")
     }
 
-    // Presná kópia: rovnaké rozmery alebo pomer strán (zmenšená kópia). „Prísna“ dvojica (obrázok bez
-    // štruktúry alebo snímka obrazovky) musí mať navyše rovnaké rozmery aj veľkosť súboru.
-    private fun sameImage(a: Photo, b: Photo, strict: Boolean): Boolean {
-        if (strict) {
-            return a.sizeBytes > 0 && a.sizeBytes == b.sizeBytes && a.width > 0 && a.width == b.width &&
-                a.height == b.height
-        }
+    // Presná kópia (viď hlavička). „Prísna“ dvojica (obrázok bez štruktúry alebo snímka obrazovky) len
+    // ako rovnaký súbor — rovnaký dátum a rozmery tam nič nedokazujú.
+    private fun sameImage(
+        a: Photo,
+        b: Photo,
+        distance: Int,
+        strict: Boolean,
+        sameContent: ((String, String) -> Boolean)?,
+    ): Boolean {
         val sameDims = a.width > 0 && a.height > 0 && a.width == b.width && a.height == b.height
-        return sameDims || aspectClose(a, b, EXACT_ASPECT_TOLERANCE, unknownMatches = false)
+        val sameSize = a.sizeBytes > 0 && a.sizeBytes == b.sizeBytes
+        if (sameSize && (sameContent?.invoke(a.path, b.path) ?: (sameDims && distance == 0))) return true
+        return !strict && distance == 0 && sameDims && a.takenMs > 0 && a.takenMs == b.takenMs
     }
 
     // pomer strán bez ohľadu na orientáciu (dlhšia / kratšia strana)

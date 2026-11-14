@@ -20,6 +20,7 @@ import java.util.concurrent.Executors
 // beží FamilyServer, aby sa druhý telefón mohol spárovať), naskenuje QR druhého telefónu
 // (systémový skener otvorí odkaz galeriaplus://, záloha je fotka cez ACTION_IMAGE_CAPTURE + ZxingDecoder)
 // a spravuje prepojené telefóny (zrušenie prepojenia).
+@Suppress("TooManyFunctions")
 class PairingActivity : SimpleActivity() {
     private val binding by viewBinding(ActivityPairingBinding::inflate)
 
@@ -59,16 +60,18 @@ class PairingActivity : SimpleActivity() {
         binding.pairingThisPhoneLabel.setTextColor(getProperPrimaryColor())
         binding.pairingPeersLabel.setTextColor(getProperPrimaryColor())
         options.updateManualSummary()
-        FamilyServer.onPaired = { name -> runOnUiThread { onPairedHere(name) } }
+        FamilyServer.onPaired = { peerId, name, code -> runOnUiThread { onPairedHere(peerId, name, code) } }
         serverThread.execute { FamilyServer.acquire(applicationContext, FamilyServer.OWNER_PAIRING) }
         qr.refresh()
         qr.start()
         peers.load()
+        peers.startProgress()
     }
 
     override fun onPause() {
         super.onPause()
         qr.stop()
+        peers.stopProgress()
         FamilyServer.onPaired = null
         serverThread.execute { FamilyServer.release(FamilyServer.OWNER_PAIRING) }
     }
@@ -105,12 +108,30 @@ class PairingActivity : SimpleActivity() {
         if (uri == null) toast(R.string.family_pair_rejected) else confirmPair(uri)
     }
 
+    // PairUri prijme len lokálnu adresu (LocalNet); ukáže sa, aby bolo vidieť, s čím sa telefón prepája
     private fun confirmPair(uri: PairUri) {
         showFamilyMessageDialog(
             R.string.family_pair_confirm_title,
-            getString(R.string.family_pair_confirm, uri.name),
+            getString(R.string.f068_pair_confirm, uri.name, uri.host),
             R.string.family_pair_confirm_button,
         ) { pairWith(uri) }
+    }
+
+    // Overovací kód páru: rovnaký musí ukázať aj druhý telefón (inak sa tento spároval s niečím iným).
+    // Pri nezhode sa prepojenie dá zrušiť hneď tu (s potvrdením ako zo zoznamu).
+    private fun showVerification(peerId: String?, name: String, code: String?) {
+        if (isDestroyed || isFinishing) return
+        if (code == null || peerId == null) {
+            toast(getString(R.string.family_paired_with, name))
+            return
+        }
+        showFamilyChoiceDialog(
+            getString(R.string.f068_verify_title),
+            getString(R.string.f068_verify_text, name, code),
+            getString(R.string.f068_verify_ok),
+            {},
+            getString(R.string.family_unpair_button),
+        ) { peers.confirmUnpair(peerId, name) }
     }
 
     private fun pairWith(uri: PairUri) {
@@ -120,7 +141,7 @@ class PairingActivity : SimpleActivity() {
             runOnUiThread {
                 val name = outcome.peerName ?: uri.name
                 when (outcome.status) {
-                    FamilyClient.Status.OK -> toast(getString(R.string.family_paired_with, name))
+                    FamilyClient.Status.OK -> showVerification(outcome.peerId, name, outcome.code)
                     FamilyClient.Status.UNREACHABLE -> toast(R.string.family_pair_unreachable)
                     FamilyClient.Status.REJECTED -> toast(R.string.family_pair_rejected)
                     else -> toast(R.string.family_pair_error)
@@ -131,9 +152,9 @@ class PairingActivity : SimpleActivity() {
     }
 
     // druhý telefón sa práve spároval s týmto (token sa spotreboval → nový QR)
-    private fun onPairedHere(name: String) {
+    private fun onPairedHere(peerId: String, name: String, code: String) {
         if (isDestroyed) return
-        toast(getString(R.string.family_paired_with, name))
+        showVerification(peerId, name, code)
         qr.refresh()
         peers.load()
     }

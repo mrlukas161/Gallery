@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Revízia 11/2026, balík „spracovanie“ (0.68) -->
+    <plurals name="sp068_skipped_edited">
+        <item quantity="one">%d skupina ponechaná – je v nej upravená verzia fotky, tá sa nemaže.</item>
+        <item quantity="few">%d skupiny ponechané – sú v nich upravené verzie fotiek, tie sa nemažú.</item>
+        <item quantity="many">%d skupín ponechaných – sú v nich upravené verzie fotiek, tie sa nemažú.</item>
+        <item quantity="other">%d skupín ponechaných – sú v nich upravené verzie fotiek, tie sa nemažú.</item>
+    </plurals>
+</resources>

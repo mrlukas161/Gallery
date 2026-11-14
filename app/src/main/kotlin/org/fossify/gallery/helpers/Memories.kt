@@ -8,7 +8,7 @@ import java.util.Calendar
 //  • Pred rokom / Pred N rokmi — ten istý deň v minulých rokoch,
 //  • Výlety — súvislé dni s fotkami mimo domáceho okolia (podľa GPS),
 //  • Vydarené dni — dni s najväčším počtom fotiek.
-// Žiadny cloud, žiadne modely — len MediaStore a geo.db.
+// Žiadny cloud, žiadne modely — len MediaStore a geo.db. Zamknuté, vylúčené a skryté fotky sa nezaradia (Visibility).
 object Memories {
 
     data class Memory(val title: String, val subtitle: String, val paths: List<String>, val rank: Int)
@@ -160,7 +160,9 @@ object Memories {
             }
         } catch (ignored: Throwable) {
         }
-        return list
+        // súkromie: MediaStore obsahuje aj fotky zo zamknutých/vylúčených priečinkov a skryté fotky
+        val visibility = Visibility(context)
+        return list.filter { visibility.isVisible(it.path) }
     }
 
     private fun distanceKm(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Double {

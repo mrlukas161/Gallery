@@ -31,7 +31,7 @@ object IndexStatus {
     }
 
     private const val CLEANUP_INTERVAL_MS = 24 * 60 * 60 * 1000L
-    private const val CLEANUP_BATCH = 500 // ciest na tabuľku a deň
+    private const val CLEANUP_BATCH = 5000 // ciest na tabuľku a deň (test je lacný: množina + stat)
     private const val PROBE_SAMPLE = 40
 
     @Volatile

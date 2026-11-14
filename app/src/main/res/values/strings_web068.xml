@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Server pre PC (fix068-web): automatické vypnutie, ochrana PIN-u, notifikácia na zamknutej obrazovke -->
+    <string name="web068_server_idle_stopped">Server pre PC sa vypol, lebo %1$d min nič nerobil (šetrí batériu). Keď ho budeš potrebovať, spusti ho znova v Nastaveniach.</string>
+    <string name="web068_pin_paused">Niekto na sieti skúša uhádnuť PIN servera pre PC. Prihlasovanie nových PC je na %1$d min pozastavené, už prihlásené PC fungujú ďalej. Ak to nie si ty, server zastav.</string>
+    <string name="web068_notif_public">Server pre PC beží – PIN a adresu uvidíš po odomknutí</string>
+</resources>

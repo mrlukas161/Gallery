@@ -67,9 +67,23 @@ class ServerUpload(private val appContext: Context, private val onSaved: (id: Lo
         val lenHdr = session.headers["content-length"]?.toLongOrNull() ?: -1L
         reject(lenHdr, copies = 1)?.let { return it }
         val body = session.inputStream
+        var incomplete = false
         val saved = saveMediaScoped(appContext, name, mime, SAVE_SUBDIR) { out ->
-            if (lenHdr < 0) copyUnknown(body, out) else copyExactly(body, out, lenHdr)
-        } ?: return Http.error(Status.INTERNAL_ERROR, "save failed")
+            if (lenHdr < 0) {
+                copyUnknown(body, out)
+            } else if (!copyExactly(body, out, lenHdr)) {
+                // spojenie spadlo v polovici: výnimka = saveMediaScoped rozpísanú položku zmaže (nie useknutá fotka)
+                incomplete = true
+                throw IOException("upload incomplete")
+            }
+        }
+        if (saved == null) {
+            return if (incomplete) {
+                Http.error(Status.BAD_REQUEST, "upload_incomplete").also { it.closeConnection(true) }
+            } else {
+                Http.error(Status.INTERNAL_ERROR, "save failed")
+            }
+        }
         return uploaded(saved, mime)
     }
 
@@ -136,14 +150,16 @@ class ServerUpload(private val appContext: Context, private val onSaved: (id: Lo
         }
     }
 
-    private fun copyExactly(input: InputStream, out: OutputStream, len: Long) {
+    // false = prúd skončil skôr ako Content-Length (prerušený upload)
+    private fun copyExactly(input: InputStream, out: OutputStream, len: Long): Boolean {
         val buf = ByteArray(COPY_BUFFER)
         var remaining = len
         while (remaining > 0) {
             val n = input.read(buf, 0, minOf(buf.size.toLong(), remaining).toInt())
-            if (n < 0) break
+            if (n < 0) return false
             out.write(buf, 0, n)
             remaining -= n
         }
+        return true
     }
 }

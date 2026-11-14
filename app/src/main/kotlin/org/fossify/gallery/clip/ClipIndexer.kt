@@ -4,7 +4,6 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.Context
 import android.graphics.Bitmap
-import android.graphics.BitmapFactory
 import android.os.Build
 import android.provider.MediaStore
 import androidx.core.app.NotificationCompat
@@ -15,7 +14,6 @@ import org.fossify.gallery.family.FamilyInbox
 import org.fossify.gallery.helpers.BackgroundPriority
 import org.fossify.gallery.helpers.HeavyGate
 import org.fossify.gallery.helpers.HeavySlot
-import java.io.File
 import org.fossify.gallery.helpers.ServerYield
 import org.fossify.gallery.services.IndexingService
 
@@ -72,7 +70,10 @@ object ClipIndexer {
                     val processed = scope.keepAllowed(dao.getIndexedPaths()) { dao.deletePaths(it) }
                     val candidates = queryImages(appCtx).filter { it !in processed && scope.allows(it) }
                     // výsledky z prepojeného telefónu (F4) sa zapíšu hneď, fotka sa druhýkrát nespracúva
-                    val todo = FamilyInbox.withoutSupplied(appCtx, candidates, FamilyInbox.CLIP)
+                    val fresh = FamilyInbox.withoutSupplied(appCtx, candidates, FamilyInbox.CLIP)
+                    // najprv nové fotky, potom postupný prepočet starých vektorov fotiek na výšku
+                    val redo = ClipUprightRedo.pending(appCtx, dao, processed) { isRunning }
+                    val todo = if (redo == null) fresh else fresh + redo
                     total = todo.size
                     for (path in todo) {
                         if (!isRunning) break
@@ -100,6 +101,7 @@ object ClipIndexer {
                             if (notify) notifyIndexProgress(appCtx, done, total)
                         }
                     }
+                    if (redo != null && isRunning) ClipUprightRedo.markDone(appCtx)
                     cancelNotification(appCtx)
                 } catch (ignored: HeavyGate.Stopped) {
                     cancelNotification(appCtx)
@@ -195,18 +197,8 @@ object ClipIndexer {
         return list
     }
 
-    private fun decode(path: String): Bitmap? {
-        if (!File(path).exists()) return null
-        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-        BitmapFactory.decodeFile(path, bounds)
-        val w = bounds.outWidth
-        val h = bounds.outHeight
-        if (w <= 0 || h <= 0) return null
-        var sample = 1
-        while (w / sample > MAX_DECODE || h / sample > MAX_DECODE) sample *= 2
-        return BitmapFactory.decodeFile(path, BitmapFactory.Options().apply {
-            inSampleSize = sample
-            inPreferredConfig = Bitmap.Config.ARGB_8888
-        })
-    }
+    // Vzpriamene podľa EXIF: CLIP nie je odolný voči otočeniu o 90°, fotky na výšku by mali horšie vektory
+    // (staršie vektory prepočíta postupne ClipUprightRedo).
+    private fun decode(path: String): Bitmap? =
+        org.fossify.gallery.faces.UprightDecoder.decode(path, MAX_DECODE)?.bitmap
 }

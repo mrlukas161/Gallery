@@ -19,8 +19,25 @@ servera (Nastavenia, tlačidlo v notifikácii) alebo po zamknutí pre hádanie P
 | PC program | hlavička `X-Auth-Token: <PIN>` pri každej požiadavke (odporúčané) alebo `?token=<PIN>` v adrese |
 | prehliadač | `POST /api/login` s `{"pin":"<PIN>"}` → cookie `gp_sid` (`HttpOnly; SameSite=Strict`) |
 
-- Po 20 **rôznych** zlých PIN-och sa server zamkne (`403 {"error":"locked"}`) a služba sa zastaví.
-  Nový štart v mobile = nový PIN.
+- **Ochrana pred hádaním PIN-u (od 0.68):** rátajú sa len **rôzne** zlé PIN-y (stará karta s tým istým starým
+  PIN-om nič nezamkne) – všade, kde sa PIN overuje (`X-Auth-Token`, `?token=`, `/api/login`, `token=` vo formulári
+  `/api/zip`).
+  - 5 rôznych zlých z jednej adresy → tá adresa má pauzu 1 min (ďalšia 2, 4 … najviac 30 min):
+    `429 {"error":"pin_paused"}` + `Retry-After: <s>`; počas pauzy sa neprezradí, či PIN sedel.
+  - 20 rôznych zlých spolu (zo všetkých adries) → 10 min sa PIN neprijme od nikoho nového (`429 pin_paused`);
+    adresy, ktoré sa predtým prihlásili správnym PIN-om, a prihlásené prehliadače (cookie) fungujú ďalej. Mobil
+    to oznámi notifikáciou.
+  - 100 rôznych zlých za beh → server sa zamkne (`403 {"error":"locked"}`) a služba sa zastaví; nový štart = nový PIN.
+- **Len lokálna sieť (od 0.68):** server prijme len klienta z loopbacku (adb forward), súkromných IPv4
+  (10/8, 172.16/12, 192.168/16 – Wi-Fi, hotspot, USB kábel so Zdieľaním pripojenia), link-local
+  (169.254/16, fe80::/10) a IPv6 ULA (fc00::/7). Ostatným (mobilné dáta, VPN s verejnou adresou)
+  `403 {"error":"not_local"}` a spojenie sa zavrie.
+- **Automatické vypnutie (od 0.68):** po **30 min bez práce** sa server sám zastaví (oznámenie v mobile; nový štart =
+  nový PIN). Práca = každá požiadavka okrem `ping`/`stats`, plus `GET /api/ping?active=1` (web ho posiela, kým sa
+  používateľ v karte hýbe). Bežiaca požiadavka (dlhý ZIP) sa ráta ako práca. PC program, ktorý chce server udržať,
+  posiela `?active=1` len keď používateľ naozaj pracuje.
+- **Notifikácia:** na zamknutej obrazovke sa ukáže verejná verzia bez PIN-u a adresy (`VISIBILITY_PRIVATE`; pri
+  nastavení „zobraziť všetok obsah“ rozhoduje systém).
 - Bez prihlásenia: `403 {"error":"forbidden"}`. Bez prihlásenia ide len `GET /` (stránka bez dát),
   `POST /api/login` a `/favicon.ico`.
 - Session žije len v pamäti servera (12 h nečinnosti, najviac 64 naraz). `POST /api/logout` ju zruší.
@@ -91,6 +108,12 @@ servera (Nastavenia, tlačidlo v notifikácii) alebo po zamknutí pre hádanie P
   `GET /api/favorites`). Porovnávaj len na rovnosť.
 - `allFiles` — appka má „Prístup ku všetkým súborom“ → funguje `/api/delete` a `/api/restore`.
 - `recycleBin` — Kôš je zapnutý (mazanie ide do Koša, inak natrvalo).
+- `zipFree` (od 0.68) — koľko ZIP-ov (`/api/zip`) môže práve začať (0–2).
+- `idleStopMs` (od 0.68) — po koľkých ms bez práce sa server sám vypne (1 800 000).
+- `?active=1` — ping sa ráta ako práca (server sa nevypne pre nečinnosť); bez neho nie.
+
+Web pinguje podľa aktivity: 4 s pri práci, po 2 min bez vstupu 30 s, po 10 min 60 s, skrytá karta vôbec;
+po 2 neúspešných pingoch (limit 8 s) ukáže pruh „Mobil neodpovedá“.
 
 Odporúčaný cyklus PC programu: `ping` každé 2–4 s; pri zmene `gen` → `/api/list?sinceGen=<starý gen>`,
 pri zmene `stateGen` → `/api/state?since=<starý stateGen>` (a `/api/groupstate`), pri zmene `epoch` → celý zoznam.
@@ -171,6 +194,10 @@ a v Nastaveniach. `adb forward` na localhost ostáva pre pokročilých (bezpečn
 - `&v=<mtime>` — keď sedí s aktuálnym `mtime`, odpoveď má `Cache-Control: private, max-age=604800, immutable`;
   inak `private, no-cache` + `ETag`.
 - `?bin=<key>&s=…` — náhľad fotky z Koša (`key` z `/api/bin`).
+- Odpoveď (od 0.68) má `Content-Disposition: inline; filename="<meno>.jpg"` — miniatúra pretiahnutá do inej
+  aplikácie (chat Claude, Prieskumník) dostane skutočné meno fotky, nie `thumb.jpg`.
+- Keď mobilu dôjde pamäť (napr. „Plná kvalita“ veľkej HEIC súbežne so zoznamom), odpoveď je
+  `503 {"error":"low_memory"}` + `Retry-After: 5` (platí pre každú požiadavku); appka nespadne.
 
 ## `GET /api/meta?ids=1,2,3`
 
@@ -219,8 +246,8 @@ Rovnaké obľúbené ako v appke (DB obľúbených + príznak v knižnici appky)
 Viac súborov ako **jeden ZIP** (prehliadač inak blokuje hromadné sťahovanie). Feature `zip`.
 
 - Telo `application/x-www-form-urlencoded` (formulár): `ids=1,2,3` (najviac **500** rôznych id; pole sa môže
-  opakovať) a voliteľne `token=<PIN>` pre klienta bez cookie (overí sa ako `X-Auth-Token`, zlý PIN sa do
-  ochrany pred hádaním nezaráta). POST + kontrola `Origin` ako pri ostatných zmenách (`Origin: null` neprejde).
+  opakovať) a voliteľne `token=<PIN>` pre klienta bez cookie (overí sa ako `X-Auth-Token`; od 0.68 sa zlý PIN
+  zaráta do ochrany pred hádaním ako všade inde). POST + kontrola `Origin` ako pri ostatných zmenách (`Origin: null` neprejde).
 - Odpoveď `200 application/zip`, `Content-Disposition: attachment; filename="Galeria-RRRRMMDD-HHMM.zip"`
   (miestny čas mobilu), `Transfer-Encoding: chunked` — ZIP sa skladá priebežne, nič sa nedrží v pamäti.
   Položky bez kompresie, mená ako v mobile (duplicity `IMG_1 (2).jpg`), čas záznamu = čas zmeny súboru.
@@ -230,7 +257,8 @@ Viac súborov ako **jeden ZIP** (prehliadač inak blokuje hromadné sťahovanie)
   prenos preruší (prehliadač ukáže nedokončené sťahovanie) a nič sa neoznačí.
 - Chyby: `400 {"error":"too_many","max":500}`, `400 {"error":"bad ids"}`, `403 forbidden/bad_origin/locked`,
   `405 use POST`, `411`/`413` (telo bez dĺžky / nad 64 kB, spojenie sa zavrie), `503 {"error":"busy"}` +
-  `Retry-After: 2` (naraz najviac **2 ZIP-y**; každý zaberá jedno spojenie z limitu 20).
+  `Retry-After: 2` (naraz najviac **2 ZIP-y**; každý zaberá jedno spojenie z limitu 20; od 0.68 ďalší ZIP najprv
+  čaká na voľné miesto najviac 20 s). Voľné miesta hlási `zipFree` v `/api/ping`.
 
 ## `GET /api/groups`
 
@@ -357,6 +385,8 @@ Telo `{"ids":[…], "dryRun":false}` (najviac 1000 id, telo do 64 kB).
   Pri zapnutom Koši sa fotky skopírujú do Koša Galérie+ (záznam v jej DB, dajú sa obnoviť v appke aj cez
   `/api/restore`), potom sa zmaže originál. `batchId` (len pri Koši) identifikuje toto mazanie pre „Vrátiť“.
   Zmazané fotky stratia značku.
+- Viac ako 1000 id: posielaj po dávkach (web: po 500, aj `dryRun`; „Vrátiť“ obnoví všetky `batchId`; keď niektorá
+  ďalšia dávka zlyhá, web povie, koľko sa už presunulo a koľko ostalo).
 
 ## `GET /api/bin`
 
@@ -384,6 +414,8 @@ kam sa nedá zapisovať → priečinok Obrázky), riadok v DB Galérie+ sa vrát
 `multipart/form-data` (prvá časť = súbor, názov z časti) alebo surové telo s hlavičkami `X-Filename`
 (URL-kódovaný názov), voliteľne `X-Mime`, a `Content-Length`.
 Ukladá sa do `Pictures/Galéria` resp. `Movies/Galéria`. Strop 4 GB a rezerva voľného miesta.
+Keď spojenie skončí skôr, ako prišlo celé telo podľa `Content-Length` (od 0.68), rozpísaná položka sa zmaže a
+odpoveď je `400 {"error":"upload_incomplete"}` – useknutý súbor sa neuloží ako hotová fotka.
 → `{"saved":"<názov>","uri":"content://…","id":1234}` — `id` = MediaStore `_ID` novej položky (hneď ju vráti
 `/api/list?sinceGen` aj `/api/file?id=`; `null`, ak sa nedalo zistiť).
 
@@ -556,8 +588,10 @@ najviac 500, voliteľne `token=` bez cookie; server s funkciou `zip` v `/api/pin
 `/api/ping`. Inak po jednom, každý až po dokončení predošlého: do ~200 MB `fetch` → Blob → `<a download>`
 (stav odpovede = príčina chyby: 403 prihlásenie, 404 súbor zmizol, sieť), väčšie najprv `Range: bytes=0-0`
 a potom priamy odkaz (token v adrese, ak nie je cookie). Stránka má `<meta name="referrer" content="same-origin">`,
-aby formulár poslal skutočný `Origin` (pri `no-referrer` by bol `Origin: null` a server ho odmietne). Na localhoste
-(USB) „📁 Uložiť do priečinka…“ cez `showDirectoryPicker`.
+aby formulár poslal skutočný `Origin` (pri `no-referrer` by bol `Origin: null` a server ho odmietne). V bezpečnom
+kontexte (`http://localhost` cez adb forward alebo adresa povolená v chrome://flags) „📁 Uložiť do priečinka…“ cez
+`showDirectoryPicker`. **Pozor:** USB kábel so Zdieľaním pripojenia je tiež `http://<IP>` – bezpečný kontext nie je;
+tlačidlo sa tam neukáže.
 
 **Diagnostika:** ak server má `GET /api/stats`, pomocník ponúkne „Diagnostika servera“ (JSON ako tabuľka).
 
@@ -601,19 +635,29 @@ Chrome z webu pustí len 1 súbor – pri viacerých vybraných po pustení pon�
 Iné natívne ťahanie (výber textu/HTML) je zakázané.
 
 **Do chatu (Shift+D):** každá fotka ako samostatné zmenšené JPEG (`/api/file?id=&q=85&max=2048`, predpona `Claude_`,
-bez „✓ v PC“). V bezpečnom kontexte (localhost/USB alebo adresa povolená v chrome://flags) do dočasného priečinka
+bez „✓ v PC“). V bezpečnom kontexte (`http://localhost` cez adb forward alebo adresa povolená v chrome://flags; nie
+`http://IP` cez USB zdieľanie pripojenia) do dočasného priečinka
 pre chat cez `showDirectoryPicker` – priečinok sa vyberie raz a pamätá sa v IndexedDB (`galeria-plus` / `kv` /
 `chatDir` = `{dir, names}`); pred ďalším odoslaním sa z neho zmažú len súbory z `names` (zapísané minule). Inak
 postupne do Stiahnutých.
 
-**Schránka:** Ctrl+C a „Kopírovať obrázok“ – `fetch` `/api/file?id=` (originál), `/api/file?id=&q=&max=2048`
-(zmenšené) alebo `/api/thumb?id=&max=<dlhá strana, ≤ 4096>` (HEIC/DNG) → PNG → `navigator.clipboard.write`.
-Len v bezpečnom kontexte (localhost cez USB, alebo adresa povolená v
+**Schránka:** Ctrl+C a „Kopírovať obrázok“ – najviac **2048 px** (od 0.68): `/api/file?id=` (JPEG/PNG do 2048 px),
+`/api/file?id=&q=&max=2048` (zmenšené) alebo `/api/thumb?id=&max=<dlhá strana, ≤ 2048>` (väčšie, HEIC/DNG) → PNG →
+`navigator.clipboard.write`. Len v bezpečnom kontexte (`http://localhost` cez adb forward, alebo adresa povolená v
 `chrome://flags/#unsafely-treat-insecure-origin-as-secure`); inak sa položka neukáže a Ctrl+C vysvetlí prečo.
 
-**ZIP:** web pošle naraz najviac 2 formuláre `POST /api/zip` (server ďalší odmietne `503 busy`, čo by formulár
-ukázal namiesto stránky – zistiť sa to nedá); ZIP odoslaný pred menej ako 20 s sa ráta ako rozpracovaný. Nad
-2 × 500 fotiek ponúkne ďalší ZIP tlačidlom v hlásení.
+**ZIP (od 0.68):** formulár `POST /api/zip` ide do **skrytého rámca** (`<iframe>`, CSP `frame-src 'self'`): ZIP sa
+stiahne normálne (Chrome stiahnutie v rámci s `X-Frame-Options: DENY` dovolí), chybová odpoveď (503, 403) skončí
+v rámci a nenahradí stránku. Rámec sa pri stiahnutí nenačíta; udalosť `load` = chyba → hlásenie „ZIP sa nespustil“
+s „Skúsiť znova“. Počet ZIP-ov naraz podľa `zipFree` z `/api/ping` (mínus ZIP-y odoslané pred < 3 s; starší
+server bez `zipFree`: ZIP spred < 20 s sa ráta ako rozpracovaný). Nad 2 × 500 fotiek ponúkne ďalší ZIP tlačidlom.
+
+**Klávesy (od 0.68):** podržaný X / Delete / D sa neopakuje (auto-repeat by označil rad fotiek, ktoré ani nevidno,
+alebo poslal ďalšie ZIP-y). Pri jednej značke so skrývaním označených krátke hlásenie „🗑 meno · Ctrl+Z vráti“.
+
+**Hromadné „Ponechať najlepšiu“ pri presných kópiách (od 0.68):** web označí len kópie s rovnakou veľkosťou súboru
+aj rozlíšením ako ★ (ten istý súbor). Upravená / prekódovaná verzia (iná veľkosť) sa nikdy neoznačí; skupina, kde
+okrem ★ nie je rovnaká kópia, sa preskočí („len upravená verzia“).
 
 Web z `features` servera používa `zip`, `favorites`, `motion`; `stats` zisťuje sám (`GET /api/stats`), `thumbFull`
 (HEIC/DNG nad 4096 px) a `stateSince` (`/api/state?since=`) zatiaľ nie.

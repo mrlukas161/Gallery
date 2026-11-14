@@ -5,6 +5,7 @@ import org.fossify.gallery.faces.BurstGrouper
 import org.fossify.gallery.faces.IndexScope
 import org.fossify.gallery.faces.PhashDatabase
 import org.fossify.gallery.faces.PhashGrouper
+import org.fossify.gallery.family.ContentKey
 import java.io.File
 
 // Skupiny pre „Podobné a duplikáty“ (série + presné kópie + podobné) z JEDNÉHO čítania MediaStore a pHash
@@ -77,9 +78,9 @@ object CompareRepository {
         val bursts = BurstGrouper.group(shots)
             .mapNotNull { burst -> CompareGroups.build(CompareKind.BURST, burst.map { it.path }, info) }
         val photos = allowed.mapNotNull { r ->
-            hashes[r.path]?.let { PhashGrouper.Photo(r.path, it, r.width, r.height, r.size) }
+            hashes[r.path]?.let { PhashGrouper.Photo(r.path, it, r.width, r.height, r.size, r.takenMs) }
         }
-        val duplicates = PhashGrouper.group(photos).mapNotNull { g ->
+        val duplicates = PhashGrouper.group(photos, sameContent = contentMatcher()).mapNotNull { g ->
             val kind = if (g.kind == PhashGrouper.Kind.EXACT) CompareKind.EXACT else CompareKind.SIMILAR
             CompareGroups.build(kind, g.paths, info)
         }
@@ -87,6 +88,26 @@ object CompareRepository {
         val sizes = HashMap<String, Long>()
         groups.forEach { g -> g.paths.forEach { p -> infos[p]?.let { sizes[p] = it.sizeBytes } } }
         return Cached(stamp, samples.values.toList(), blocked, Snapshot(groups, sizes, hashes.isNotEmpty()))
+    }
+
+    // „Presné kópie“ len pri rovnakom obsahu: obsahový kľúč (family.ContentKey — veľkosť + prvých
+    // a posledných 64 kB) sa číta len pre dvojice s rovnakou veľkosťou súboru a pamätá sa počas výpočtu.
+    // Nečitateľný súbor = nie je presná kópia.
+    private fun contentMatcher(): (String, String) -> Boolean {
+        val keys = HashMap<String, String?>()
+        val keyOf: (String) -> String? = { path ->
+            keys.getOrPut(path) {
+                try {
+                    ContentKey.compute(File(path))
+                } catch (ignored: Exception) {
+                    null
+                }
+            }
+        }
+        return { a, b ->
+            val ka = keyOf(a)
+            ka != null && ka == keyOf(b)
+        }
     }
 
     private fun toInfo(row: CompareMediaStore.Row): CompareGroups.Info? {

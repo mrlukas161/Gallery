@@ -31,8 +31,9 @@ object SmartSearch {
         lastQuery = query.trim()
         val tokens = query.trim().split(Regex("\\s+")).filter { it.isNotBlank() }
         if (tokens.isEmpty()) return emptySet()
-        val norm = tokens.map { TextNormalizer.normalize(it, true) }.filter { it.isNotEmpty() }
-        if (norm.isEmpty()) return emptySet()
+        val words = SearchTerms.split(TextNormalizer.normalize(query, true))
+        // spojky/predložky („pes a mačka“) sa neporovnávajú nikde — inak „a“ sedí takmer na všetko
+        val norm = SearchTerms.meaningful(words)
 
         val exact = HashSet<String>()
         var namedPersonQuery = false
@@ -41,9 +42,10 @@ object SmartSearch {
         try {
             val people = PeopleDatabase.getInstance(context).PeopleDao()
             val persons = people.getPersons()
+            // celé slovo mena alebo jeho slovenský tvar (SearchTerms), nie podreťazec („les“ ≠ Aleš)
             val matchedIds = persons.filter { p ->
                 val n = TextNormalizer.normalize(p.name ?: "", true)
-                n.isNotEmpty() && norm.any { t -> n.contains(t) || t.contains(n) }
+                n.isNotEmpty() && norm.any { t -> SearchTerms.nameMatches(n, t) }
             }.mapNotNull { it.id }.toHashSet()
             if (matchedIds.isNotEmpty()) {
                 namedPersonQuery = true
@@ -68,7 +70,7 @@ object SmartSearch {
         // 3) QR/čiarový kód: obsah kódu obsahuje niektorý token
         try {
             val qr = QrDatabase.getInstance(context).QrDao()
-            norm.forEach { exact.addAll(qr.search(it)) }
+            SearchTerms.forQr(norm).forEach { exact.addAll(qr.search(it)) }
         } catch (ignored: Throwable) {
         }
 

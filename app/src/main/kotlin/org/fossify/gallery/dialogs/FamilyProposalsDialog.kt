@@ -24,7 +24,8 @@ import org.fossify.gallery.family.SameNameProposal
 
 // Zoznam návrhov z druhého telefónu (lišta v Ľuďoch). Ťuk na návrh ponúkne jeho voľby
 // (prijať / ponechať / zlúčiť). Nevratné voľby (zlúčenie, odstránenie osoby) idú cez ConfirmationDialog.
-// Výberový režim tu nie je: zoznam je v dialógu a hromadná voľba „Ponechať všetky“ nič nemení v Ľuďoch.
+// Výberový režim tu nie je: zoznam je v dialógu. Hromadné „Ponechať všetky“ nič nemení v Ľuďoch a návrhy
+// rovnakého mena vynechá (inak by vznikli dvojníci); na tie je „Zlúčiť všetky s rovnakým menom“ (s potvrdením).
 // onDecided sa zavolá na hlavnom vlákne po každom rozhodnutí (obnov zoznam osôb a lištu).
 class FamilyProposalsDialog(
     private val activity: BaseSimpleActivity,
@@ -54,8 +55,12 @@ class FamilyProposalsDialog(
         }
         val builder = activity.getAlertDialogBuilder()
             .setNegativeButton(org.fossify.commons.R.string.cancel, null)
-        if (items.isNotEmpty()) {
+        if (items.any { it.proposal !is SameNameProposal }) {
             builder.setNeutralButton(R.string.fp_keep_all) { _, _ -> decide { it.keepAll(items) } }
+        }
+        val sameName = items.filter { it.proposal is SameNameProposal }
+        if (sameName.isNotEmpty()) {
+            builder.setPositiveButton(R.string.f068_merge_all_same_name) { _, _ -> confirmMergeAll(sameName) }
         }
         activity.setupDialogStuff(ScrollView(activity).apply { addView(holder) }, builder, R.string.fp_list_title) {
             dialog = it
@@ -137,6 +142,20 @@ class FamilyProposalsDialog(
             dialogTitle = title,
         ) {
             decide { it.accept(item) }
+        }
+    }
+
+    // osoby s rovnakým menom sa prepoja (ďalej sú jednou osobou na oboch telefónoch) → potvrdenie
+    private fun confirmMergeAll(sameName: List<FamilyProposals.Item>) {
+        val count = sameName.size
+        ConfirmationDialog(
+            activity,
+            message = activity.resources.getQuantityString(R.plurals.f068_merge_all_confirm, count, count),
+            positive = org.fossify.commons.R.string.ok,
+            negative = org.fossify.commons.R.string.cancel,
+            dialogTitle = activity.getString(R.string.f068_merge_all_same_name),
+        ) {
+            decide { it.mergeAllSameName(sameName) }
         }
     }
 
