@@ -19,6 +19,7 @@ import org.fossify.gallery.helpers.PATH
 import org.fossify.gallery.helpers.PathTransfer
 import org.fossify.gallery.helpers.SHOW_ALL
 import org.fossify.gallery.helpers.SKIP_AUTHENTICATION
+import org.fossify.gallery.helpers.Visibility
 
 // Album Dokumenty — fotky vyhodnotené ako doklad/dokument podľa rozpoznaného textu (OCR).
 // Filter podľa druhu: všetko / doklady a faktúry / dokumenty / screenshoty / preukazy.
@@ -89,7 +90,11 @@ class DocsActivity : SimpleActivity() {
             try {
                 // lastModified čítať z disku IBA RAZ na súbor (0 = súbor neexistuje, nahrádza exists()),
                 // nie v komparátore — ten selektor volá pri každom porovnaní (~2·n·log n syscallov)
+                // súkromie: ocr.db pozná aj doklady z priečinka zamknutého/vylúčeného/skrytého až po OCR —
+                // filtrovať pri zobrazení (vrátane Preukazov), nie až pri ďalšom behu spracovania
+                val visibility = Visibility(this)
                 val docs = DocClassifier.loadAll(this)
+                    .filter { visibility.isVisible(it.path) }
                     .map { it to java.io.File(it.path).lastModified() }
                     .filter { it.second > 0L }
                     .sortedByDescending { it.second }

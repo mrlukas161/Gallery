@@ -7,6 +7,7 @@ import org.fossify.commons.extensions.getProperPrimaryColor
 import org.fossify.commons.extensions.updateTextColors
 import org.fossify.commons.extensions.viewBinding
 import org.fossify.commons.helpers.NavigationIcon
+import org.fossify.commons.helpers.ensureBackgroundThread
 import org.fossify.gallery.R
 import org.fossify.gallery.adapters.PhotoPathsAdapter
 import org.fossify.gallery.databinding.ActivityPhotoGridBinding
@@ -14,6 +15,7 @@ import org.fossify.gallery.helpers.GridZoom
 import org.fossify.gallery.helpers.PATH
 import org.fossify.gallery.helpers.SHOW_ALL
 import org.fossify.gallery.helpers.SKIP_AUTHENTICATION
+import org.fossify.gallery.helpers.Visibility
 
 // Jednoduchá mriežka fotiek (napr. z jedného zhluku na mape). Ťuk → štandardný prehliadač.
 class PhotoGridActivity : SimpleActivity() {
@@ -32,7 +34,8 @@ class PhotoGridActivity : SimpleActivity() {
             padBottomImeAndSystem = listOf(binding.photoGrid)
         )
         setupMaterialScrollListener(binding.photoGrid, binding.photoGridAppbar)
-        paths = restorePaths(savedInstanceState)
+        // súkromie: mriežka sa naplní až po spoločnom filtri viditeľnosti (zamknuté/vylúčené/skryté sa neukážu)
+        val incoming = restorePaths(savedInstanceState)
         // pinch-zoom mení počet stĺpcov a pamätá si ho — rovnaké ovládanie ako v ostatných mriežkach
         val lm = GridLayoutManager(this, prefs.getInt("grid_columns", 3))
         binding.photoGrid.layoutManager = lm
@@ -45,6 +48,14 @@ class PhotoGridActivity : SimpleActivity() {
             onDeleted = { updateTitleAndEmptyState() },
         )
         updateTitleAndEmptyState()
+        ensureBackgroundThread {
+            val visible = Visibility(this).filterPaths(incoming)
+            runOnUiThread {
+                if (isDestroyed || isFinishing) return@runOnUiThread
+                (binding.photoGrid.adapter as? PhotoPathsAdapter)?.updateItems(visible)
+                updateTitleAndEmptyState()
+            }
+        }
     }
 
     override fun onResume() {

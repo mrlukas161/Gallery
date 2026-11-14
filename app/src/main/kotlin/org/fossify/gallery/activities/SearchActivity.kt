@@ -139,8 +139,12 @@ class SearchActivity : SimpleActivity(), MediaOperationsListener {
                     return@ensureBackgroundThread
                 }
 
+                // súkromie: výsledky (aj zhody z OCR/osôb/CLIP) len z viditeľných priečinkov — poistka
+                // aj pre prípad, že by sa zamknutá/vylúčená/skrytá fotka dostala do zoznamu všetkých médií
+                val visibility = org.fossify.gallery.helpers.Visibility(applicationContext)
                 val filtered = mAllMedia.filter {
                     it is Medium && (it.name.contains(text, true) || extra.contains(it.path))
+                        && visibility.isVisible(it.path)
                 } as ArrayList
                 filtered.sortBy { it is Medium && !it.name.startsWith(text, true) }
                 val resultPaths = ArrayList(filtered.filterIsInstance<Medium>().map { it.path })

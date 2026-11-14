@@ -939,7 +939,9 @@ fun Context.getCachedMedia(
 
         var media = ArrayList<Medium>()
         if (path == FAVORITES) {
-            media.addAll(mediaDB.getFavorites())
+            // súkromie: aj Obľúbené z cache bez zamknutých/vylúčených/skrytých priečinkov (ako MediaFetcher)
+            val visibility = org.fossify.gallery.helpers.Visibility(this)
+            media.addAll(mediaDB.getFavorites().filter { visibility.isVisible(it.path) })
         }
 
         if (path == RECYCLE_BIN) {
