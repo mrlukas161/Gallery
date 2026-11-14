@@ -21,7 +21,7 @@ object CompareBulk {
     // jedno kolo v mobile: viac fotiek naraz sa nevyhodnocuje (čas, HeavyGate)
     const val MAX_PHOTOS_PER_RUN = 1500
 
-    enum class Skip { UNCERTAIN, NOT_MEASURED }
+    enum class Skip { UNCERTAIN, NOT_MEASURED, EDITED }
 
     // best = ★, second = druhá najlepšia, confidence = náskok skóre ★ pred druhou (0–1; záporný = ★ vyhrala
     // len rozhodnutím pri zhode), facesChecked = tváre sa hodnotili na všetkých fotkách skupiny
@@ -72,13 +72,25 @@ object CompareBulk {
         return Decision(paths, v.best, removable)
     }
 
-    // presné kópie: photos = fotky skupiny, o ktorých vieme rozlíšenie, priečinok a vek (ostatné sa nemažú)
+    // presné kópie: photos = fotky skupiny, o ktorých vieme rozlíšenie, priečinok a vek (ostatné sa nemažú).
+    // Zmazať sa smie len kópia s rovnakou veľkosťou súboru aj rozlíšením ako ★ (teda ten istý súbor).
+    // Fotka inej veľkosti v skupine je upravená/prekódovaná verzia — tá ostáva vždy, aj keby bola
+    // podľa pravidla horšia; keď okrem nej nie je čo mazať, skupina sa preskočí (Skip.EDITED).
     fun exactDecision(paths: List<String>, photos: List<PhotoMeasure>): Decision {
         val known = photos.filter { it.path in paths }
         val keep = exactKeeper(known) ?: return Decision(paths, null, emptyList(), Skip.NOT_MEASURED)
         if (known.size < 2) return Decision(paths, null, emptyList(), Skip.NOT_MEASURED)
-        return Decision(paths, keep, known.map { it.path })
+        val star = known.first { it.path == keep }
+        val removable = known.filter { it.path != keep && sameFile(it, star) }.map { it.path }
+        if (removable.isEmpty()) {
+            val skip = if (known.any { it.sizeBytes <= 0L }) Skip.NOT_MEASURED else Skip.EDITED
+            return Decision(paths, null, emptyList(), skip)
+        }
+        return Decision(paths, keep, removable)
     }
+
+    private fun sameFile(a: PhotoMeasure, b: PhotoMeasure): Boolean =
+        a.sizeBytes > 0L && a.sizeBytes == b.sizeBytes && a.width == b.width && a.height == b.height
 
     // delete = v poradí rozhodnutí; affected = rozhodnuté skupiny, z ktorých niečo pôjde preč;
     // spared = fotky ponechané navyše, aby iná skupina neprišla o všetko
@@ -89,6 +101,8 @@ object CompareBulk {
         val uncertain: Int,
         val notMeasured: Int,
         val spared: Set<String>,
+        // presné kópie preskočené, lebo v skupine je len upravená/iná verzia (nič sa nemaže)
+        val edited: Int = 0,
     ) {
         val isEmpty: Boolean get() = delete.isEmpty()
     }
@@ -117,6 +131,7 @@ object CompareBulk {
             uncertain = decisions.count { it.skip == Skip.UNCERTAIN },
             notMeasured = decisions.count { it.skip == Skip.NOT_MEASURED },
             spared = spared,
+            edited = decisions.count { it.skip == Skip.EDITED },
         )
     }
 

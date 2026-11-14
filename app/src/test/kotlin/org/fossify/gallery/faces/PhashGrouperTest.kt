@@ -79,11 +79,11 @@ class PhashGrouperTest {
         val seven = photo("seven", flip(base, 0, 9, 18, 27, 36, 45, 54))
         assertEquals(listOf(Kind.SIMILAR to setOf("a", "six")), groupsOf(listOf(photo("a", base), six)))
         assertTrue(groupsOf(listOf(photo("a", base), seven)).isEmpty())
-        // presná kópia: 2 bity áno, 3 bity už len podobné
+        // presná kópia len pri rovnakom obsahu: rovnaký súbor áno, 2 bity rozdielu už len podobné
+        val same = listOf(photo("a", base), photo("b", base))
         val two = listOf(photo("a", base), photo("b", flip(base, 3, 40)))
-        val three = listOf(photo("a", base), photo("b", flip(base, 3, 40, 50)))
-        assertEquals(Kind.EXACT, PhashGrouper.group(two).single().kind)
-        assertEquals(Kind.SIMILAR, PhashGrouper.group(three).single().kind)
+        assertEquals(Kind.EXACT, PhashGrouper.group(same).single().kind)
+        assertEquals(Kind.SIMILAR, PhashGrouper.group(two).single().kind)
     }
 
     @Test
@@ -118,15 +118,58 @@ class PhashGrouperTest {
     @Test
     fun exactCopiesFirstThenSimilarFromTheRest() {
         val original = photo("orig", base, 4000, 3000, 5_000_000)
-        val resized = photo("whatsapp", flip(base, 7), 1600, 1200, 300_000) // rovnaký pomer strán
+        val copy = photo("copy", base, 4000, 3000, 5_000_000)
+        val resized = photo("whatsapp", flip(base, 7), 1600, 1200, 300_000) // zmenšená kópia — len podobná
         val neighbour = photo("next", flip(base, 20, 21, 22, 23), 4000, 3000)
         val other = photo("other", flip(base, 20, 21, 22, 23, 30, 31, 32), 4000, 3000)
-        val groups = groupsOf(listOf(original, resized, neighbour, other))
-        assertEquals(listOf(Kind.EXACT to setOf("orig", "whatsapp"), Kind.SIMILAR to setOf("next", "other")), groups)
+        val groups = groupsOf(listOf(original, copy, resized, neighbour, other))
+        // whatsapp je od „other“ 8 bitov, k dvojici next/other sa preto nepridá (úplná väzba)
+        assertEquals(listOf(Kind.EXACT to setOf("orig", "copy"), Kind.SIMILAR to setOf("next", "other")), groups)
+        // bez originálu tvorí zmenšená kópia s ním len „Podobné“
+        assertEquals(listOf(Kind.SIMILAR to setOf("orig", "whatsapp")), groupsOf(listOf(original, resized)))
     }
 
     @Test
-    fun exactCopyNeedsSameResolutionOrAspect() {
+    fun twoShotsInARowAreOnlySimilar() {
+        // dva zábery po sebe: rovnaké rozlíšenie, hash takmer zhodný, iná veľkosť súboru aj čas
+        val a = Photo("/DCIM/Camera/IMG_1.jpg", base, 4000, 3000, 3_100_000, takenMs = 1_000L)
+        val b = Photo("/DCIM/Camera/IMG_2.jpg", flip(base, 9), 4000, 3000, 3_050_000, takenMs = 2_000L)
+        assertEquals(listOf(Kind.SIMILAR to setOf("IMG_1.jpg", "IMG_2.jpg")), groupsOf(listOf(a, b)))
+        // aj s rovnakým hashom, no iným časom nasnímania a veľkosťou je to len podobná fotka
+        val c = b.copy(hash = base)
+        assertEquals(Kind.SIMILAR, PhashGrouper.group(listOf(a, c)).single().kind)
+    }
+
+    @Test
+    fun sameHashSizeAndDateIsExactEvenWithDifferentFileSize() {
+        // tá istá fotka uložená znova (iná kompresia): pHash 0, rovnaké rozmery aj dátum nasnímania
+        val a = Photo("/DCIM/Camera/IMG_1.jpg", base, 4000, 3000, 3_100_000, takenMs = 5_000L)
+        val b = Photo("/Pictures/Backup/IMG_1.jpg", base, 4000, 3000, 2_900_000, takenMs = 5_000L)
+        assertEquals(Kind.EXACT, PhashGrouper.group(listOf(a, b)).single().kind)
+        // iné rozmery → nie
+        val c = b.copy(width = 3999)
+        assertEquals(Kind.SIMILAR, PhashGrouper.group(listOf(a, c)).single().kind)
+    }
+
+    @Test
+    fun contentCheckDecidesForSameSizedFiles() {
+        val a = photo("a", base, size = 2_000)
+        val b = photo("b", base, size = 2_000)
+        val checked = ArrayList<Pair<String, String>>()
+        val differ = PhashGrouper.group(listOf(a, b), sameContent = { x, y -> checked.add(x to y); false })
+        assertEquals(Kind.SIMILAR, differ.single().kind)
+        assertTrue(checked.isNotEmpty())
+        val same = PhashGrouper.group(listOf(a, b), sameContent = { _, _ -> true })
+        assertEquals(Kind.EXACT, same.single().kind)
+        // iná veľkosť súboru sa obsahovo neoveruje vôbec
+        checked.clear()
+        val other = photo("c", base, size = 3_000)
+        PhashGrouper.group(listOf(a, other), sameContent = { x, y -> checked.add(x to y); true })
+        assertTrue(checked.isEmpty())
+    }
+
+    @Test
+    fun exactCopyNeedsSameResolution() {
         val a = photo("a", base, 4000, 3000)
         val cropped = photo("crop", flip(base, 5), 3600, 3000) // pomer 1,2 vs 1,33 — len podobné
         val unknown = Photo("/DCIM/Camera/unknown", flip(base, 6), 0, 0)

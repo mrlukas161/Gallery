@@ -21,6 +21,10 @@ interface ClipDao {
     @Query("DELETE FROM clip_index WHERE path IN (:paths)")
     fun deletePaths(paths: List<String>)
 
+    // vektory spočítané pred daným časom (postupný prepočet po zmene dekódovania, ClipIndexer)
+    @Query("SELECT path FROM clip_index WHERE indexed_at < :before")
+    fun getPathsIndexedBefore(before: Long): List<String>
+
     @Query("SELECT * FROM clip_index")
     fun getAll(): List<ClipEntity>
 

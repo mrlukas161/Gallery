@@ -19,6 +19,9 @@ import org.fossify.gallery.helpers.SKIP_AUTHENTICATION
 class PhotoGridActivity : SimpleActivity() {
     private val binding by viewBinding(ActivityPhotoGridBinding::inflate)
     private var paths = ArrayList<String>()
+
+    // dočasný súbor so zoznamom pre obnovu (onSaveInstanceState)
+    private var stateName = "photo_grid_${System.nanoTime()}.txt"
     private val prefs by lazy { getSharedPreferences("galeria_faces", android.content.Context.MODE_PRIVATE) }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -29,8 +32,7 @@ class PhotoGridActivity : SimpleActivity() {
             padBottomImeAndSystem = listOf(binding.photoGrid)
         )
         setupMaterialScrollListener(binding.photoGrid, binding.photoGridAppbar)
-        paths = ArrayList(org.fossify.gallery.helpers.PathTransfer.forGrid ?: emptyList())
-        org.fossify.gallery.helpers.PathTransfer.forGrid = null
+        paths = restorePaths(savedInstanceState)
         // pinch-zoom mení počet stĺpcov a pamätá si ho — rovnaké ovládanie ako v ostatných mriežkach
         val lm = GridLayoutManager(this, prefs.getInt("grid_columns", 3))
         binding.photoGrid.layoutManager = lm
@@ -54,6 +56,39 @@ class PhotoGridActivity : SimpleActivity() {
         updateTitleAndEmptyState()
     }
 
+    // Zoznam prežije otočenie, zmenu témy aj zabitie procesu (revízia 11/2026): pri prvom otvorení prišiel
+    // zo statického PathTransfer.forGrid, po obnove z dočasného súboru v cache (do 2000 ciest by Bundle
+    // mohol prekročiť limit transakcie). V Bundle je len názov súboru.
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        val file = stateFile()
+        try {
+            file.writeText(paths.joinToString("\n"))
+            outState.putString(STATE_FILE, file.name)
+        } catch (ignored: java.io.IOException) {
+        }
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        if (isFinishing) stateFile().delete()
+    }
+
+    private fun restorePaths(state: Bundle?): ArrayList<String> {
+        val fromTransfer = org.fossify.gallery.helpers.PathTransfer.forGrid
+        org.fossify.gallery.helpers.PathTransfer.forGrid = null
+        if (state == null) return ArrayList(fromTransfer ?: emptyList())
+        stateName = state.getString(STATE_FILE) ?: stateName
+        val saved = try {
+            stateFile().takeIf { it.exists() }?.readText()
+        } catch (ignored: java.io.IOException) {
+            null
+        }
+        return ArrayList(saved?.split('\n')?.filter { it.isNotEmpty() } ?: fromTransfer ?: emptyList())
+    }
+
+    private fun stateFile() = java.io.File(cacheDir, stateName)
+
     private fun updateTitleAndEmptyState() {
         binding.photoGridToolbar.title = getString(R.string.search_count, paths.size)
         binding.photoGridPlaceholder.visibility = if (paths.isEmpty()) android.view.View.VISIBLE else android.view.View.GONE
@@ -71,5 +106,6 @@ class PhotoGridActivity : SimpleActivity() {
 
     companion object {
         const val PATHS = "paths"
+        private const val STATE_FILE = "photo_grid_state_file"
     }
 }

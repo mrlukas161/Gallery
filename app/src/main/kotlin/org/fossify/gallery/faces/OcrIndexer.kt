@@ -4,7 +4,6 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.Context
 import android.graphics.Bitmap
-import android.graphics.BitmapFactory
 import android.os.Build
 import android.provider.MediaStore
 import androidx.core.app.NotificationCompat
@@ -17,7 +16,6 @@ import org.fossify.gallery.helpers.HeavyGate
 import org.fossify.gallery.helpers.HeavySlot
 import org.fossify.gallery.helpers.IdleCloser
 import org.fossify.gallery.helpers.TextNormalizer
-import java.io.File
 import org.fossify.gallery.helpers.ServerYield
 import org.fossify.gallery.services.IndexingService
 
@@ -33,6 +31,10 @@ object OcrIndexer {
     private const val NOTIF_ID = 49232
     private const val MAX_TEXT = 8000
     private const val LIVE_IDLE_MS = 60_000L
+    private const val PREFS = "galeria_faces"
+    private const val KEY_UPRIGHT = "ocr_upright_version"
+    private const val UPRIGHT_VERSION = 1
+    private const val DELETE_CHUNK = 400
 
     // Tesseract sa vytvorí až pri prvej fotke, ktorú treba naozaj rozpoznať (s miestom v HeavyGate);
     // keď nie je čo spracovať, nenačíta sa. onDone/onError až po jeho zatvorení.
@@ -61,6 +63,7 @@ object OcrIndexer {
 
                     // vylúčené a zamknuté priečinky sa nespracúvajú; ich staré riadky sa z indexu zmažú
                     val scope = IndexScope(appCtx)
+                    redoRotatedEmptyOnce(appCtx, dao)
                     val processed = scope.keepAllowed(dao.getIndexedPaths()) { dao.deletePaths(it) }
                     val candidates = queryImages(appCtx).filter { it !in processed && scope.allows(it) }
                     // výsledky z prepojeného telefónu (F4) sa zapíšu hneď, fotka sa druhýkrát nespracúva
@@ -315,21 +318,27 @@ object OcrIndexer {
         return list
     }
 
-    private fun decodeDownscaled(path: String): Bitmap? {
-        if (!File(path).exists()) return null
-        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-        BitmapFactory.decodeFile(path, bounds)
-        val w = bounds.outWidth
-        val h = bounds.outHeight
-        if (w <= 0 || h <= 0) return null
-        var sample = 1
-        while (w / sample > MAX_DECODE || h / sample > MAX_DECODE) {
-            sample *= 2
+    // Vzpriamene podľa EXIF (rovnako ako Live Text v TextSelectActivity a detekcia tvárí): Tesseract
+    // text otočený o 90° nerozpozná. Do ocr.db sa ukladá len text (žiadne súradnice), boxy slov počíta
+    // TextSelectActivity vždy znova nad vlastnou vzpriamenou bitmapou — priestory sa teda nemiešajú.
+    private fun decodeDownscaled(path: String): Bitmap? = UprightDecoder.decode(path, MAX_DECODE)?.bitmap
+
+    // Jednorazovo (verzia v SharedPreferences, schéma ocr.db sa nemení): staršie verzie dekódovali fotky
+    // bez EXIF otočenia, takže fotky na výšku s textom skončili s PRÁZDNYM záznamom a už sa neskúšali.
+    // Prázdne záznamy fotiek s EXIF otočením/zrkadlením sa zmažú → tento aj ďalšie behy ich spracujú znova.
+    // Fotky bez otočenia by dali rovnaký výsledok, tie sa nechávajú. Verzia sa zapíše až po dokončení
+    // (zastavenie uprostred → pokračuje sa pri ďalšom behu).
+    private fun redoRotatedEmptyOnce(context: Context, dao: OcrDao) {
+        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        if (prefs.getInt(KEY_UPRIGHT, 0) >= UPRIGHT_VERSION) return
+        val withText = dao.getAllForDocs().mapTo(HashSet()) { it.path }
+        val empty = dao.getIndexedPaths().filter { it !in withText }
+        val redo = ArrayList<String>()
+        for (path in empty) {
+            if (!isRunning) return
+            if (UprightDecoder.isTransformed(path)) redo.add(path)
         }
-        val opts = BitmapFactory.Options().apply {
-            inSampleSize = sample
-            inPreferredConfig = Bitmap.Config.ARGB_8888
-        }
-        return BitmapFactory.decodeFile(path, opts)
+        redo.chunked(DELETE_CHUNK).forEach { dao.deletePaths(it) }
+        prefs.edit().putInt(KEY_UPRIGHT, UPRIGHT_VERSION).apply()
     }
 }

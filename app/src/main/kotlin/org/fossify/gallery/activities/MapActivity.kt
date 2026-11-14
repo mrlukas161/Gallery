@@ -194,8 +194,22 @@ class MapActivity : SimpleActivity() {
             emptyList()
         }
         var result = filterPaths?.let { fp -> all.filter { fp.contains(it.path) } } ?: all
+        result = visibleOnly(result)
         result = applyMapFilters(result)
         return result
+    }
+
+    // Revízia 11/2026: zmazané fotky sa na mape neukazujú (overenie pri zobrazení, ich riadky sa hneď
+    // zmažú) a rovnako fotky zo zamknutých/vylúčených priečinkov, kým ich indexer nevyčistí.
+    private fun visibleOnly(geos: List<GeoEntity>): List<GeoEntity> {
+        val scope = org.fossify.gallery.faces.IndexScope(this)
+        val allowed = geos.filter { scope.allows(it.path) }
+        val paths = allowed.mapTo(HashSet()) { it.path }
+        try {
+            GeoIndexer.purgeMissing(this, paths) { GeoDatabase.getInstance(this).GeoDao().deletePaths(it) }
+        } catch (ignored: Exception) {
+        }
+        return if (paths.size == allowed.size) allowed else allowed.filter { it.path in paths }
     }
 
     // filter priamo na mape: typ (fotky/videá) + osoby (mená) + len s QR kódom
