@@ -26,6 +26,7 @@ import java.io.PipedInputStream
 import java.io.PipedOutputStream
 import java.time.LocalDateTime
 import java.util.concurrent.Semaphore
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicLong
 import java.util.zip.Deflater
 import java.util.zip.ZipEntry
@@ -248,7 +249,8 @@ class ServerMotion(private val appContext: Context) {
 
 // POST /api/zip: viac súborov ako jeden ZIP, streamovaný (chunked) z vlastného vlákna cez rúru — nič sa
 // nenačíta do pamäte. ZIP bez kompresie (fotky a videá sa ďalej nezmenšia), data descriptor = netreba CRC
-// vopred. Najviac MAX_PARALLEL ZIP-ov naraz (každý = 1 spojenie), inak 503 busy. „✓ v PC“ až keď prúd
+// vopred. Najviac MAX_PARALLEL ZIP-ov naraz (každý = 1 spojenie); ďalší počká na voľné miesto najviac
+// SLOT_WAIT_S, potom 503 busy (web posiela ZIP do skrytého rámca, takže chyba stránku nenahradí). „✓ v PC“ až keď prúd
 // skončil celý a bez chyby, len pre súbory, ktoré v ňom celé sú.
 class ServerZip(
     private val appContext: Context,
@@ -260,13 +262,24 @@ class ServerZip(
         private const val BUFFER = 64 * 1024
         private const val PIPE = 256 * 1024
         private const val RETRY_AFTER_S = "2"
+        private const val SLOT_WAIT_S = 20L
         private const val MS = 1000L
     }
 
     private val slots = Semaphore(MAX_PARALLEL)
 
+    // voľné miesta na ZIP (web podľa toho v /api/ping vie, či ďalší ZIP pôjde hneď)
+    fun freeSlots(): Int = slots.availablePermits()
+
+    // ZIP čaká na voľné miesto najviac SLOT_WAIT_S (predošlý práve dobieha), až potom 503 busy
     fun handle(ids: List<Long>, now: LocalDateTime): Response {
-        if (!slots.tryAcquire()) {
+        val got = try {
+            slots.tryAcquire(SLOT_WAIT_S, TimeUnit.SECONDS)
+        } catch (ignored: InterruptedException) {
+            Thread.currentThread().interrupt()
+            false
+        }
+        if (!got) {
             return Http.error(Status.SERVICE_UNAVAILABLE, "busy").also { it.addHeader("Retry-After", RETRY_AFTER_S) }
         }
         val idx = index()
@@ -322,6 +335,8 @@ class ServerZip(
             } catch (ignored: IOException) {
                 abort(out, zos)
             } catch (ignored: RuntimeException) {
+                abort(out, zos)
+            } catch (ignored: OutOfMemoryError) {
                 abort(out, zos)
             }
         }

@@ -469,7 +469,7 @@ object RequestGuard {
     // CSP stránky: skripty len s jednorazovým nonce, všetko ostatné len z rovnakého pôvodu
     fun csp(nonce: String) = "default-src 'none'; script-src 'nonce-$nonce'; style-src 'unsafe-inline'; " +
         "img-src 'self' blob: data:; media-src 'self' blob:; connect-src 'self'; form-action 'self'; " +
-        "base-uri 'none'; frame-ancestors 'none'"
+        "frame-src 'self'; base-uri 'none'; frame-ancestors 'none'"
 
     const val NONCE_PLACEHOLDER = "__CSP_NONCE__"
 

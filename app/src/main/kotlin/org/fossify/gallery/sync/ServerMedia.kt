@@ -16,7 +16,13 @@ import java.io.InputStream
 import java.util.concurrent.atomic.AtomicLong
 
 // chyba požiadavky, ktorú MediaServer.serve() premení na JSON odpoveď {"error": code}
-class HttpError(val status: Status, val code: String, val close: Boolean = false) : Exception(code)
+// retryAfterS = hlavička Retry-After (napr. pauza po zlých PIN-och)
+class HttpError(
+    val status: Status,
+    val code: String,
+    val close: Boolean = false,
+    val retryAfterS: String? = null,
+) : Exception(code)
 
 // Odpovede servera: chyby vždy ako JSON cez JSONObject (nikdy ručne skladaný reťazec).
 object Http {
@@ -108,6 +114,9 @@ class ServerMedia(private val appContext: Context) {
     private val decoder = ServerDecoder()
     private val resolver get() = appContext.contentResolver
 
+    // po OutOfMemoryError: pamäťové cache náhľadov preč (disková ostáva)
+    fun trimMemory() = cache.clear()
+
     // originál (Range, ETag) alebo na požiadanie zmenšený JPEG (q=kvalita, max=dlhá hrana).
     // dl=1 -> príloha; onFullDownload sa zavolá po odoslaní CELÉHO originálu („✓ v PC")
     fun file(session: IHTTPSession, item: MediaServer.Item, onFullDownload: () -> Unit): Response {
@@ -191,6 +200,8 @@ class ServerMedia(private val appContext: Context) {
         val r = Http.bytes("image/jpeg", bytes)
         r.addHeader("ETag", etag)
         r.addHeader("Cache-Control", if (Http.param(session, "v") == item.mtime.toString()) IMMUTABLE else REVALIDATE)
+        // pretiahnutá miniatúra (do chatu Claude, Prieskumníka) dostane skutočné meno namiesto „thumb.jpg“
+        r.addHeader("Content-Disposition", ContentDisposition.of("inline", ContentDisposition.jpegName(item.name)))
         return r
     }
 
