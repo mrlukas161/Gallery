@@ -148,7 +148,9 @@ class CompareBulkKeep(private val activity: SimpleActivity, private val listener
         }
         val w = bounds.outWidth.coerceAtLeast(0)
         val h = bounds.outHeight.coerceAtLeast(0)
-        return PhotoMeasure(path, 0.0, 0.0, width = w, height = h, modified = file.lastModified())
+        return PhotoMeasure(
+            path, 0.0, 0.0, width = w, height = h, modified = file.lastModified(), sizeBytes = file.length(),
+        )
     }
 
     private fun analyze(app: Context, run: List<CompareGroup>, dialog: Progress) =
@@ -202,6 +204,9 @@ class CompareBulkKeep(private val activity: SimpleActivity, private val listener
         }
         if (plan.notMeasured > 0) {
             notes.add(res.getQuantityString(R.plurals.pw_skipped_unread, plan.notMeasured, plan.notMeasured))
+        }
+        if (plan.edited > 0) {
+            notes.add(res.getQuantityString(R.plurals.sp068_skipped_edited, plan.edited, plan.edited))
         }
         if (p.overLimit > 0) notes.add(res.getQuantityString(R.plurals.pw_over_limit, p.overLimit, p.overLimit))
         val spared = plan.spared.size

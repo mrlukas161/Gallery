@@ -13,8 +13,8 @@ class CompareBulkTest {
     private fun s(score: Double, rank: Int, faces: Boolean = true) =
         PhotoScore(1.0, 1.0, 0, 0, 0, score, emptyList(), rank, faces)
 
-    private fun m(path: String, w: Int = 4000, h: Int = 3000, modified: Long = 1_000L) =
-        PhotoMeasure(path, 0.0, 0.0, width = w, height = h, modified = modified)
+    private fun m(path: String, w: Int = 4000, h: Int = 3000, modified: Long = 1_000L, size: Long = 1_000L) =
+        PhotoMeasure(path, 0.0, 0.0, width = w, height = h, modified = modified, sizeBytes = size)
 
     // --- verdikt a neisté skupiny ---
 
@@ -142,6 +142,39 @@ class CompareBulkTest {
         assertEquals("/a", ok.keep)
         // /c nepoznáme — nemaže sa
         assertEquals(listOf("/b"), ok.removable)
+    }
+
+    @Test
+    fun exactCleanupNeverDeletesEditedVersion() {
+        // originál (starší) a upravená verzia (novšia, iná veľkosť súboru) — nemaže sa nič
+        val onlyEdited = CompareBulk.exactDecision(
+            listOf("/DCIM/Camera/a.jpg", "/DCIM/Camera/a_edit.jpg"),
+            listOf(m("/DCIM/Camera/a.jpg", modified = 1L), m("/DCIM/Camera/a_edit.jpg", modified = 9L, size = 1_400L)),
+        )
+        assertNull(onlyEdited.keep)
+        assertEquals(CompareBulk.Skip.EDITED, onlyEdited.skip)
+        assertEquals(1, CompareBulk.plan(listOf(onlyEdited)).edited)
+        // + skutočná kópia originálu: zmaže sa len tá, upravená verzia ostáva
+        val withCopy = CompareBulk.exactDecision(
+            listOf("/DCIM/Camera/a.jpg", "/DCIM/Camera/a_edit.jpg", "/Download/a.jpg"),
+            listOf(
+                m("/DCIM/Camera/a.jpg", modified = 1L),
+                m("/DCIM/Camera/a_edit.jpg", modified = 9L, size = 1_400L),
+                m("/Download/a.jpg", modified = 5L),
+            ),
+        )
+        assertEquals("/DCIM/Camera/a.jpg", withCopy.keep)
+        assertEquals(listOf("/Download/a.jpg"), withCopy.removable)
+        // väčšia (vyššie rozlíšenie) verzia ostane ako ★, menšia iná sa nemaže
+        val bigger = CompareBulk.exactDecision(
+            listOf("/a", "/b"),
+            listOf(m("/a", 1600, 1200, size = 400L), m("/b", 4000, 3000, size = 3_000L)),
+        )
+        assertNull(bigger.keep)
+        assertTrue(bigger.removable.isEmpty())
+        // neznáma veľkosť súboru → nemaže sa
+        val unknown = CompareBulk.exactDecision(listOf("/a", "/b"), listOf(m("/a", size = 0L), m("/b", size = 0L)))
+        assertEquals(CompareBulk.Skip.NOT_MEASURED, unknown.skip)
     }
 
     // --- plán a invariant ---

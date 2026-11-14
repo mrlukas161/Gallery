@@ -99,6 +99,18 @@ object UprightDecoder {
         return RelBox.decodedUprightSize(bounds.outWidth, bounds.outHeight, maxSize, transform.rotationDegrees)
     }
 
+    // true = fotka má EXIF otočenie/zrkadlenie, teda decode() vráti iné pixely než BitmapFactory.
+    // Len hlavička súboru (lacné); slúži na výber fotiek, ktoré staršie indexery spracovali neotočené.
+    fun isTransformed(path: String): Boolean {
+        if (!File(path).exists()) return false
+        val orientation = try {
+            ExifInterface(path).getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL)
+        } catch (ignored: Throwable) {
+            ExifInterface.ORIENTATION_NORMAL
+        }
+        return orientation != ExifInterface.ORIENTATION_NORMAL && orientation != ExifInterface.ORIENTATION_UNDEFINED
+    }
+
     // prepočet starého bboxu (v neotočenom priestore W×H) do upright priestoru — používa sa LEN ako
     // kľúč na spárovanie starých záznamov s novo detegovanými tvárami (IoU). Presne ako decode():
     // najprv vodorovné zrkadlenie (postScale -1,1), potom otočenie v smere hodín o rotationDegrees

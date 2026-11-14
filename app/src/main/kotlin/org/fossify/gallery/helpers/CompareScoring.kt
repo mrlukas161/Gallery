@@ -28,6 +28,8 @@ data class PhotoMeasure(
     val width: Int = 0,
     val height: Int = 0,
     val modified: Long = 0L,
+    // veľkosť súboru v bajtoch (0 = neznáma) — „Upratať presné kópie“ maže len kópie rovnako veľké ako ★
+    val sizeBytes: Long = 0L,
 ) {
     val pixels: Long get() = width.toLong() * height
 }

@@ -8,6 +8,7 @@ import org.fossify.commons.extensions.isVideoFast
 import org.fossify.commons.helpers.ensureBackgroundThread
 import org.fossify.gallery.family.FamilyInbox
 import org.fossify.gallery.helpers.BackgroundPriority
+import org.fossify.gallery.helpers.IndexStatus
 import org.fossify.gallery.helpers.ServerYield
 import org.fossify.gallery.services.IndexingService
 
@@ -34,6 +35,9 @@ object GeoIndexer {
                 // vylúčené a zamknuté priečinky sa nespracúvajú; ich staré riadky sa z indexu zmažú
                 val scope = IndexScope(appCtx)
                 val processed = scope.keepAllowed(dao.getIndexedPaths()) { dao.deletePaths(it) }
+                // zmazané fotky z mapy hneď pri tomto behu (spúšťa ho otvorenie mapy), nie až denným
+                // upratovaním po dávkach (IndexStatus) — test je ten istý (nepripojené úložisko sa nemaže)
+                purgeMissing(appCtx, processed) { dao.deletePaths(it) }
                 val candidates =
                     (queryImages(appCtx) + queryVideos(appCtx)).filter { it !in processed && scope.allows(it) }
                 // výsledky z prepojeného telefónu (F4) sa zapíšu hneď, fotka sa druhýkrát nespracúva
@@ -84,6 +88,17 @@ object GeoIndexer {
 
     fun stop() {
         isRunning = false
+    }
+
+    private const val DELETE_CHUNK = 400
+
+    // riadky fotiek, ktoré naozaj zmizli (IndexStatus.reallyMissingTester), zmaže z indexu aj z processed
+    fun purgeMissing(context: Context, paths: MutableCollection<String>, delete: (List<String>) -> Unit) {
+        val reallyMissing = IndexStatus.reallyMissingTester(context) ?: return
+        val gone = paths.filter(reallyMissing)
+        if (gone.isEmpty()) return
+        gone.chunked(DELETE_CHUNK).forEach { delete(it) }
+        paths.removeAll(gone.toHashSet())
     }
 
     // hodnovernosť GPS bodu: mimo rozsahu, presná nula (Null Island) alebo „celé číslo bez desatín"
