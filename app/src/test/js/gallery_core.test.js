@@ -251,6 +251,19 @@ test("hromadné: nezmeraná fotka sa neoznačí, ponechaná označená sa odzna�
   assert.equal(C.bulkSummary(q, 0), "Nie je čo označiť. 1 skupina preskočená – bez údajov.");
 });
 
+test("hromadné presné kópie: upravená verzia (iná veľkosť ako ★) sa nikdy neoznačí", () => {
+  const info = { 6: { size: 100, w: 40, h: 30 }, 7: { size: 100, w: 40, h: 30 }, 8: { size: 90, w: 40, h: 30 }, 9: { size: 100, w: 30, h: 40 } };
+  const f = (id) => info[id];
+  assert.deepEqual(plain(C.exactSame([6, 7, 8, 9], 7, f)), [6, 7]);
+  assert.deepEqual(plain(C.exactSame([6, 7], 99, f)), [], "neznáma ★ = nič");
+  const p = C.bulkPlan([item("c", "exact", [6, 7, 8], 7, { scored: C.exactSame([6, 7, 8], 7, f) })], new Set(), []);
+  assert.deepEqual(plain(p.all), [6]);
+  const q = C.bulkPlan([item("d", "exact", [7, 8], 7, { scored: C.exactSame([7, 8], 7, f) })], new Set(), []);
+  assert.equal(q.all.length, 0);
+  assert.equal(q.edited, 1);
+  assert.match(C.bulkSummary(q, 0), /1 skupina presných kópií preskočená – je v nich len upravená verzia/);
+});
+
 test("hromadné: ★ jednej skupiny sa neoznačí, aj keď ju iná skupina navrhuje", () => {
   const p = C.bulkPlan([item("s", "burst", [1, 2], 2), item("e", "exact", [2, 3], 3)], new Set(), []);
   assert.deepEqual(plain(p.all), [1]);
@@ -798,12 +811,54 @@ test("medzerník = výber: štítok výberu a tlačidlo 🗑 (ako X: výber nara
 test("schránka (Ctrl+C): čo sa načíta, tip chrome://flags", () => {
   const jpg = { id: 7, name: "a.jpg", mime: "image/jpeg", w: 4000, h: 3000, mtime: 5 };
   const heic = { id: 8, name: "b.heic", mime: "image/heic", w: 8160, h: 6120, orient: 90, mtime: 6 };
-  assert.deepEqual(plain(C.clipSrc(jpg, false)), { path: "/api/file", params: { id: 7 } });
+  const small = { id: 9, name: "c.png", mime: "image/png", w: 1200, h: 900, mtime: 7 };
+  assert.equal(C.CLIP_MAX, 2048);
+  assert.deepEqual(plain(C.clipSrc(jpg, false)), { path: "/api/thumb", params: { id: 7, max: 2048, v: 5 } }, "veľký JPEG najviac 2048 px");
+  assert.deepEqual(plain(C.clipSrc(small, false)), { path: "/api/file", params: { id: 9 } }, "malý PNG ako súbor");
   assert.deepEqual(plain(C.clipSrc(jpg, true, 85)), { path: "/api/file", params: { id: 7, q: 85, max: 2048 } });
-  assert.deepEqual(plain(C.clipSrc(heic, false)), { path: "/api/thumb", params: { id: 8, max: C.FULL_MAX, v: 6 } }, "HEIC ako JPEG v plnom rozlíšení (strop)");
+  assert.deepEqual(plain(C.clipSrc(heic, false)), { path: "/api/thumb", params: { id: 8, max: 2048, v: 6 } }, "HEIC ako JPEG, najviac 2048 px");
   assert.match(C.flagsTip("http://192.168.1.20:8089"), /chrome:\/\/flags\/#unsafely-treat-insecure-origin-as-secure.*\(http:\/\/192\.168\.1\.20:8089\).*Uložiť do priečinka/);
   assert.match(C.flagsTip(""), /voliteľné, platí len pre tento počítač/);
   assert.match(C.CLIP_INSECURE_TXT, /chrome:\/\/flags/);
+  assert.match(C.flagsTip(""), /USB kábel so Zdieľaním pripojenia/, "USB tethering je tiež http://IP");
+  assert.doesNotMatch(C.flagsTip("") + C.CLIP_INSECURE_TXT, /cez USB \(localhost\)/, "nesľubuje USB = localhost");
+});
+
+test("držaný X / Delete / D sa neopakuje", () => {
+  assert.equal(C.noRepeat({ key: "x", repeat: true }), true);
+  assert.equal(C.noRepeat({ key: "Delete", repeat: true }), true);
+  assert.equal(C.noRepeat({ key: "D", repeat: true }), true);
+  assert.equal(C.noRepeat({ key: "x", repeat: false }), false);
+  assert.equal(C.noRepeat({ key: "ArrowRight", repeat: true }), false, "šípky sa opakovať smú");
+});
+
+test("ping podľa aktivity a výpadok spojenia", () => {
+  assert.equal(C.pingEvery(0, false), 4000);
+  assert.equal(C.pingEvery(119000, false), 4000);
+  assert.equal(C.pingEvery(3 * 60000, false), 30000);
+  assert.equal(C.pingEvery(11 * 60000, false), 60000);
+  assert.equal(C.pingEvery(0, true), 0, "skrytá karta nepinguje");
+  assert.equal(C.pingActive(1000), true);
+  assert.equal(C.pingActive(5 * 60000), false);
+  assert.equal(C.connLost(1), false);
+  assert.equal(C.connLost(2), true);
+});
+
+test("mazanie po dávkach: súčet, čiastočný výsledok", () => {
+  const out = { deleted: [], failed: {}, freedBytes: 0, recycleBin: true, batchIds: [] };
+  C.delMerge(out, { deleted: [1, 2], failed: { 3: "x" }, freedBytes: 10, recycleBin: true, batchId: "b1" });
+  C.delMerge(out, { deleted: [4], failed: {}, freedBytes: 5, recycleBin: true, batchId: "b2" });
+  assert.deepEqual(plain(out.deleted), [1, 2, 4]);
+  assert.deepEqual(plain(out.batchIds), ["b1", "b2"], "Vrátiť obnoví všetky dávky");
+  assert.equal(out.freedBytes, 15);
+  assert.match(C.delSummary(out), /Presunuté do Koša: 3 súbory.*nepodarilo sa: 1/);
+  out.error = "HTTP 500"; out.left = 500;
+  assert.match(C.delSummary(out), /zvyšných 500 súborov sa nezmazalo \(HTTP 500\)/);
+  const d = { count: 0, freedBytes: 0, recycleBin: true };
+  C.dryMerge(d, { count: 500, freedBytes: 100, recycleBin: false });
+  C.dryMerge(d, { count: 700, freedBytes: 50, recycleBin: false });
+  assert.deepEqual(plain(d), { count: 1200, freedBytes: 150, recycleBin: false });
+  assert.ok(C.DEL_BATCH <= 1000);
 });
 
 test("kontextové menu: Obľúbené (dávkovo), ▶ Prehrať, Kopírovať obrázok", () => {
@@ -825,6 +880,11 @@ test("ZIP: najviac 2 naraz (server inak odpovie 503 busy)", () => {
   assert.equal(C.zipFree([1000], 2000), 1);
   assert.equal(C.zipFree([1000, 1500], 2000), 0);
   assert.equal(C.zipFree([1000, 1500], 1000 + 60000), 2, "staré ZIP-y sa už nerátajú");
+  // server hlási voľné miesta (zipFree v /api/ping): ZIP-y spred chvíle sa ešte odrátajú
+  assert.equal(C.zipFree([], 1000, 2), 2);
+  assert.equal(C.zipFree([1000, 1500], 30000, 2), 2, "server hovorí, že sú voľné – hodiny nerozhodujú");
+  assert.equal(C.zipFree([29000], 30000, 2), 1, "práve odoslaný ZIP server ešte nemusel začať");
+  assert.equal(C.zipFree([], 1000, 0), 0);
 });
 
 test("náhľady: opakovanie pri 503 busy a plné rozlíšenie podľa thumbFull", () => {

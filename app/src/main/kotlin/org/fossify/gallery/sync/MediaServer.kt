@@ -38,7 +38,9 @@ import org.fossify.gallery.helpers.INCLUDED_FOLDERS
 // PC program posiela PIN v hlavičke X-Auth-Token (alebo ?token=), prehliadač ho cez /api/login vymení
 // za session cookie (HttpOnly, SameSite=Strict). Zmeny len cez POST z rovnakého pôvodu (Origin).
 // Popis API pre PC: docs/api/server-pre-pc.md.
-// onTooManyBadPins: volá sa (raz, z vlákna požiadavky), keď sa server zamkol po hádaní PIN-u.
+// onTooManyBadPins: volá sa (raz, z vlákna požiadavky), keď sa server zamkol po hádaní PIN-u (PinGuard.HARD_LIMIT);
+// onPinPause: začala sa spoločná pauza zadávania PIN-u (niekto na sieti hádal) – služba to oznámi v telefóne.
+// fix068-web: len klienti z lokálnej siete (ClientNet), ochrana PIN-u po adresách (PinGuard), nečinnosť (IdleClock).
 // server-rychlost: epoch dodá služba (po reštarte služby ten istý, HttpSyncService), resumed = reštart
 // služby (START_STICKY) -> prihlásenia prehliadačov sa obnovia z prefs. Prenos: TunedSocketFactory
 // (TCP_NODELAY, bufferovaný výstup) a LimitedRunner (limit spojení), viď ServerTransport.kt.
@@ -49,6 +51,7 @@ class MediaServer(
     private val epoch: String = newEpoch(),
     resumed: Boolean = false,
     private val onTooManyBadPins: () -> Unit = {},
+    private val onPinPause: () -> Unit = {},
 ) : NanoHTTPD(null, port) {
 
     companion object {
@@ -64,9 +67,7 @@ class MediaServer(
             "stateSince", "stats", "zip", "favorites", "motion", "thumbFull",
         )
 
-        // po toľkých RÔZNYCH zlých tokenoch sa server zamkne (šanca uhádnuť 6-miestny PIN ~ 20 : 900 000)
-        private const val MAX_BAD_PINS = 20
-        private const val BAD_PIN_KEEP = 64
+        private const val RETRY_AFTER_OOM_S = "5"
 
         // strop na telo JSON požiadaviek — parseBody inak načíta celé telo do pamäte
         private const val MAX_BODY_BYTES = 64L * 1024
@@ -136,14 +137,14 @@ class MediaServer(
     private val index: Map<Long, Item> get() = snap.index
     private val genLog = GenLog()
 
-    // Ochrana PIN-u pred hádaním na LAN: rátajú sa RÔZNE zlé tokeny (otvorená stará karta v PC
-    // prehliadači posiela stále ten istý starý token a server by inak zbytočne zamkla); požiadavky
-    // úplne bez tokenu (favicon…) nie sú hádanie. Po zamknutí sa odmietne všetko a služba server
-    // zastaví — nový štart = nový PIN.
-    private val badPins = HashSet<String>()
+    // Ochrana PIN-u pred hádaním na LAN (PinGuard): rátajú sa RÔZNE zlé tokeny, po adresách s pauzou, spolu
+    // so spoločnou pauzou; požiadavky úplne bez tokenu (favicon…) nie sú hádanie. Až po HARD_LIMIT sa server
+    // zamkne (odmietne všetko) a služba ho zastaví — nový štart = nový PIN.
+    private val pinGuard = PinGuard()
+    private val locked: Boolean get() = pinGuard.hardLocked
 
-    @Volatile
-    private var locked = false
+    // nečinnosť pre automatické vypnutie (HttpSyncService sa pýta idleMs)
+    private val idle = IdleClock()
 
     private val sessions = Sessions()
     private val media = ServerMedia(appContext)
@@ -212,6 +213,9 @@ class MediaServer(
     }
 
     fun itemCount(): Int = index.size
+
+    // ms bez práce (0 = práve niečo beží); služba server po IdleClock.IDLE_STOP_MS vypne
+    fun idleMs(): Long = idle.idleMs()
 
     // volá HttpSyncService po zmene v MediaStore (nová / zmazaná fotka); obnova ide na pozadí po
     // REBUILD_QUIET_MS ticha (najneskôr REBUILD_MAX_MS) — séria zmien = jedna prestavba
@@ -290,21 +294,31 @@ class MediaServer(
     // = zatvorenie tela odpovede po odoslaní (FinishStream).
     override fun serve(session: IHTTPSession): Response {
         ServerTransport.normalPriority()
+        // len lokálna sieť (Wi-Fi, USB kábel, hotspot, adb forward) — z mobilných dát / VPN nič
+        if (!ClientNet.isLocal(session.headers["remote-addr"])) {
+            return Http.secure(Http.error(Status.FORBIDDEN, "not_local")).also { it.closeConnection(true) }
+        }
         val startNs = System.nanoTime()
         val uri = session.uri ?: "/"
         val work = ServerActivity.countsAsWork(uri)
         val via = ClientKind.of(session.headers["remote-addr"])
-        // ping z otvorenej karty v PC (každé 2–4 s) zámky nedrží — inak by telefón nezaspal nikdy
+        // ping z otvorenej karty v PC (každé 4–60 s) zámky nedrží — inak by telefón nezaspal nikdy
         if (work) {
             ServerActivity.SHARED.begin()
             locks.onRequest()
+            idle.begin()
+        } else if (uri == "/api/ping" && Http.param(session, "active") == "1") {
+            idle.touch()
         }
         stats.begin(via)
         val timing = RequestTiming.begin(startNs)
         val resp = try {
             Http.secure(route(session, uri))
         } catch (e: Throwable) {
-            if (work) ServerActivity.SHARED.end()
+            if (work) {
+                ServerActivity.SHARED.end()
+                idle.end()
+            }
             stats.abort()
             throw e
         } finally {
@@ -316,7 +330,10 @@ class MediaServer(
         val status = resp.status?.requestStatus ?: 0
         val path = describe(session, uri)
         val finish: (Long) -> Unit = { bytes ->
-            if (work) ServerActivity.SHARED.end()
+            if (work) {
+                ServerActivity.SHARED.end()
+                idle.end()
+            }
             val totalMs = (System.nanoTime() - startNs) / NS_PER_MS
             val entry = SlowLog.Entry(System.currentTimeMillis(), path, status, handlerMs, totalMs, bytes, via)
             stats.end(if (uri in routes || uri == "/") uri else LatencyStats.OTHER, entry)
@@ -346,9 +363,16 @@ class MediaServer(
             }
         }
     } catch (e: HttpError) {
-        Http.error(e.status, e.code).also { if (e.close) it.closeConnection(true) }
+        Http.error(e.status, e.code).also {
+            if (e.close) it.closeConnection(true)
+            if (e.retryAfterS != null) it.addHeader("Retry-After", e.retryAfterS)
+        }
     } catch (e: Exception) {
         Http.error(Status.INTERNAL_ERROR, (e.message ?: "error").take(ERROR_MAX))
+    } catch (ignored: OutOfMemoryError) {
+        // veľká fotka (HEIC 8192 px, plná kvalita) pri súbežnom zozname: nezhodiť celú appku, uvoľniť cache a 503
+        media.trimMemory()
+        Http.error(Status.SERVICE_UNAVAILABLE, "low_memory").also { it.addHeader("Retry-After", RETRY_AFTER_OOM_S) }
     }
 
     // cesta s parametrami pre zoznam pomalých požiadaviek — bez PIN-u (token)
@@ -404,7 +428,7 @@ class MediaServer(
         val headerTok = session.headers["x-auth-token"]
         val queryTok = session.parameters["token"]?.firstOrNull()
         val tok = headerTok ?: queryTok ?: return false
-        return checkPin(tok)
+        return checkPin(session, tok)
     }
 
     // PIN token priamo v požiadavke (PC program), bez započítania do ochrany pred hádaním —
@@ -414,40 +438,40 @@ class MediaServer(
         return constantTimeEquals(tok, pin)
     }
 
-    // správny PIN = true; zlý sa zaráta do ochrany pred hádaním
-    private fun checkPin(tok: String): Boolean {
-        if (constantTimeEquals(tok, pin)) return true
-        val lockNow = synchronized(badPins) {
-            if (locked) {
-                false
-            } else {
-                badPins.add(tok.take(BAD_PIN_KEEP))
-                if (badPins.size >= MAX_BAD_PINS) {
-                    locked = true
-                    true
-                } else {
-                    false
-                }
-            }
+    // správny PIN = true; zlý sa zaráta do ochrany pred hádaním (PinGuard). Počas pauzy pre túto adresu
+    // (alebo spoločnej pauzy) 429 pin_paused + Retry-After — bez prezradenia, či PIN sedel.
+    private fun checkPin(session: IHTTPSession, tok: String): Boolean {
+        val ip = session.headers["remote-addr"].orEmpty()
+        val r = pinGuard.attempt(ip, tok, constantTimeEquals(tok, pin))
+        when (r.event) {
+            PinGuard.Event.HARD_LOCK -> notifySafely(onTooManyBadPins)
+            PinGuard.Event.GLOBAL_PAUSE -> notifySafely(onPinPause)
+            null -> {}
         }
-        if (lockNow) {
-            try {
-                onTooManyBadPins()
-            } catch (ignored: Throwable) {
-            }
+        if (r.verdict == PinGuard.Verdict.PAUSED) {
+            val retryS = ((r.retryMs + MS - 1) / MS).toString()
+            throw HttpError(Status.TOO_MANY_REQUESTS, "pin_paused", retryAfterS = retryS)
         }
-        return false
+        return r.verdict == PinGuard.Verdict.OK
+    }
+
+    private fun notifySafely(cb: () -> Unit) {
+        try {
+            cb()
+        } catch (ignored: Throwable) {
+        }
     }
 
     // POST /api/zip (formulár ids=1,2,3[&token=PIN]): prehliadač sťahuje jeden súbor namiesto stoviek.
-    // Telo treba prečítať pred overením — klient bez cookie posiela PIN v ňom (overí sa bez počítania
-    // do ochrany pred hádaním, ako hasPinToken). Zmena stavu („✓ v PC“) -> POST a rovnaký pôvod.
+    // Telo treba prečítať pred overením — klient bez cookie posiela PIN v ňom. PIN z tela ide cez checkPin
+    // ako každý iný (zlý sa zaráta do ochrany pred hádaním; stará karta s tým istým PIN-om nič nezamkne,
+    // rátajú sa len rôzne zlé). Zmena stavu („✓ v PC“) -> POST a rovnaký pôvod.
     private fun handleZip(session: IHTTPSession): Response {
         if (session.method != Method.POST) throw HttpError(Status.METHOD_NOT_ALLOWED, "use POST")
         val preAuth = authorized(session)
         val form = Http.readForm(session, MAX_FORM_BYTES)
         val bodyTok = form["token"]?.firstOrNull()
-        val ok = !locked && (preAuth || (bodyTok != null && constantTimeEquals(bodyTok, pin)))
+        val ok = !locked && (preAuth || (bodyTok != null && checkPin(session, bodyTok)))
         if (!ok) return Http.error(Status.FORBIDDEN, if (locked) "locked" else "forbidden")
         checkMutation(session)
         return when (val ids = ZipRequest.parseIds(form["ids"])) {
@@ -470,7 +494,7 @@ class MediaServer(
         }
         if (err != null) throw err
         val given = Http.readJson(session, MAX_BODY_BYTES).optString("pin", "").trim()
-        if (given.isEmpty() || !checkPin(given)) {
+        if (given.isEmpty() || !checkPin(session, given)) {
             return Http.error(Status.FORBIDDEN, if (locked) "locked" else "bad_pin")
         }
         val token = sessions.create(System.currentTimeMillis())
@@ -515,6 +539,8 @@ class MediaServer(
             .put("allFiles", PcDeleter.canDelete())
             .put("recycleBin", appContext.config.useRecycleBin)
             .put("features", JSONArray(FEATURES))
+            .put("zipFree", zip.freeSlots())
+            .put("idleStopMs", IdleClock.IDLE_STOP_MS)
         return Http.json(Status.OK, o)
     }
 

@@ -285,6 +285,10 @@
   .toast.on{opacity:1}
   .toast.act{pointer-events:auto}
   .toast button{padding:.25rem .6rem}
+  /* výpadok spojenia s mobilom (ping neodpovedá) */
+  .connlost{position:fixed;left:50%;top:calc(var(--hdr) + 8px);transform:translateX(-50%);z-index:98;max-width:92vw;
+    background:#3a1d1d;border:1px solid var(--danger);border-radius:10px;padding:.45rem .9rem;display:flex;gap:.7rem;align-items:center}
+  .connlost button{padding:.25rem .6rem}
 </style>
 </head>
 <body>
@@ -364,7 +368,7 @@
   <button id="selChat" title="Shift+D — zmenšené JPEG (2048 px) s predponou Claude_ do Stiahnutých, na pretiahnutie do chatu">💬 Do chatu</button>
   <button id="selCmp" disabled title="C">Porovnať</button>
   <button id="selWith" disabled title="C — jedna vybraná fotka vľavo, vpravo listuješ inými">Porovnať s…</button>
-  <button id="selDir" hidden title="Uloží originály vybraných fotiek priamo do zvoleného priečinka (len cez localhost / USB)">📁 Uložiť do priečinka…</button>
+  <button id="selDir" hidden title="Uloží originály vybraných fotiek priamo do zvoleného priečinka (len na http://localhost alebo na adrese povolenej v chrome://flags)">📁 Uložiť do priečinka…</button>
   <button id="selFav" hidden title="Shift+F — Obľúbené, tie isté ako v telefóne">★ Pridať do obľúbených</button>
   <button class="warn" id="selMark" title="X / Delete">🗑 Označiť vybrané na zmazanie</button>
   <button id="selUnmark">↩ Zrušiť značku vybraným</button>
@@ -550,6 +554,7 @@
   <div class="hb" id="hBody"></div>
 </div>
 
+<div class="connlost" id="connLost" role="alert" hidden><span id="connLostT"></span><button type="button" id="connRetry">Skúsiť znova</button></div>
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 <div id="ctx" role="menu" aria-label="Akcie s fotkou" hidden></div>
 
@@ -755,24 +760,68 @@ var GCore = (function () {
   }
   var DRAG_MULTI_TXT = "Chrome prenesie do inej aplikácie len 1 fotku naraz. Celý výber priprav cez 💬 Do chatu " +
     "(Shift+D): fotky sa uložia vedľa seba a odtiaľ ich pretiahneš do Claude všetky naraz.";
-  // Ctrl+C / „Kopírovať obrázok“: čo načítať (do schránky ide PNG). Zmenšené = JPEG 2048 px zo servera,
-  // originál = súbor (JPEG/PNG…), HEIC/DNG ako JPEG v plnom rozlíšení (prehliadač ich nevie)
+  // Ctrl+C / „Kopírovať obrázok“: čo načítať (do schránky ide PNG). Najviac CLIP_MAX px na dlhšej strane – PNG
+  // z 50 Mpx fotky by mal desiatky MB a chat ho aj tak zmenší. Zmenšené = JPEG zo servera; JPEG/PNG do CLIP_MAX
+  // ako súbor; väčšie a HEIC/DNG ako náhľad zo servera (cache, aj formáty, ktoré prehliadač nevie)
+  var CLIP_MAX = 2048;
   function clipSrc(it, reduced, q) {
-    if (reduced) return { path: "/api/file", params: { id: it.id, q: q || 80, max: 2048 } };
-    if (browserNative(it.mime)) return { path: "/api/file", params: { id: it.id } };
+    if (reduced) return { path: "/api/file", params: { id: it.id, q: q || 80, max: CLIP_MAX } };
     var d = dispDims(it), long = Math.max(d.w, d.h);
-    return { path: "/api/thumb", params: { id: it.id, max: long > 0 ? Math.min(long, FULL_MAX) : FULL_MAX, v: it.mtime } };
+    if (browserNative(it.mime) && long > 0 && long <= CLIP_MAX) return { path: "/api/file", params: { id: it.id } };
+    return { path: "/api/thumb", params: { id: it.id, max: long > 0 ? Math.min(long, CLIP_MAX) : CLIP_MAX, v: it.mtime } };
   }
-  // tip do pomocníka: Chrome berie adresu v LAN (http://IP) ako nezabezpečenú – schránka a „Uložiť do priečinka“
-  // tam nejdú, kým ju používateľ nepovolí v chrome://flags
+  // tip do pomocníka: Chrome berie adresu http://IP ako nezabezpečenú – Wi-Fi aj USB kábel so Zdieľaním pripojenia
+  // (aj to je http://IP). Schránka, „Uložiť do priečinka“ a priečinok pre chat tam nejdú, kým adresu nepovolí
+  // v chrome://flags; bezpečný je len http://localhost (adb forward)
   function flagsTip(origin) {
-    return "Tip (voliteľné, platí len pre tento počítač): cez Wi-Fi (http://IP:port) Chrome nedovolí „📁 Uložiť do priečinka…“ ani " +
-      "kopírovanie obrázka do schránky (Ctrl+C), cez USB (localhost) áno. Dá sa to povoliť: otvor chrome://flags/#unsafely-treat-insecure-origin-as-secure, " +
+    return "Tip (voliteľné, platí len pre tento počítač): na adrese http://IP:port – cez Wi-Fi aj cez USB kábel so Zdieľaním pripojenia – " +
+      "Chrome nedovolí „📁 Uložiť do priečinka…“, priečinok pre chat ani kopírovanie obrázka do schránky (Ctrl+C). Ide to len na " +
+      "http://localhost (pre pokročilých: adb forward) alebo po povolení adresy: otvor chrome://flags/#unsafely-treat-insecure-origin-as-secure, " +
       "do poľa zadaj adresu servera" + (origin ? " (" + origin + ")" : " (http://IP:port)") + ", prepni na Enabled a reštartuj Chrome. " +
-      "Potom aj cez Wi-Fi funguje „Uložiť do priečinka“ aj kopírovanie obrázka.";
+      "Potom funguje „Uložiť do priečinka“, priečinok pre chat aj kopírovanie obrázka. Pri USB kábli sa adresa môže po novom pripojení zmeniť.";
   }
-  var CLIP_INSECURE_TXT = "Kopírovanie obrázka do schránky Chrome cez Wi-Fi (http://IP) nedovolí – funguje cez USB (localhost) " +
-    "alebo po povolení adresy v chrome://flags (pozri pomocníka ?). Inak fotku pretiahni myšou alebo použi 💬 Do chatu.";
+  var CLIP_INSECURE_TXT = "Kopírovanie obrázka do schránky Chrome na adrese http://IP nedovolí (ani cez USB kábel so Zdieľaním pripojenia) – " +
+    "ide len na http://localhost alebo po povolení adresy v chrome://flags (pozri pomocníka ?). Inak fotku pretiahni myšou alebo použi 💬 Do chatu.";
+  // klávesy, ktoré sa pri podržaní (auto-repeat) neopakujú: X / Delete by označili rad fotiek za sebou, D by poslal
+  // ďalšie ZIP-y
+  var NO_REPEAT_KEYS = ["x", "X", "Delete", "d", "D"];
+  function noRepeat(e) { return !!(e && e.repeat && NO_REPEAT_KEYS.indexOf(e.key) >= 0); }
+  // Ako často pingovať server (ms; 0 = vôbec): viditeľná karta s pohybom 4 s, po 2 min bez vstupu 30 s, po 10 min
+  // 60 s, skrytá karta nič (telefón sa tak nebudí zbytočne). active = ping s ?active=1 (server sa nevypne pre nečinnosť).
+  var PING_FAST = 4000, PING_IDLE = 30000, PING_SLEEP = 60000, IDLE_AFTER = 120000, SLEEP_AFTER = 600000;
+  function pingEvery(idleMs, hidden) {
+    if (hidden) return 0;
+    if (idleMs < IDLE_AFTER) return PING_FAST;
+    return idleMs < SLEEP_AFTER ? PING_IDLE : PING_SLEEP;
+  }
+  function pingActive(idleMs) { return idleMs < IDLE_AFTER; }
+  // výpadok spojenia: po LOST_AFTER neúspešných pingoch za sebou (sieť / timeout, nie 403)
+  var LOST_AFTER = 2;
+  function connLost(fails) { return fails >= LOST_AFTER; }
+  // mazanie: server berie najviac 1000 id naraz (aj dryRun) -> dávky po DEL_BATCH; súčet odpovedí
+  var DEL_BATCH = 500;
+  function delMerge(out, r) {
+    out.deleted = out.deleted.concat(r.deleted || []);
+    Object.keys(r.failed || {}).forEach(function (k) { out.failed[k] = r.failed[k]; });
+    out.freedBytes += r.freedBytes || 0;
+    if (r.recycleBin != null) out.recycleBin = r.recycleBin;
+    if (r.batchId) out.batchIds.push(r.batchId);
+    return out;
+  }
+  function dryMerge(out, r) {
+    out.count += r.count || 0;
+    out.freedBytes += r.freedBytes || 0;
+    if (r.recycleBin != null) out.recycleBin = r.recycleBin;
+    return out;
+  }
+  // hlásenie po mazaní: aj pri chybe v niektorej dávke povie, koľko sa už presunulo (a „Vrátiť“ ostane)
+  function delSummary(r) {
+    var failed = Object.keys(r.failed || {}).length;
+    var msg = (r.recycleBin ? "Presunuté do Koša: " : "Zmazané: ") + files(r.deleted.length) + " · " + fmtBytes(r.freedBytes) +
+      (failed ? " · nepodarilo sa: " + failed : "");
+    if (r.error) msg += " · zvyšných " + files(r.left) + " sa nezmazalo (" + r.error + ") – skús znova";
+    return msg;
+  }
   // prehliadač v PC vie JPEG/PNG/GIF/WebP/AVIF/BMP; HEIC, DNG a iné len cez náhľad zo servera
   function browserNative(mime) { return /^image\/(jpeg|jpg|png|gif|webp|avif|bmp)$/i.test(mime || ""); }
   function dlName(name, reduced) {
@@ -920,16 +969,29 @@ var GCore = (function () {
   // rozhodnutej skupiny a žiadna dotknutá skupina (aj z `all`) neostane bez neoznačenej fotky.
   // g = {key, kind, ids, keep, uncertain, scored, keeper}; keep = null -> preskočená (uncertain = neistá,
   // inak bez údajov); scored = id so skóre (presné kópie: všetky ids). Ponechaná označená fotka sa odznačí.
+  // Presné kópie: zmazať sa smie len kópia s rovnakou veľkosťou súboru aj rozlíšením ako ★ (ten istý súbor).
+  // Inak veľká fotka v skupine = upravená / prekódovaná verzia a ostáva vždy (ako „Upratať presné kópie“ v mobile).
+  // info(id) -> {size, w, h}; vráti id rovnaké ako keep (vrátane keep), neznáma veľkosť (0) = nie
+  function exactSame(ids, keepId, info) {
+    var k = info(keepId);
+    if (!k || !(k.size > 0)) return [];
+    return ids.filter(function (id) {
+      var x = info(id);
+      return !!x && x.size === k.size && (x.w || 0) === (k.w || 0) && (x.h || 0) === (k.h || 0);
+    });
+  }
   function bulkPlan(list, marked, all) {
-    var keeps = new Set(), del = [], delSet = new Set(), uncertain = 0, unknown = 0, decided = [];
+    var keeps = new Set(), del = [], delSet = new Set(), uncertain = 0, unknown = 0, edited = 0, decided = [];
     list.forEach(function (g) {
       var keep = g.keep != null && g.ids.indexOf(g.keep) >= 0 ? g.keep : null;
       if (keep == null) { if (g.uncertain) uncertain++; else unknown++; return; }
-      keeps.add(keep);
+      // presné kópie bez rovnakej kópie ★ (len upravené verzie): nič nemazať
+      keeps.add(keep); // ★ ostáva vždy (aj keď sa skupina preskočí)
+      if (g.kind === "exact" && g.scored && !g.scored.some(function (id) { return id !== keep; })) { edited++; return; }
       decided.push(g);
     });
     decided.forEach(function (g) {
-      var removable = g.kind === "exact" ? g.ids : (g.scored || []);
+      var removable = g.kind === "exact" ? (g.scored || g.ids) : (g.scored || []);
       removable.forEach(function (id) {
         if (g.ids.indexOf(id) >= 0 && !keeps.has(id) && !delSet.has(id)) { delSet.add(id); del.push(id); }
       });
@@ -949,7 +1011,8 @@ var GCore = (function () {
     var affected = decided.filter(function (g) { return g.ids.some(function (id) { return delSet.has(id); }); });
     return {
       mark: del.filter(function (id) { return !marked.has(id); }), unmark: unmark, all: del,
-      affected: affected.map(function (g) { return g.key; }), uncertain: uncertain, unknown: unknown, spared: spared
+      affected: affected.map(function (g) { return g.key; }), uncertain: uncertain, unknown: unknown, spared: spared,
+      edited: edited
     };
   }
   // „Na zmazanie sa označí 87 fotiek z 23 skupín (412 MB). 4 skupiny preskočené – neisté."
@@ -959,6 +1022,7 @@ var GCore = (function () {
     else parts.push("Nie je čo označiť.");
     if (plan.uncertain) parts.push(count(plan.uncertain, "skupina preskočená", "skupiny preskočené", "skupín preskočených") + " – " + plural(plan.uncertain, "neistá.", "neisté.", "neistých."));
     if (plan.unknown) parts.push(count(plan.unknown, "skupina preskočená", "skupiny preskočené", "skupín preskočených") + " – bez údajov.");
+    if (plan.edited) parts.push(count(plan.edited, "skupina presných kópií preskočená", "skupiny presných kópií preskočené", "skupín presných kópií preskočených") + " – je v nich len upravená verzia (iná veľkosť ako ★).");
     if (plan.spared.length) parts.push(count(plan.spared.length, "fotka ostane", "fotky ostanú", "fotiek ostane") + " navyše, aby iná skupina neprišla o všetky fotky.");
     if (extra) parts.push(extra);
     return parts.join(" ");
@@ -1304,13 +1368,15 @@ var GCore = (function () {
     for (var i = 0; i < ids.length; i += m) out.push(ids.slice(i, i + m));
     return out;
   }
-  // Server pripravuje naraz najviac 2 ZIP-y; ďalší dostane 503 {"error":"busy"}, ktorý by formulár ukázal
-  // namiesto stránky (zistiť sa to pri formulári nedá). ZIP odoslaný pred menej ako ZIP_BUSY_MS sa preto
-  // považuje za rozpracovaný; vráti, koľko ZIP-ov sa dá poslať teraz (sent = časy odoslania).
-  var ZIP_PARALLEL = 2, ZIP_BUSY_MS = 20000;
-  function zipFree(sent, now) {
-    var busy = (sent || []).filter(function (t) { return now - t < ZIP_BUSY_MS; }).length;
-    return Math.max(0, ZIP_PARALLEL - busy);
+  // Server pripravuje naraz najviac 2 ZIP-y (ďalší chvíľu počká, potom 503 busy). Formulár ide do skrytého rámca,
+  // takže chyba stránku nenahradí. Koľko ZIP-ov poslať teraz: server hlási voľné miesta v /api/ping (zipFree) –
+  // od nich sa odrátajú ZIP-y odoslané pred menej ako ZIP_PENDING_MS (server ich ešte nemusel začať). Starší
+  // server bez zipFree: ZIP odoslaný pred menej ako ZIP_BUSY_MS sa ráta ako rozpracovaný (sent = časy odoslania).
+  var ZIP_PARALLEL = 2, ZIP_BUSY_MS = 20000, ZIP_PENDING_MS = 3000;
+  function zipFree(sent, now, serverFree) {
+    var within = function (ms) { return (sent || []).filter(function (t) { return now - t < ms; }).length; };
+    if (typeof serverFree === "number") return Math.max(0, Math.min(ZIP_PARALLEL, serverFree) - within(ZIP_PENDING_MS));
+    return Math.max(0, ZIP_PARALLEL - within(ZIP_BUSY_MS));
   }
   function dlViaFetch(size) { return !(size > DL_FETCH_MAX); }
   function dlHoldMs(size) { return clamp(Math.round(600 + (size || 0) / DL_RATE * 1000), 600, 180000); }
@@ -1533,9 +1599,11 @@ var GCore = (function () {
     FAV_MAX: FAV_MAX, favChunks: favChunks, favPlan: favPlan, favChanged: favChanged, favPrev: favPrev, absorbFav: absorbFav,
     favNeedsFetch: favNeedsFetch, liveState: liveState, fileParams: fileParams, query: query, selLabel: selLabel, markBtnText: markBtnText,
     DRAG_MULTI_TXT: DRAG_MULTI_TXT, clipSrc: clipSrc, flagsTip: flagsTip, CLIP_INSECURE_TXT: CLIP_INSECURE_TXT,
-    ZIP_PARALLEL: ZIP_PARALLEL, zipFree: zipFree,
+    ZIP_PARALLEL: ZIP_PARALLEL, zipFree: zipFree, CLIP_MAX: CLIP_MAX, noRepeat: noRepeat,
+    pingEvery: pingEvery, pingActive: pingActive, connLost: connLost,
+    DEL_BATCH: DEL_BATCH, delMerge: delMerge, dryMerge: dryMerge, delSummary: delSummary,
     stateOf: stateOf, markedCount: markedCount, sortGroups: sortGroups, filterGroups: filterGroups,
-    nextOpen: nextOpen, progress: progress, keepPlan: keepPlan,
+    nextOpen: nextOpen, progress: progress, keepPlan: keepPlan, exactSame: exactSame,
     Undo: Undo, revertMarks: revertMarks, metaRows: metaRows, metaDiff: metaDiff,
     reasonText: reasonText, scoreLine: scoreLine, qualityChunks: qualityChunks, bulkPlan: bulkPlan, bulkSummary: bulkSummary,
     gridMove: gridMove, rangeIds: rangeIds, extendSelection: extendSelection, chatName: chatName, chatPlan: chatPlan,
@@ -1748,7 +1816,9 @@ if (typeof module !== "undefined" && module.exports) module.exports = GCore;
       start(p);
     }).catch(function (err) {
       $("#lErr").textContent = err.code === "locked" ? "Server je zamknutý — spusti ho v mobile znova."
-        : err.code === "bad_pin" ? "Nesprávny PIN." : "Prihlásenie zlyhalo (" + err.message + ").";
+        : err.code === "bad_pin" ? "Nesprávny PIN."
+        : err.code === "pin_paused" ? "Priveľa nesprávnych PIN-ov – server teraz nové prihlásenie nepustí. Skús o pár minút (PIN je v notifikácii mobilu)."
+        : "Prihlásenie zlyhalo (" + err.message + ").";
     });
   });
 
@@ -1772,7 +1842,11 @@ if (typeof module !== "undefined" && module.exports) module.exports = GCore;
     if (started) { reloadAll(); return; }
     started = true;
     reloadAll();
-    setInterval(function () { if (!document.hidden) tick(); }, 4000);
+    // ping podľa aktivity (C.pingEvery): 4 s pri práci, 30 s / 60 s pri nečinnosti, skrytá karta nič
+    setInterval(function () {
+      var every = C.pingEvery(Date.now() - LIVE.input, document.hidden);
+      if (every && Date.now() - LIVE.last >= every) tick();
+    }, 1000);
     document.addEventListener("visibilitychange", function () {
       if (document.hidden) return;
       tick();
@@ -1814,11 +1888,41 @@ if (typeof module !== "undefined" && module.exports) module.exports = GCore;
   function dropUnknown() {
     S.sel.forEach(function (id) { if (!S.byId.has(id)) S.sel.delete(id); });
   }
+  // ================= spojenie s mobilom: aktivita, výpadok =================
+  // input = posledný vstup používateľa (myš, klávesy, koliesko), last = posledný ping, fails = neúspešné za sebou
+  var LIVE = { input: Date.now(), last: 0, fails: 0 };
+  ["pointermove", "pointerdown", "keydown", "wheel", "touchstart"].forEach(function (ev) {
+    document.addEventListener(ev, function () {
+      var idleWas = Date.now() - LIVE.input;
+      LIVE.input = Date.now();
+      // návrat k počítaču po nečinnosti: zmeny z mobilu hneď, nie až o minútu
+      if (started && !C.pingActive(idleWas) && Date.now() - LIVE.last > 4000) tick();
+    }, { passive: true, capture: true });
+  });
+  function setLost(on) {
+    var b = $("#connLost");
+    if (!on) { b.hidden = true; return; }
+    $("#connLostT").textContent = "Mobil neodpovedá – server pre PC je vypnutý (po 30 min nečinnosti sa vypne sám) alebo telefón nie je " +
+      "na tej istej sieti / kábli. Spusti server v mobile znova; stránka sa pripojí sama.";
+    b.hidden = false;
+  }
+  $("#connRetry").addEventListener("click", function () { LIVE.input = Date.now(); tick(); });
+  // ping s časovým limitom 8 s (visiace spojenie nesmie zastaviť ďalšie pingy); ?active=1, kým sa používateľ hýbe
+  function pingLive() {
+    var ctl = window.AbortController ? new AbortController() : null;
+    var t = ctl ? setTimeout(function () { ctl.abort(); }, 8000) : 0;
+    var params = C.pingActive(Date.now() - LIVE.input) ? { active: 1 } : null;
+    return fetch(url("/api/ping", params), { credentials: "same-origin", headers: headers(false), signal: ctl ? ctl.signal : undefined })
+      .then(function (r) { clearTimeout(t); return check(r); }, function () { clearTimeout(t); throw new ApiError(0, "network"); });
+  }
   var ticking = false;
   function tick() {
     if (ticking || !started) return;
     ticking = true;
-    get("/api/ping").then(function (p) {
+    LIVE.last = Date.now();
+    pingLive().then(function (p) {
+      LIVE.fails = 0;
+      setLost(false);
       S.ping = p;
       applyFeatures(false);
       if (p.epoch !== S.epoch) return reloadAll();
@@ -1829,7 +1933,9 @@ if (typeof module !== "undefined" && module.exports) module.exports = GCore;
       if (p.stateGen !== S.stateGen) jobs.push(refreshState());
       if (favFetch) jobs.push(refreshFavs());
       return Promise.all(jobs);
-    }).catch(function () { }).then(function () { ticking = false; });
+    }).catch(function (e) {
+      if (e && e.status === 0 && e.code === "network" && C.connLost(++LIVE.fails)) setLost(true);
+    }).then(function () { ticking = false; });
   }
   var soonT = 0;
   function tickSoon(ms) { clearTimeout(soonT); soonT = setTimeout(tick, ms || 1500); }
@@ -1882,7 +1988,7 @@ if (typeof module !== "undefined" && module.exports) module.exports = GCore;
   // odozvy nik nevie, či a kam sa stiahlo. Preto: viac originálov = JEDEN ZIP (POST /api/zip), inak po jednom –
   // každý až po dokončení predošlého (náhľady, ping a API nestoja). Súbory do ~200 MB cez fetch (stav odpovede =
   // overenie: 403 prihlásenie, 404 súbor zmizol), väčšie najprv overiť (Range 0-0) a potom priamym odkazom.
-  // Na localhoste (bezpečný kontext, USB) ide výber uložiť priamo do priečinka (showDirectoryPicker).
+  // V bezpečnom kontexte (http://localhost, alebo adresa povolená v chrome://flags) ide výber uložiť priamo do priečinka.
   var DLQ = { queue: [], busy: false, total: 0, ok: 0, fails: {}, ctl: null, label: "", dir: null, cur: "", action: null };
   function dlJob(it, opt) {
     opt = opt || {};
@@ -1982,25 +2088,29 @@ if (typeof module !== "undefined" && module.exports) module.exports = GCore;
     DLQ.total = DLQ.ok = 0; DLQ.fails = {}; DLQ.label = ""; DLQ.dir = null; DLQ.cur = ""; DLQ.action = null;
   }
   // viac originálov naraz: jeden ZIP – formulár POST /api/zip (prehliadač ho uloží sám, bez načítania do pamäte).
-  // Prihlásenie sa overí vopred (chyba formulára by inak nahradila stránku JSON-om).
-  // Server pripravuje naraz najviac 2 ZIP-y (ďalší = 503 busy, ktorý by formulár ukázal namiesto stránky): web
-  // pošle najviac toľko, koľko je voľných (C.zipFree), zvyšok ponúkne tlačidlom v hlásení.
-  var ZIPS = { sent: [] };
+  // Formulár ide do SKRYTÉHO RÁMCA (iframe): ZIP sa stiahne ako vždy, ale chybová odpoveď (503 busy, 403) skončí
+  // v rámci, nie namiesto stránky (výber, Ctrl+Z, otvorený porovnávač ostanú). Prihlásenie a voľné miesta sa
+  // overia vopred cez /api/ping (zipFree); zvyšok ponúkne tlačidlo v hlásení.
+  var ZIPS = { sent: [], seq: 0 };
   function zipDownload(list) {
-    var free = C.zipFree(ZIPS.sent, Date.now());
-    if (!free) { toast("Server je zaneprázdnený (pripravuje 2 ZIP-y naraz), skús o chvíľu – keď sa predošlé stiahnu (Ctrl+J).", { ms: 9000 }); return; }
-    var chunks = C.zipChunks(list), now = chunks.slice(0, free), rest = [].concat.apply([], chunks.slice(free));
-    var ids = [].concat.apply([], now).map(function (it) { return it.id; });
-    var bytes = [].concat.apply([], now).reduce(function (s, it) { return s + (it.size || 0); }, 0);
+    var chunks = C.zipChunks(list);
     fetch("/api/ping", { credentials: "same-origin", headers: headers(false) }).then(function (r) {
       if (!r.ok) {
         toast("Sťahovanie zlyhalo: " + C.dlReason(r.status));
         if (r.status === 403) authLost("forbidden");
-        return;
+        return null;
       }
+      return r.json();
+    }).then(function (p) {
+      if (!p) return;
+      var free = C.zipFree(ZIPS.sent, Date.now(), p.zipFree);
+      if (!free) { toast("Server práve pripravuje 2 ZIP-y – ďalší pôjde, keď sa niektorý z nich stiahne (Ctrl+J).", { ms: 9000, action: "Skúsiť znova", onAction: function () { zipDownload(list); } }); return; }
+      var now = chunks.slice(0, free), rest = [].concat.apply([], chunks.slice(free));
+      var ids = [].concat.apply([], now).map(function (it) { return it.id; });
+      var bytes = [].concat.apply([], now).reduce(function (s, it) { return s + (it.size || 0); }, 0);
       now.forEach(function (ch, k) {
         ZIPS.sent.push(Date.now());
-        setTimeout(function () { submitZip(ch.map(function (it) { return it.id; })); }, k * 2000);
+        setTimeout(function () { submitZip(ch); }, k * 2000);
       });
       var msg = "Sťahujem ZIP: " + C.photos(ids.length) + " (" + C.fmtBytes(bytes) + ") → priečinok Stiahnuté súbory v Chrome (Ctrl+J). " +
         "Ak Chrome hlási „nezabezpečené stiahnutie“, klikni Ponechať.";
@@ -2011,17 +2121,32 @@ if (typeof module !== "undefined" && module.exports) module.exports = GCore;
       tickSoon(6000);
     }).catch(function () { toast("Sťahovanie zlyhalo: " + C.dlReason(0)); });
   }
-  function submitZip(ids) {
+  // Stiahnutie (Content-Disposition: attachment) rámec nenačíta – udalosť load príde len vtedy, keď server
+  // vrátil niečo iné (chyba; Chrome ju v rámci kvôli X-Frame-Options nezobrazí). Vtedy hlásenie s opakovaním.
+  function submitZip(items) {
+    var name = "gzip" + (++ZIPS.seq);
+    var fr = document.createElement("iframe");
+    fr.name = name; fr.hidden = true; fr.title = "ZIP";
+    document.body.appendChild(fr); // prázdny rámec si load odbaví hneď pri vložení – poslucháč až potom
     var f = document.createElement("form");
-    f.method = "POST"; f.action = "/api/zip"; f.hidden = true;
+    f.method = "POST"; f.action = "/api/zip"; f.hidden = true; f.target = name;
     var add = function (n, v) { var i = document.createElement("input"); i.type = "hidden"; i.name = n; i.value = v; f.appendChild(i); };
-    add("ids", ids.join(","));
+    add("ids", items.map(function (it) { return it.id; }).join(","));
     if (AUTH.token) add("token", AUTH.token);
     document.body.appendChild(f);
+    var gone = setTimeout(function () { fr.remove(); }, 3600000); // rámec po hodine preč (sťahovanie už beží samo)
+    fr.addEventListener("load", function () {
+      clearTimeout(gone);
+      setTimeout(function () { fr.remove(); }, 1000);
+      toast("ZIP sa nespustil (server je zaneprázdnený, prihlásenie vypršalo alebo vypadlo spojenie) – " + C.photos(items.length) + ".",
+        { ms: 20000, action: "Skúsiť znova", onAction: function () { zipDownload(items); } });
+      tickSoon(500);
+    });
     f.submit();
     f.remove();
   }
-  // „📁 Uložiť do priečinka…“ – len v bezpečnom kontexte (localhost cez USB), inde ho prehliadač nedovolí
+  // „📁 Uložiť do priečinka…“ – len v bezpečnom kontexte (http://localhost cez adb forward alebo adresa povolená
+  // v chrome://flags); na http://IP (Wi-Fi aj USB kábel so Zdieľaním pripojenia) ho prehliadač nedovolí a tlačidlo je skryté
   var canDir = !!(window.isSecureContext && window.showDirectoryPicker);
   function saveToDir(list) {
     if (!canDir || !list.length) return;
@@ -2031,7 +2156,7 @@ if (typeof module !== "undefined" && module.exports) module.exports = GCore;
   }
   // „Do chatu": fotky ako zmenšené JPEG (dlhá strana 2048 px, kvalita 85) s predponou Claude_, každá ako samostatný
   // súbor – odtiaľ ich Lukáš pretiahne do chatu Claude všetky naraz (z prehliadača Chrome pustí len 1 súbor).
-  // Kde to prehliadač dovolí (USB/localhost alebo adresa povolená v chrome://flags), idú do DOČASNÉHO PRIEČINKA
+  // Kde to prehliadač dovolí (http://localhost alebo adresa povolená v chrome://flags), idú do DOČASNÉHO PRIEČINKA
   // pre chat: vyberie sa raz a pamätá sa (IndexedDB); pred ďalším odoslaním sa z neho zmažú LEN súbory, ktoré tam
   // web zapísal minule. Inak do Stiahnutých. Zmenšená kópia nezapíše „✓ v PC" (server to robí len pri origináli).
   var CHAT_Q = 85;
@@ -2143,6 +2268,8 @@ if (typeof module !== "undefined" && module.exports) module.exports = GCore;
     if (!S.sel.size) S.anchor = Number(curId); // kotva pre Shift+X (interval na zmazanie)
     setMarks(plan.ids, plan.del).then(function (ch) {
       if (S.sel.size || ch.length > 1) toast((plan.del ? "Označené na zmazanie: " : "Zrušená značka: ") + C.photos(ch.length) + " · Ctrl+Z vráti");
+      // pri skrývaní označených fotka zmizne a na jej miesto príde ďalšia – krátke potvrdenie, čo sa označilo
+      else if (ch.length === 1 && plan.del && S.hideMarked) { var mi = item(ch[0]); toast("🗑 " + (mi ? mi.name : "fotka") + " · Ctrl+Z vráti"); }
     }).catch(function () { });
   }
   // interval od kotvy po fotku i na zmazanie: forceOn null = podľa kotvy (C.rangePlan), true/false = vždy označiť/zrušiť
@@ -2491,7 +2618,10 @@ if (typeof module !== "undefined" && module.exports) module.exports = GCore;
     renderWindow(true);
     if (S.mode === "preview") pvRefresh(resetScroll);
   }
-  qInput.addEventListener("input", function () { clearTimeout(filterT); filterT = setTimeout(function () { applyFilter(true); window.scrollTo(0, 0); }, 160); });
+  var onQuery = function () { clearTimeout(filterT); filterT = setTimeout(function () { applyFilter(true); window.scrollTo(0, 0); }, 160); };
+  qInput.addEventListener("input", onQuery);
+  // Esc v poli hľadania (type=search) ho vyprázdni bez udalosti input – zoznam sa musí obnoviť aj vtedy
+  qInput.addEventListener("search", onQuery);
   fSel.addEventListener("change", function () { store("gfilter", fSel.value); filterWant = null; applyFilter(true); window.scrollTo(0, 0); });
 
   function setCursor(i, scroll) {
@@ -3914,7 +4044,8 @@ if (typeof module !== "undefined" && module.exports) module.exports = GCore;
       key: g.key, kind: g.kind, ids: g.ids, keeper: g.keeper,
       keep: exact ? g.keep : (g.quality && !g.uncertain ? g.best : null),
       uncertain: !exact && !!g.quality && !!g.uncertain,
-      scored: exact ? g.ids : (g.scored || [])
+      // presné kópie: zmazať len rovnaký súbor ako ★ (veľkosť aj rozlíšenie), upravená verzia ostáva
+      scored: exact ? C.exactSame(g.ids, g.keep, function (id) { return item(id); }) : (g.scored || [])
     };
   }
   var bulkBusy = false;
@@ -4446,7 +4577,7 @@ if (typeof module !== "undefined" && module.exports) module.exports = GCore;
   });
 
   // ================= kopírovanie obrázka do schránky (Ctrl+C, „Kopírovať obrázok“) =================
-  // navigator.clipboard.write vie len image/png a len v bezpečnom kontexte (localhost cez USB, alebo adresa
+  // navigator.clipboard.write vie len image/png a len v bezpečnom kontexte (http://localhost cez adb forward, alebo adresa
   // povolená v chrome://flags) – na http://IP sa položka menu neukáže a Ctrl+C vysvetlí prečo.
   var canClip = !!(window.isSecureContext && navigator.clipboard && navigator.clipboard.write && window.ClipboardItem);
   function pngOf(blob) {
@@ -4566,7 +4697,7 @@ if (typeof module !== "undefined" && module.exports) module.exports = GCore;
   $("#mDelete").addEventListener("click", function () {
     var ids = Array.from(S.marked);
     if (!ids.length) return;
-    post("/api/delete", { ids: ids, dryRun: true }).then(function (d) {
+    dryRunInBatches(ids).then(function (d) {
       var txt = (d.recycleBin ? "Presunúť do Koša Galérie+ v mobile " : "NATRVALO zmazať v mobile ") + C.files(d.count) + " (" + C.fmtBytes(d.freedBytes) + ")?" +
         (d.recycleBin ? " Dajú sa obnoviť." : " Kôš je vypnutý — nepôjdu obnoviť.");
       return ask(d.recycleBin ? "Zmazať do Koša" : "Zmazať natrvalo", txt, d.recycleBin ? "Presunúť do Koša" : "Zmazať natrvalo").then(function (ok) {
@@ -4575,32 +4706,45 @@ if (typeof module !== "undefined" && module.exports) module.exports = GCore;
       });
     }).then(function (r) {
       if (!r) return;
-      var failed = Object.keys(r.failed || {}).length;
-      var msg = (r.recycleBin ? "Presunuté do Koša: " : "Zmazané: ") + C.files(r.deleted.length) + " · " + C.fmtBytes(r.freedBytes) + (failed ? " · nepodarilo sa: " + failed : "");
-      if (r.batchIds.length) toast(msg, { action: "Vrátiť", onAction: function () { restore({ batchIds: r.batchIds }); } });
-      else toast(msg);
+      var msg = C.delSummary(r);
+      // „Vrátiť“ obnoví všetky dávky (aj keď niektorá ďalšia zlyhala)
+      if (r.batchIds.length) toast(msg, { action: "Vrátiť", ms: r.error ? 30000 : 15000, onAction: function () { restore({ batchIds: r.batchIds }); } });
+      else toast(msg, { ms: r.error ? 15000 : 6000 });
       tick(); renderMarked();
     }).catch(function (e) {
       toast(e.code === "no_all_files_access" ? "Mobil nemá „Prístup ku všetkým súborom“ — zmazanie potvrď v mobile." : "Mazanie zlyhalo (" + e.message + ")");
     });
   });
-  // server berie najviac 1000 id naraz
+  // server berie najviac 1000 id naraz (aj dryRun) -> po C.DEL_BATCH za sebou
+  function delChunks(ids) { return C.zipChunks(ids, C.DEL_BATCH); }
+  function dryRunInBatches(ids) {
+    var out = { count: 0, freedBytes: 0, recycleBin: true };
+    return delChunks(ids).reduce(function (p, ch) {
+      return p.then(function () { return post("/api/delete", { ids: ch, dryRun: true }).then(function (d) { C.dryMerge(out, d); }); });
+    }, Promise.resolve()).then(function () { return out; });
+  }
+  // Chyba v niektorej dávke nezahodí výsledok predošlých: vráti čiastočný výsledok s error a left (koľko ostalo),
+  // „Vrátiť“ ostane pre všetky hotové dávky. Prvá dávka zlyhá = výnimka (nič sa nezmazalo). Priebeh v hlásení.
   function deleteInBatches(ids) {
     var out = { deleted: [], failed: {}, freedBytes: 0, recycleBin: true, batchIds: [] };
-    var chunks = [];
-    for (var i = 0; i < ids.length; i += 500) chunks.push(ids.slice(i, i + 500));
-    return chunks.reduce(function (p, ch) {
-      return p.then(function () {
-        return post("/api/delete", { ids: ch }).then(function (r) {
-          out.deleted = out.deleted.concat(r.deleted || []);
-          Object.assign(out.failed, r.failed || {});
-          out.freedBytes += r.freedBytes || 0;
-          out.recycleBin = r.recycleBin;
-          if (r.batchId) out.batchIds.push(r.batchId);
-          (r.deleted || []).forEach(function (id) { S.marked.delete(id); });
-        });
+    var chunks = delChunks(ids), done = 0;
+    var step = function (k) {
+      if (k >= chunks.length) return Promise.resolve(out);
+      if (chunks.length > 1) toast("Mažem… dávka " + (k + 1) + " / " + chunks.length + " (" + C.files(done) + " hotových)", { ms: 600000 });
+      return post("/api/delete", { ids: chunks[k] }).then(function (r) {
+        C.delMerge(out, r);
+        done += chunks[k].length;
+        (r.deleted || []).forEach(function (id) { S.marked.delete(id); });
+        updateMarkedChip();
+        return step(k + 1);
+      }, function (e) {
+        if (!k) throw e;
+        out.error = e.message;
+        out.left = ids.length - done;
+        return out;
       });
-    }, Promise.resolve()).then(function () { updateMarkedChip(); return out; });
+    };
+    return step(0).then(function (r) { updateMarkedChip(); return r; });
   }
   function restore(what) {
     var jobs = (what.batchIds || []).map(function (b) { return post("/api/restore", { batchId: b }); });
@@ -4713,8 +4857,12 @@ if (typeof module !== "undefined" && module.exports) module.exports = GCore;
         "Ponechať; ak sa pýta na „sťahovanie viacerých súborov“, klikni Povoliť. Posuvník „Kvalita zmenšeného JPEG“ platí len pre zmenšené sťahovanie. " +
         "Server pripraví naraz najviac 2 ZIP-y (viac ako 500 fotiek sa delí na viac ZIP-ov) – ak je zaneprázdnený, počkaj, kým sa predošlé stiahnu.",
       "Do inej aplikácie (napr. chat Claude) pretiahni miniatúru alebo fotku myšou – prenesie sa skutočný súbor (originál alebo zmenšené JPEG " +
-        "podľa voľby sťahovania), vždy len 1 fotka (viac Chrome nedovolí). Viac fotiek: 📁 Uložiť do priečinka (cez USB) a pretiahni ich " +
-        "z priečinka, alebo ⬇ Stiahnuť (ZIP), alebo v telefóne Zdieľať → aplikácia. Ctrl+C skopíruje fotku ako obrázok do schránky.",
+        "podľa voľby sťahovania, z miniatúry pod jej skutočným menom), vždy len 1 fotka (viac Chrome nedovolí). Viac fotiek: 💬 Do chatu " +
+        "(Shift+D) a pretiahni ich zo Stiahnutých, alebo ⬇ Stiahnuť (ZIP), alebo v telefóne Zdieľať → aplikácia." +
+        (canClip ? " Ctrl+C skopíruje fotku ako obrázok do schránky (najviac 2048 px)." : " Kopírovanie obrázka (Ctrl+C) a 📁 Uložiť do priečinka tu Chrome nedovolí – pozri tip nižšie."),
+      "Spojenie: server v mobile prijme len zariadenia z tej istej siete (Wi-Fi, USB kábel, hotspot). Keď 30 min nič nerobíš, sám sa vypne " +
+        "(šetrí batériu) – stránka ukáže, že mobil neodpovedá; po novom spustení zadaj nový PIN. Kým je karta skrytá alebo sa nehýbeš, " +
+        "pýta sa mobilu len zriedka.",
       "Označenie je len návrh. Fotky označené na zmazanie sú predvolene skryté (H ich ukáže stlmené). Zmazanie potvrdíš v mobile (appka sa opýta " +
         "pri otvorení), alebo v prehľade „Na zmazanie“ tlačidlom „Zmazať do Koša teraz“, ak má Galéria+ prístup ku všetkým súborom."
     ].forEach(function (t) { helpNote(body, t); });
@@ -4859,6 +5007,8 @@ if (typeof module !== "undefined" && module.exports) module.exports = GCore;
       return;
     }
     if (typing || ov === loginOv || ov === $("#ask") || ov === workOv) return;
+    // držaný X / Delete / D sa neopakuje (inak by označil rad fotiek, ktoré ani nevidno, alebo poslal ďalšie ZIP-y)
+    if (C.noRepeat(e)) { e.preventDefault(); return; }
     if (e.key === "ContextMenu" || (e.key === "F10" && e.shiftKey)) {
       var tg = ctxTargetKey();
       if (!tg) return;
