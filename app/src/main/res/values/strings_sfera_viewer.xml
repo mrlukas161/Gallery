@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Sféra: prezeranie guľovej panorámy -->
+<resources>
+    <string name="sphere_viewer_not_sphere">Táto fotka nie je guľová panoráma</string>
+    <string name="sphere_viewer_load_failed">Fotku sa nepodarilo načítať</string>
+    <string name="sphere_viewer_back">Späť</string>
+    <string name="sphere_viewer_gyro">Gyroskop</string>
+    <string name="sphere_viewer_gyro_on">Gyroskop zapnutý</string>
+    <string name="sphere_viewer_gyro_off">Gyroskop vypnutý</string>
+    <string name="sphere_viewer_no_gyro">Zariadenie nemá gyroskop</string>
+</resources>
