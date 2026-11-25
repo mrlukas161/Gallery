@@ -35,9 +35,15 @@
     <!-- potrebné pre ClipModels.isMeteredNetwork() - CLIP model sa nesťahuje na mobilných dátach -->
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
-    <uses-permission
-        android:name="android.permission.CAMERA"
-        tools:node="remove" />
+    <!-- režim Sféra (vlastné snímanie guľových fotiek); o povolenie sa žiada až pri otvorení režimu -->
+    <uses-permission android:name="android.permission.CAMERA" />
+
+    <uses-feature
+        android:name="android.hardware.camera.any"
+        android:required="false" />
+    <uses-feature
+        android:name="android.hardware.sensor.gyroscope"
+        android:required="false" />
 
     <queries>
         <package android:name="org.fossify.gallery.debug" />
@@ -731,6 +737,24 @@
             android:configChanges="orientation|screenSize"
             android:exported="false"
             android:parentActivityName=".activities.CompareListActivity" />
+
+        <!-- režim Sféra: snímanie s navádzaním, prezeranie gule, skladanie na pozadí -->
+        <activity
+            android:name=".sphere.SphereCaptureActivity"
+            android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboardHidden"
+            android:exported="false"
+            android:parentActivityName=".activities.MainActivity"
+            android:screenOrientation="portrait" />
+
+        <activity
+            android:name=".sphere.SphereViewerActivity"
+            android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboardHidden"
+            android:exported="false" />
+
+        <service
+            android:name=".sphere.SphereStitchService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
 
         <service
             android:name=".services.IndexingService"

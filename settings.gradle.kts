@@ -18,3 +18,6 @@ dependencyResolutionManagement {
 rootProject.name = "Gallery"
 enableFeaturePreview("TYPESAFE_PROJECT_ACCESSORS")
 include(":app")
+// jadro režimu Sféra; leží pod app/, lebo lokálne klony sú riedke (sparse) len na app, gradle, .github
+include(":spherecore")
+project(":spherecore").projectDir = file("app/spherecore")

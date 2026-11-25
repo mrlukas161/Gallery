@@ -212,6 +212,13 @@ dependencies {
     implementation("com.google.zxing:core:3.5.4")
     implementation("org.nanohttpd:nanohttpd:2.3.1")
     implementation("com.microsoft.onnxruntime:onnxruntime-android:1.20.0")
+    // režim Sféra: snímanie (CameraX), skladanie (OpenCV) a spoločné jadro
+    implementation(project(":spherecore"))
+    implementation(libs.androidx.camera.core)
+    implementation(libs.androidx.camera.camera2)
+    implementation(libs.androidx.camera.lifecycle)
+    implementation(libs.androidx.camera.view)
+    implementation(libs.opencv)
     ksp(libs.androidx.room.compiler)
     testImplementation("junit:junit:4.13.2")
     // skutočné org.json pre JVM unit testy (v android.jar sú len prázdne náhrady)
