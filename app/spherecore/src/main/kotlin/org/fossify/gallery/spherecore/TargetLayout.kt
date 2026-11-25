@@ -30,25 +30,32 @@ object TargetLayout {
     const val MAX_RING_PITCH = 72.0
     const val POLE_RING = 99
 
+    /** Najviac cieľov, ktoré generátor navrhne (okrem prípadu, keď inak zostanú diery). */
+    const val MAX_TARGETS = 46
+
+    private val cache = HashMap<String, List<Target>>()
+
+    /**
+     * Návrh cieľov: skúša sa niekoľko rozložení (prekryv v rade, počet radov, výška najvyššieho radu) a vyberie sa
+     * to s najmenším počtom cieľov, ktoré bez dier pokryje guľu v strednom 92 % záberov aspoň dvojnásobne
+     * na ≥ 95 % smerov (nutné pre spoľahlivé párovanie a prelínanie). Ak to do [MAX_TARGETS] nejde,
+     * vyberie sa rozloženie s najväčším dvojitým pokrytím do tohto počtu.
+     */
     fun generate(hFovDeg: Double, vFovDeg: Double): List<Target> {
         val h = hFovDeg.coerceIn(30.0, 130.0)
         val v = vFovDeg.coerceIn(30.0, 130.0)
+        val key = "%.2f/%.2f".format(java.util.Locale.ROOT, h, v)
+        synchronized(cache) { cache[key]?.let { return it } }
+        val res = search(h, v)
+        synchronized(cache) { cache[key] = res }
+        return res
+    }
+
+    /** Rozloženie s pevnými parametrami: prekryv v rade, počet radov nad horizontom a výška najvyššieho radu. */
+    fun build(h: Double, v: Double, overlapH: Double, rings: Int, topPitchDeg: Double): List<Target> {
         val out = ArrayList<Target>()
-
-        // rady nad horizontom (zrkadlovo pod ním)
-        val ringPitches = ArrayList<Double>()
-        ringPitches.add(0.0)
-        val step = v * (1 - OVERLAP_V)
-        val poleReach = 90.0 - minOf(h, v) / 2 + POLE_OVERLAP_DEG // po túto výšku musí siahať posledný rad
-        var guard = 0
-        while (worstTopDeg(ringPitches.last(), h, v) < poleReach && guard++ < 6) {
-            val next = (ringPitches.last() + step).coerceAtMost(MAX_RING_PITCH)
-            if (next - ringPitches.last() < 5.0) break
-            ringPitches.add(next)
-        }
-
         fun addRing(pitch: Double, ring: Int, stagger: Boolean) {
-            val n = ringCount(pitch, h)
+            val n = ringCount(pitch, h, overlapH)
             val stepYaw = 360.0 / n
             val off = if (stagger) stepYaw / 2 else 0.0
             for (i in 0 until n) {
@@ -57,21 +64,88 @@ object TargetLayout {
                 out.add(Target(out.size, yaw, pitch, ring, false))
             }
         }
-
         addRing(0.0, 0, false)
-        for (k in 1 until ringPitches.size) addRing(ringPitches[k], k, k % 2 == 1)
-        for (k in 1 until ringPitches.size) addRing(-ringPitches[k], -k, k % 2 == 1)
+        for (k in 1..rings) addRing(topPitchDeg * k / rings, k, k % 2 == 1)
+        for (k in 1..rings) addRing(-topPitchDeg * k / rings, -k, k % 2 == 1)
         out.add(Target(out.size, 0.0, 90.0, POLE_RING, true))
         out.add(Target(out.size, 0.0, -90.0, -POLE_RING, true))
         return out
     }
 
+    private val evalPano = PanoFrame(doubleArrayOf(0.0, 1.0, 0.0), doubleArrayOf(1.0, 0.0, 0.0), doubleArrayOf(0.0, 0.0, 1.0))
+
+    private val evalDirs: List<DoubleArray> by lazy {
+        val d = ArrayList<DoubleArray>()
+        var lat = -90.0
+        while (lat <= 90.0 + 1e-9) {
+            val n = if (kotlin.math.abs(lat) > 89.9) 1 else maxOf(1, Math.round(120.0 * cos(Math.toRadians(lat))).toInt())
+            for (i in 0 until n) d.add(evalPano.dir(i * 360.0 / n + 1.3, lat))
+            lat += 3.0
+        }
+        d
+    }
+
+    /** Podiel smerov pokrytých aspoň dvakrát (centrálne 92 %) a počet nepokrytých smerov. */
+    private fun coverage(t: List<Target>, h: Double, v: Double): Pair<Double, Int> {
+        val th = tan(Math.toRadians(h / 2)) * 0.92
+        val tv = tan(Math.toRadians(v / 2)) * 0.92
+        val cams = t.map { PanoFrame.cameraLookingAt(evalPano, it.yawDeg, it.pitchDeg).m }
+        var two = 0
+        var none = 0
+        for (d in evalDirs) {
+            var c = 0
+            for (m in cams) {
+                val z = m[2] * d[0] + m[5] * d[1] + m[8] * d[2]
+                if (z <= 1e-6) continue
+                val x = m[0] * d[0] + m[3] * d[1] + m[6] * d[2]
+                if (kotlin.math.abs(x) > th * z) continue
+                val y = m[1] * d[0] + m[4] * d[1] + m[7] * d[2]
+                if (kotlin.math.abs(y) > tv * z) continue
+                if (++c >= 2) break
+            }
+            if (c == 0) none++
+            if (c >= 2) two++
+        }
+        return two.toDouble() / evalDirs.size to none
+    }
+
+    private fun search(h: Double, v: Double): List<Target> {
+        var best: List<Target>? = null
+        var bestScore = -1e9
+        var bestOk: List<Target>? = null
+        var bestOkCount = Int.MAX_VALUE
+        var bestOkTwo = 0.0
+        var oh = 0.30
+        while (oh <= 0.601) {
+            for (rings in 1..4) {
+                var top = 30.0
+                while (top <= 78.0 + 1e-9) {
+                    val t = build(h, v, oh, rings, top)
+                    if (t.size <= 80) {
+                        val (two, none) = coverage(t, h, v)
+                        if (none == 0) {
+                            if (two >= 0.955 && (t.size < bestOkCount || (t.size == bestOkCount && two > bestOkTwo))) {
+                                bestOk = t; bestOkCount = t.size; bestOkTwo = two
+                            }
+                            val score = (if (t.size <= MAX_TARGETS) 0.0 else -(t.size - MAX_TARGETS) * 0.05) + two
+                            if (score > bestScore) { bestScore = score; best = t }
+                        }
+                    }
+                    top += 3.0
+                }
+            }
+            oh += 0.025
+        }
+        val pick = if (bestOk != null && bestOkCount <= MAX_TARGETS) bestOk else (best ?: bestOk ?: build(h, v, OVERLAP_H, 1, 50.0))
+        return pick.mapIndexed { i, t -> t.copy(index = i) }
+    }
+
     /** Počet záberov v rade s danou výškou: šírka záberu v azimute rastie s 1/cos(výška). */
-    fun ringCount(pitchDeg: Double, hFovDeg: Double): Int {
+    fun ringCount(pitchDeg: Double, hFovDeg: Double, overlapH: Double = OVERLAP_H): Int {
         val half = Math.toRadians(hFovDeg / 2)
         val c = cos(Math.toRadians(pitchDeg)).coerceAtLeast(0.05)
         val yawWidth = Math.toDegrees(2 * atan(tan(half) / c)).coerceAtMost(170.0)
-        return ceil(360.0 / (yawWidth * (1 - OVERLAP_H))).toInt().coerceAtLeast(3)
+        return ceil(360.0 / (yawWidth * (1 - overlapH))).toInt().coerceAtLeast(3)
     }
 
     /**
