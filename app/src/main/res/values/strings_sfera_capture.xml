@@ -1,0 +1,110 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Sféra: snímanie guľovej fotky 360° so zložením na pozadí -->
+<resources>
+    <string name="sfera_c_menu_capture">Guľová fotka 360° (Sféra)</string>
+    <string name="sfera_c_close">Zavrieť</string>
+    <string name="sfera_c_counter">%1$d / %2$d</string>
+    <string name="sfera_c_lens_wide">Široký</string>
+    <string name="sfera_c_lens_main">Hlavný</string>
+    <string name="sfera_c_lock_exposure">Zamknúť expozíciu</string>
+    <string name="sfera_c_undo">Späť o záber</string>
+    <string name="sfera_c_done">Hotovo</string>
+    <string name="sfera_c_shutter">Odfotiť</string>
+    <string name="sfera_c_more">Ďalšie možnosti</string>
+
+    <string name="sfera_c_tip_title">Ako na to</string>
+    <string name="sfera_c_tip_1">Drž mobil na výšku a otáčaj ho okolo objektívu, nie okolo seba.</string>
+    <string name="sfera_c_tip_2">Mier krúžkom na bod a chvíľu drž — odfotí sám.</string>
+    <string name="sfera_c_tip_3">Blízke predmety (do 1,5 m) sa môžu na spojoch rozchádzať.</string>
+    <string name="sfera_c_tip_ok">Rozumiem</string>
+
+    <string name="sfera_c_hint_first">Namier na horizont a stlač spúšť</string>
+    <string name="sfera_c_hint_aim_horizon">Namier na horizont</string>
+    <string name="sfera_c_hint_slower">Pomalšie</string>
+    <string name="sfera_c_hint_level">Narovnaj mobil</string>
+    <string name="sfera_c_hint_hold">Drž</string>
+    <string name="sfera_c_hint_move">Mier krúžkom na bod</string>
+    <string name="sfera_c_first_not_ready">Namier na horizont a drž mobil v pokoji</string>
+
+    <string name="sfera_c_moved">Pohol si sa, skús znova</string>
+    <string name="sfera_c_save_failed">Záber sa nepodarilo uložiť</string>
+    <string name="sfera_c_camera_failed">Fotoaparát sa nepodarilo spustiť</string>
+    <string name="sfera_c_no_sensor">Tento mobil nemá senzor natočenia, Sféra nemôže fungovať</string>
+
+    <string name="sfera_c_perm_title">Fotoaparát</string>
+    <string name="sfera_c_perm_message">Sféra potrebuje fotoaparát, aby mohla snímať zábery pre guľovú fotku.</string>
+    <string name="sfera_c_perm_ok">Povoliť</string>
+    <string name="sfera_c_perm_cancel">Zrušiť</string>
+    <string name="sfera_c_perm_denied">Bez prístupu k fotoaparátu sa guľová fotka nedá nasnímať</string>
+
+    <string name="sfera_c_discard_title">Zahodiť rozrobenú guľu?</string>
+    <string name="sfera_c_discard_message">Nasnímané zábery (%1$d) sa zmažú.</string>
+    <string name="sfera_c_discard_yes">Zahodiť</string>
+    <string name="sfera_c_discard_no">Pokračovať</string>
+
+    <string name="sfera_c_partial_title">Guľa nie je celá</string>
+    <string name="sfera_c_partial_message">Vodorovný rad ešte nie je celý, výsledkom bude len časť panorámy. Zložiť ju aj tak?</string>
+    <string name="sfera_c_partial_yes">Zložiť aj tak</string>
+    <string name="sfera_c_partial_no">Snímať ďalej</string>
+
+    <string name="sfera_c_resume_title">Rozrobená guľa</string>
+    <string name="sfera_c_resume_message">Našla sa nedokončená guľa. Môžeš ju zložiť z už nasnímaných záberov.</string>
+    <string name="sfera_c_resume_stitch">Zložiť rozrobenú guľu (%1$d záberov)</string>
+    <string name="sfera_c_resume_discard">Zahodiť</string>
+    <string name="sfera_c_resume_new">Začať novú</string>
+
+    <string name="sfera_c_result_running">Skladám guľu…</string>
+    <string name="sfera_c_result_note">Skladanie pokračuje aj na pozadí.</string>
+    <string name="sfera_c_result_done">Guľa je hotová</string>
+    <string name="sfera_c_result_failed">Skladanie zlyhalo</string>
+    <string name="sfera_c_result_cancelled">Skladanie bolo zrušené</string>
+    <string name="sfera_c_btn_view">Zobraziť guľu</string>
+    <string name="sfera_c_btn_new">Nová guľa</string>
+    <string name="sfera_c_btn_zip">Uložiť zdrojové zábery (ZIP)</string>
+    <string name="sfera_c_btn_retry">Skúsiť znova</string>
+    <string name="sfera_c_btn_cancel">Zrušiť skladanie</string>
+    <string name="sfera_c_btn_sources">Zdrojové zábery</string>
+    <string name="sfera_c_zip_saved">Uložené do Stiahnutých: %1$s</string>
+    <string name="sfera_c_zip_failed">ZIP sa nepodarilo vytvoriť</string>
+    <string name="sfera_c_viewer_missing">Prehliadač gule nie je dostupný</string>
+    <string name="sfera_c_warnings">Upozornenia: %1$s</string>
+
+    <string name="sfera_c_stage_prepare">Pripravujem</string>
+    <string name="sfera_c_stage_load">Načítavam zábery</string>
+    <string name="sfera_c_stage_match">Hľadám spoločné body</string>
+    <string name="sfera_c_stage_optimize">Dolaďujem polohy</string>
+    <string name="sfera_c_stage_exposure">Vyrovnávam jas</string>
+    <string name="sfera_c_stage_seams">Hľadám švy</string>
+    <string name="sfera_c_stage_blend">Prelínam</string>
+    <string name="sfera_c_stage_save">Ukladám</string>
+
+    <string name="sfera_c_sources_title">Zdrojové zábery</string>
+    <string name="sfera_c_sources_message">Uložené relácie: %1$d, spolu %2$s. Zdrojové zábery sa dajú znova zložiť alebo poslať na ladenie.</string>
+    <string name="sfera_c_sources_empty">Žiadne uložené zdrojové zábery.</string>
+    <string name="sfera_c_sources_delete_all">Vymazať všetko</string>
+    <string name="sfera_c_sources_confirm">Naozaj vymazať všetky zdrojové zábery (%1$s)? Už zložené guľové fotky ostanú.</string>
+    <string name="sfera_c_sources_deleted">Zdrojové zábery sú vymazané</string>
+    <string name="sfera_c_sources_close">Zavrieť</string>
+    <string name="sfera_c_yes">Áno</string>
+    <string name="sfera_c_no">Nie</string>
+
+    <string name="sfera_c_channel">Sféra</string>
+    <string name="sfera_c_notif_title">Skladám guľovú fotku</string>
+    <string name="sfera_c_notif_cancel">Zrušiť</string>
+    <string name="sfera_c_notif_done_title">Guľová fotka je hotová</string>
+    <string name="sfera_c_notif_done_text">Ťukni a otvor ju</string>
+    <string name="sfera_c_err_no_session">Relácia snímania sa nenašla</string>
+    <string name="sfera_c_err_publish">Výsledok sa nepodarilo uložiť do galérie</string>
+
+    <!-- tlačidlo na obrazovke výsledku -->
+    <style name="SferaCaptureButton">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">48dp</item>
+        <item name="android:layout_marginTop">12dp</item>
+        <item name="android:gravity">center</item>
+        <item name="android:textColor">@android:color/white</item>
+        <item name="android:textSize">16sp</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:visibility">gone</item>
+    </style>
+</resources>
