@@ -146,7 +146,7 @@ class SphereStitchService : Service() {
             exif.setAttribute(ExifInterface.TAG_DATETIME, stamp)
             exif.setAttribute(ExifInterface.TAG_MAKE, Build.MANUFACTURER)
             exif.setAttribute(ExifInterface.TAG_MODEL, Build.MODEL)
-            exif.setAttribute(ExifInterface.TAG_SOFTWARE, "Galéria+ Sféra")
+            exif.setAttribute(ExifInterface.TAG_SOFTWARE, "Galeria+ Sfera") // EXIF je ASCII, diakritika by sa uložila ako otázniky
             exif.saveAttributes()
         } catch (_: Throwable) {
             // metadáta nie sú podmienkou výsledku
