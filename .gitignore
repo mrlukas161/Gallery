@@ -13,3 +13,6 @@ keystore.properties
 fastlane/fastlane.json
 fastlane/report.xml
 .kotlin/
+
+# záznamy o páde JVM (obsahujú cesty a premenné prostredia)
+hs_err_pid*.log
