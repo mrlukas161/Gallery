@@ -1497,6 +1497,7 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
                 R.id.sort -> showSortingDialog()
                 R.id.filter -> showFilterMediaDialog()
                 R.id.open_camera -> launchCamera()
+                R.id.sphere_capture -> startActivity(Intent(this, org.fossify.gallery.sphere.SphereCaptureActivity::class.java))
                 R.id.show_all -> showAllMedia()
                 R.id.change_view_type -> changeViewType()
                 R.id.temporarily_show_hidden -> tryToggleTemporarilyShowHidden()

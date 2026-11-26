@@ -104,7 +104,30 @@ fun Activity.openEditor(path: String, forceChooser: Boolean = false) {
 
 fun Activity.launchCamera() {
     val intent = Intent(MediaStore.INTENT_ACTION_STILL_IMAGE_CAMERA)
-    launchActivityIntent(intent)
+    try {
+        startActivity(intent)
+    } catch (e: SecurityException) {
+        // appka deklaruje CAMERA (režim Sféra); niektoré systémy vtedy bez udeleného povolenia odmietnu spustiť
+        // fotoaparát — vyžiada sa povolenie a po návrate do popredia sa spustenie zopakuje
+        requestCameraThenRetry(intent)
+    } catch (e: Exception) {
+        launchActivityIntent(intent)
+    }
+}
+
+private fun Activity.requestCameraThenRetry(intent: Intent) {
+    val granted = { androidx.core.content.ContextCompat.checkSelfPermission(this, android.Manifest.permission.CAMERA) == android.content.pm.PackageManager.PERMISSION_GRANTED }
+    if (granted()) {
+        launchActivityIntent(intent)
+        return
+    }
+    (this as? androidx.lifecycle.LifecycleOwner)?.lifecycle?.addObserver(object : androidx.lifecycle.DefaultLifecycleObserver {
+        override fun onResume(owner: androidx.lifecycle.LifecycleOwner) {
+            owner.lifecycle.removeObserver(this)
+            if (granted()) launchActivityIntent(intent)
+        }
+    })
+    androidx.core.app.ActivityCompat.requestPermissions(this, arrayOf(android.Manifest.permission.CAMERA), 9731)
 }
 
 fun SimpleActivity.launchSettings() {

@@ -9,6 +9,10 @@
         android:title="@string/open_camera"
         app:showAsAction="always" />
     <item
+        android:id="@+id/sphere_capture"
+        android:title="@string/sfera_c_menu_capture"
+        app:showAsAction="never" />
+    <item
         android:id="@+id/show_all"
         android:icon="@drawable/ic_files_vector"
         android:title="@string/show_all"

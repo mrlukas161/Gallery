@@ -1,6 +1,7 @@
 package org.fossify.gallery.fragments
 
 import android.annotation.SuppressLint
+import android.content.Intent
 import android.content.res.Configuration
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
@@ -52,8 +53,6 @@ import com.github.penfeizhou.animation.webp.WebPDrawable
 import com.squareup.picasso.Callback
 import com.squareup.picasso.Picasso
 import it.sephiroth.android.library.exif2.ExifInterface
-import org.apache.sanselan.common.byteSources.ByteSourceInputStream
-import org.apache.sanselan.formats.jpeg.JpegImageParser
 import org.fossify.commons.extensions.beGone
 import org.fossify.commons.extensions.beVisible
 import org.fossify.commons.extensions.beVisibleIf
@@ -80,6 +79,8 @@ import org.fossify.gallery.activities.PhotoVideoActivity
 import org.fossify.gallery.activities.ViewPagerActivity
 import org.fossify.gallery.adapters.PortraitPhotosAdapter
 import org.fossify.gallery.databinding.PagerPhotoItemBinding
+import org.fossify.gallery.sphere.SphereViewerActivity
+import org.fossify.gallery.spherecore.XmpGPano
 import org.fossify.gallery.extensions.config
 import org.fossify.gallery.extensions.getBottomActionsHeight
 import org.fossify.gallery.extensions.sendFakeClick
@@ -252,10 +253,9 @@ class PhotoFragment : ViewPagerFragment() {
         mWasInit = true
         updateInstantSwitchWidths()
 
-        // TODO: Implement panorama using a FOSS library
-        // ensureBackgroundThread {
-        //      checkIfPanorama()
-        // }
+        ensureBackgroundThread {
+            checkIfPanorama()
+        }
 
         return mView
     }
@@ -582,8 +582,9 @@ class PhotoFragment : ViewPagerFragment() {
                     if (mMedium.path != mOriginalPath) {
                         mMedium.path = mOriginalPath
                         loadImage()
-                        // TODO: Implement panorama using a FOSS library
-                        // checkIfPanorama()
+                        ensureBackgroundThread {
+                            checkIfPanorama()
+                        }
                     } else {
                         binding.errorMessageHolder.errorMessage.apply {
                             setTextColor(if (context.config.blackBackground) Color.WHITE else context.getProperTextColor())
@@ -726,7 +727,12 @@ class PhotoFragment : ViewPagerFragment() {
     private fun getFilePathToShow() = if (mMedium.isPortrait()) mCurrentPortraitPhotoPath else getPathToLoad(mMedium)
 
     private fun openPanorama() {
-        TODO("Panorama is not yet implemented.")
+        val ctx = context ?: return
+        Intent(ctx, SphereViewerActivity::class.java).apply {
+            putExtra(SphereViewerActivity.EXTRA_PATH, mMedium.path)
+            putExtra(SphereViewerActivity.EXTRA_TITLE, mMedium.name)
+            startActivity(this)
+        }
     }
 
     private fun scheduleZoomableView() {
@@ -825,22 +831,25 @@ class PhotoFragment : ViewPagerFragment() {
         }
     }
 
+    // guľová panoráma = existujúce XMP GPano (ekvidištančné); obyčajná fotka 2:1 bez XMP tlačidlo nedostane
     private fun checkIfPanorama() {
         mIsPanorama = try {
-            if (mMedium.path.startsWith("content:/")) {
+            val head = ByteArray(512 * 1024)
+            var n = 0
+            val input = if (mMedium.path.startsWith("content:/")) {
                 requireContext().contentResolver.openInputStream(Uri.parse(mMedium.path))
             } else {
                 File(mMedium.path).inputStream()
-            }.use {
-                val imageParser = JpegImageParser().getXmpXml(ByteSourceInputStream(it, mMedium.name), HashMap<String, Any>())
-                imageParser.contains("GPano:UsePanoramaViewer=\"True\"", true) ||
-                    imageParser.contains("<GPano:UsePanoramaViewer>True</GPano:UsePanoramaViewer>", true) ||
-                    imageParser.contains("GPano:FullPanoWidthPixels=") ||
-                    imageParser.contains("GPano:ProjectionType>Equirectangular")
             }
-        } catch (e: Exception) {
-            false
-        } catch (e: OutOfMemoryError) {
+            input?.use {
+                while (n < head.size) {
+                    val r = it.read(head, n, head.size - n)
+                    if (r <= 0) break
+                    n += r
+                }
+            }
+            n > 0 && XmpGPano.read(head.copyOf(n)) != null
+        } catch (e: Throwable) {
             false
         }
 
