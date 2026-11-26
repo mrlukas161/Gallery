@@ -74,7 +74,8 @@ object TargetLayout {
 
     private val evalPano = PanoFrame(doubleArrayOf(0.0, 1.0, 0.0), doubleArrayOf(1.0, 0.0, 0.0), doubleArrayOf(0.0, 0.0, 1.0))
 
-    private val evalDirs: List<DoubleArray> by lazy {
+    /** Skúšobné smery po celej guli (po 3°), v pevne zamiešanom poradí, aby sa diera našla čo najskôr. */
+    private val evalDirs: DoubleArray by lazy {
         val d = ArrayList<DoubleArray>()
         var lat = -90.0
         while (lat <= 90.0 + 1e-9) {
@@ -82,31 +83,55 @@ object TargetLayout {
             for (i in 0 until n) d.add(evalPano.dir(i * 360.0 / n + 1.3, lat))
             lat += 3.0
         }
-        d
+        d.shuffle(java.util.Random(20261126L))
+        val flat = DoubleArray(d.size * 3)
+        for (i in d.indices) { flat[i * 3] = d[i][0]; flat[i * 3 + 1] = d[i][1]; flat[i * 3 + 2] = d[i][2] }
+        flat
     }
 
-    /** Podiel smerov pokrytých aspoň dvakrát (centrálne 92 %) a počet nepokrytých smerov. */
-    private fun coverage(t: List<Target>, h: Double, v: Double): Pair<Double, Int> {
+    /**
+     * Podiel smerov pokrytých aspoň dvakrát (centrálne 92 %) a počet nepokrytých smerov.
+     * Vráti null, len čo je isté, že rozloženie nevyhovie: má dieru, alebo (ak je zadané `minTwo`)
+     * dvojité pokrytie už nemôže dosiahnuť `minTwo`. Poradie smerov výsledok nemení.
+     */
+    private fun coverage(t: List<Target>, h: Double, v: Double, minTwo: Double = -1.0): Pair<Double, Int>? {
         val th = tan(Math.toRadians(h / 2)) * 0.92
         val tv = tan(Math.toRadians(v / 2)) * 0.92
-        val cams = t.map { PanoFrame.cameraLookingAt(evalPano, it.yawDeg, it.pitchDeg).m }
-        var two = 0
-        var none = 0
-        for (d in evalDirs) {
-            var c = 0
-            for (m in cams) {
-                val z = m[2] * d[0] + m[5] * d[1] + m[8] * d[2]
-                if (z <= 1e-6) continue
-                val x = m[0] * d[0] + m[3] * d[1] + m[6] * d[2]
-                if (kotlin.math.abs(x) > th * z) continue
-                val y = m[1] * d[0] + m[4] * d[1] + m[7] * d[2]
-                if (kotlin.math.abs(y) > tv * z) continue
-                if (++c >= 2) break
-            }
-            if (c == 0) none++
-            if (c >= 2) two++
+        val nc = t.size
+        val cams = DoubleArray(nc * 9)
+        for (k in 0 until nc) {
+            val m = PanoFrame.cameraLookingAt(evalPano, t[k].yawDeg, t[k].pitchDeg).m
+            System.arraycopy(m, 0, cams, k * 9, 9)
         }
-        return two.toDouble() / evalDirs.size to none
+        val dirs = evalDirs
+        val n = dirs.size / 3
+        val maxNotTwo = if (minTwo < 0) n else n - ceil(minTwo * n - 1e-9).toInt()
+        var two = 0
+        var notTwo = 0
+        var i = 0
+        while (i < n) {
+            val dx = dirs[i * 3]
+            val dy = dirs[i * 3 + 1]
+            val dz = dirs[i * 3 + 2]
+            var c = 0
+            var k = 0
+            while (k < nc) {
+                val o = k * 9
+                val z = cams[o + 2] * dx + cams[o + 5] * dy + cams[o + 8] * dz
+                if (z > 1e-6) {
+                    val x = cams[o] * dx + cams[o + 3] * dy + cams[o + 6] * dz
+                    if (kotlin.math.abs(x) <= th * z) {
+                        val y = cams[o + 1] * dx + cams[o + 4] * dy + cams[o + 7] * dz
+                        if (kotlin.math.abs(y) <= tv * z && ++c >= 2) break
+                    }
+                }
+                k++
+            }
+            if (c == 0) return null
+            if (c >= 2) two++ else if (++notTwo > maxNotTwo) return null
+            i++
+        }
+        return two.toDouble() / n to 0
     }
 
     private fun search(h: Double, v: Double): List<Target> {
@@ -130,8 +155,11 @@ object TargetLayout {
             }
             oh += 0.025
         }
-        val memo = HashMap<Int, Pair<Double, Int>>()
-        fun cov(i: Int) = memo.getOrPut(i) { coverage(cands[i], h, v) }
+        val full = HashMap<Int, Pair<Double, Int>?>()
+        fun covFull(i: Int): Pair<Double, Int>? {
+            if (!full.containsKey(i)) full[i] = coverage(cands[i], h, v)
+            return full[i]
+        }
 
         // 1. rýchla cesta: od najmenšieho počtu cieľov; prvý počet, pri ktorom niečo vyhovie, je výsledok
         //    (v rámci toho istého počtu vyhráva väčšie dvojité pokrytie, pri zhode skorší kandidát)
@@ -142,8 +170,10 @@ object TargetLayout {
         for (i in bySize) {
             val size = cands[i].size
             if (okIdx >= 0 && size > okSize) break
-            val (two, none) = cov(i)
-            if (none == 0 && two >= 0.955 && (okIdx < 0 || two > okTwo || (two == okTwo && i < okIdx))) {
+            val c = coverage(cands[i], h, v, 0.955) ?: continue
+            full[i] = c
+            val two = c.first
+            if (two >= 0.955 && (okIdx < 0 || two > okTwo || (two == okTwo && i < okIdx))) {
                 okIdx = i; okTwo = two; okSize = size
             }
         }
@@ -157,8 +187,7 @@ object TargetLayout {
         var bestOkTwo = 0.0
         for (i in cands.indices) {
             val t = cands[i]
-            val (two, none) = cov(i)
-            if (none != 0) continue
+            val two = (covFull(i) ?: continue).first
             if (two >= 0.955 && (t.size < bestOkCount || (t.size == bestOkCount && two > bestOkTwo))) {
                 bestOk = t; bestOkCount = t.size; bestOkTwo = two
             }
