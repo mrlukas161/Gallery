@@ -67,11 +67,15 @@ class SphereCaptureActivity : SimpleActivity() {
     private val binding by viewBinding(ActivitySphereCaptureBinding::inflate)
     private val handler = Handler(Looper.getMainLooper())
     private val worker = Executors.newSingleThreadExecutor()
+
+    // hľadanie rozloženia cieľov môže trvať minúty na pomalom zariadení — vlastné vlákno, aby nezdržalo ostatné úlohy
+    private val targetWorker = Executors.newSingleThreadExecutor()
     private var mode = Mode.CAPTURE
 
     // ladiaci ukážkový režim (len DEBUG): am start … --ez demo_sweep true [--ei demo_max N]
     private var demo = false
     private var demoMax = 0
+    private var demoHold = 0 // ladenie: po N zábere sa simulácia zastaví a ďalej ovláda používateľ
 
     // kamera
     private var provider: ProcessCameraProvider? = null
@@ -147,6 +151,7 @@ class SphereCaptureActivity : SimpleActivity() {
         worker.execute { SphereStore.purgeEmpty(this) }
         demo = BuildConfig.DEBUG && intent.getBooleanExtra("demo_sweep", false)
         demoMax = if (demo) intent.getIntExtra("demo_max", 0) else 0
+        demoHold = if (demo) intent.getIntExtra("demo_hold", 0) else 0
         binding.sphereGuide.setGuide(guide)
         setupClicks()
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
@@ -188,6 +193,7 @@ class SphereCaptureActivity : SimpleActivity() {
         orientation?.stop()
         sound?.release()
         worker.shutdown()
+        targetWorker.shutdown()
         super.onDestroy()
     }
 
@@ -499,7 +505,7 @@ class SphereCaptureActivity : SimpleActivity() {
             guide.setFov(fov.hDeg, fov.vDeg, cached)
             targetsReady = true
         } else {
-            worker.execute {
+            targetWorker.execute {
                 val t = TargetCache.get(fov.hDeg, fov.vDeg)
                 runOnUiThread {
                     if (!isDestroyed && frames.isEmpty() && lens.hFovDeg == fov.hDeg && lens.vFovDeg == fov.vDeg) {
@@ -754,6 +760,7 @@ class SphereCaptureActivity : SimpleActivity() {
 
     private fun demoPose(): Mat3? {
         if (busy || mode != Mode.CAPTURE) return null
+        if (demoHold > 0 && frames.size >= demoHold) return null
         val pf = guide.panoFrame ?: return null
         val i = guide.remaining.firstOrNull() ?: return null
         val t = guide.targets[i]
