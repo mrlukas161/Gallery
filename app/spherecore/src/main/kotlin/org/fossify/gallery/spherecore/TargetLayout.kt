@@ -110,11 +110,10 @@ object TargetLayout {
     }
 
     private fun search(h: Double, v: Double): List<Target> {
-        var best: List<Target>? = null
-        var bestScore = -1e9
-        var bestOk: List<Target>? = null
-        var bestOkCount = Int.MAX_VALUE
-        var bestOkTwo = 0.0
+        // Kandidáti v pôvodnom poradí (prekryv, počet radov, výška). Rôzne prekryvy často dajú to isté
+        // rozloženie (počet v rade je zaokrúhlený), preto sa každé rozloženie hodnotí len raz.
+        val cands = ArrayList<List<Target>>()
+        val seen = HashSet<String>()
         var oh = 0.30
         while (oh <= 0.601) {
             for (rings in 1..4) {
@@ -122,21 +121,51 @@ object TargetLayout {
                 while (top <= 78.0 + 1e-9) {
                     val t = build(h, v, oh, rings, top)
                     if (t.size <= 80) {
-                        val (two, none) = coverage(t, h, v)
-                        if (none == 0) {
-                            if (two >= 0.955 && (t.size < bestOkCount || (t.size == bestOkCount && two > bestOkTwo))) {
-                                bestOk = t; bestOkCount = t.size; bestOkTwo = two
-                            }
-                            val score = (if (t.size <= MAX_TARGETS) 0.0 else -(t.size - MAX_TARGETS) * 0.05) + two
-                            if (score > bestScore) { bestScore = score; best = t }
-                        }
+                        val sig = StringBuilder().append(rings).append('/').append(Math.round(top * 10)).append('/').append(t.size)
+                        for (k in 0..rings) sig.append(':').append(t.count { it.ring == k })
+                        if (seen.add(sig.toString())) cands.add(t)
                     }
                     top += 3.0
                 }
             }
             oh += 0.025
         }
-        val pick = if (bestOk != null && bestOkCount <= MAX_TARGETS) bestOk else (best ?: bestOk ?: build(h, v, OVERLAP_H, 1, 50.0))
+        val memo = HashMap<Int, Pair<Double, Int>>()
+        fun cov(i: Int) = memo.getOrPut(i) { coverage(cands[i], h, v) }
+
+        // 1. rýchla cesta: od najmenšieho počtu cieľov; prvý počet, pri ktorom niečo vyhovie, je výsledok
+        //    (v rámci toho istého počtu vyhráva väčšie dvojité pokrytie, pri zhode skorší kandidát)
+        val bySize = cands.indices.filter { cands[it].size <= MAX_TARGETS }.sortedBy { cands[it].size }
+        var okIdx = -1
+        var okTwo = 0.0
+        var okSize = -1
+        for (i in bySize) {
+            val size = cands[i].size
+            if (okIdx >= 0 && size > okSize) break
+            val (two, none) = cov(i)
+            if (none == 0 && two >= 0.955 && (okIdx < 0 || two > okTwo || (two == okTwo && i < okIdx))) {
+                okIdx = i; okTwo = two; okSize = size
+            }
+        }
+        if (okIdx >= 0) return cands[okIdx].mapIndexed { i, t -> t.copy(index = i) }
+
+        // 2. nič nevyhovelo do MAX_TARGETS: najlepší kompromis (dvojité pokrytie mínus pokuta za počet nad limit)
+        var best: List<Target>? = null
+        var bestScore = -1e9
+        var bestOk: List<Target>? = null
+        var bestOkCount = Int.MAX_VALUE
+        var bestOkTwo = 0.0
+        for (i in cands.indices) {
+            val t = cands[i]
+            val (two, none) = cov(i)
+            if (none != 0) continue
+            if (two >= 0.955 && (t.size < bestOkCount || (t.size == bestOkCount && two > bestOkTwo))) {
+                bestOk = t; bestOkCount = t.size; bestOkTwo = two
+            }
+            val score = (if (t.size <= MAX_TARGETS) 0.0 else -(t.size - MAX_TARGETS) * 0.05) + two
+            if (score > bestScore) { bestScore = score; best = t }
+        }
+        val pick = best ?: bestOk ?: build(h, v, OVERLAP_H, 1, 50.0)
         return pick.mapIndexed { i, t -> t.copy(index = i) }
     }
 
