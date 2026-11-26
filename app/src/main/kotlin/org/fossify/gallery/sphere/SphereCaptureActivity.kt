@@ -89,7 +89,8 @@ class SphereCaptureActivity : SimpleActivity() {
     }
 
     // navádzanie a relácia
-    private var guide = CaptureGuide(LensFov.ASSUMED.hDeg, LensFov.ASSUMED.vDeg)
+    private var guide = CaptureGuide(LensFov.ASSUMED.hDeg, LensFov.ASSUMED.vDeg, emptyList())
+    private var targetsReady = false
     private var orientation: OrientationSource? = null
     private var sessionDir: File? = null
     private val frames = ArrayList<SphereFrame>()
@@ -104,6 +105,8 @@ class SphereCaptureActivity : SimpleActivity() {
     private var lastState: GuideState? = null
     private var lastHintKey = ""
     private var cameraStarted = false
+    private var streaming = false
+    private var bindAttempts = 0
 
     private var sound: MediaActionSound? = null
 
@@ -141,6 +144,7 @@ class SphereCaptureActivity : SimpleActivity() {
             padBottomSystem = listOf(binding.sphereBottombar)
         )
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        worker.execute { SphereStore.purgeEmpty(this) }
         demo = BuildConfig.DEBUG && intent.getBooleanExtra("demo_sweep", false)
         demoMax = if (demo) intent.getIntExtra("demo_max", 0) else 0
         binding.sphereGuide.setGuide(guide)
@@ -234,7 +238,7 @@ class SphereCaptureActivity : SimpleActivity() {
             return
         }
         if (frames.isNotEmpty()) {
-            AlertDialog.Builder(this)
+            AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Dialog_Alert)
                 .setTitle(R.string.sfera_c_discard_title)
                 .setMessage(getString(R.string.sfera_c_discard_message, frames.size))
                 .setPositiveButton(R.string.sfera_c_discard_yes) { _, _ ->
@@ -250,7 +254,7 @@ class SphereCaptureActivity : SimpleActivity() {
     }
 
     private fun onShutter() {
-        if (busy || mode != Mode.CAPTURE || imageCapture == null) return
+        if (busy || mode != Mode.CAPTURE || imageCapture == null || !targetsReady) return
         binding.sphereTips.visibility = View.GONE
         if (!guide.hasFirstFrame) {
             if (lastState?.firstFrameReady != true) {
@@ -284,7 +288,7 @@ class SphereCaptureActivity : SimpleActivity() {
     private fun onDonePressed() {
         if (busy || frames.size < 2) return
         if (!guide.horizonComplete && !guide.isComplete) {
-            AlertDialog.Builder(this)
+            AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Dialog_Alert)
                 .setTitle(R.string.sfera_c_partial_title)
                 .setMessage(R.string.sfera_c_partial_message)
                 .setPositiveButton(R.string.sfera_c_partial_yes) { _, _ -> finishSession() }
@@ -306,7 +310,7 @@ class SphereCaptureActivity : SimpleActivity() {
             cameraPermission.launch(Manifest.permission.CAMERA)
             return
         }
-        AlertDialog.Builder(this)
+        AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Dialog_Alert)
             .setTitle(R.string.sfera_c_perm_title)
             .setMessage(R.string.sfera_c_perm_message)
             .setCancelable(false)
@@ -342,7 +346,7 @@ class SphereCaptureActivity : SimpleActivity() {
             if (found != null) runOnUiThread {
                 if (isFinishing || isDestroyed || frames.isNotEmpty()) return@runOnUiThread
                 val (dir, session) = found
-                AlertDialog.Builder(this)
+                AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Dialog_Alert)
                     .setTitle(R.string.sfera_c_resume_title)
                     .setMessage(R.string.sfera_c_resume_message)
                     .setCancelable(false)
@@ -404,6 +408,14 @@ class SphereCaptureActivity : SimpleActivity() {
         val cam = p.bindToLifecycle(this, CameraSelector.DEFAULT_BACK_CAMERA, pv, ic)
         camera = cam
         zoomInit = false
+        streaming = false
+        // pri pomalom zariadení sa relácia kamery môže pokaziť (náhľad nedostal plochu včas) — znova viazať
+        handler.postDelayed({
+            if (!streaming && mode == Mode.CAPTURE && !isDestroyed && bindAttempts < 3 && frames.isEmpty()) {
+                bindAttempts++
+                bindCamera()
+            }
+        }, 9000)
         cam.cameraInfo.zoomState.removeObserver(zoomObserver)
         cam.cameraInfo.zoomState.observe(this, zoomObserver)
         binding.spherePreview.previewStreamState.removeObserver(streamObserver)
@@ -420,6 +432,7 @@ class SphereCaptureActivity : SimpleActivity() {
 
     /** Skutočný pomer strán zobrazeného obrazu (na výšku). */
     private fun onStreaming() {
+        streaming = true
         val res = preview?.resolutionInfo?.resolution ?: return
         val shortSide = min(res.width, res.height).toDouble()
         val longSide = max(res.width, res.height).toDouble()
@@ -477,9 +490,26 @@ class SphereCaptureActivity : SimpleActivity() {
         val zoom = if (wide && minZoom < 0.95f) minZoom else 1f
         camera?.cameraControl?.setZoomRatio(zoom)
         val fov = LensFov.withZoom(baseFov, zoom.toDouble())
-        guide.setFov(fov.hDeg, fov.vDeg)
         binding.sphereGuide.setFov(fov.hDeg, fov.vDeg)
         lens = SphereLens(zoom.toDouble(), fov.hDeg, fov.vDeg, 0, 0, baseSource)
+        // hľadanie rozloženia cieľov je pomalé: mimo hlavného vlákna
+        targetsReady = false
+        val cached = TargetCache.cached(fov.hDeg, fov.vDeg)
+        if (cached != null) {
+            guide.setFov(fov.hDeg, fov.vDeg, cached)
+            targetsReady = true
+        } else {
+            worker.execute {
+                val t = TargetCache.get(fov.hDeg, fov.vDeg)
+                runOnUiThread {
+                    if (!isDestroyed && frames.isEmpty() && lens.hFovDeg == fov.hDeg && lens.vFovDeg == fov.vDeg) {
+                        guide.setFov(fov.hDeg, fov.vDeg, t)
+                        targetsReady = true
+                        updateUi()
+                    }
+                }
+            }
+        }
         updateUi()
     }
 
@@ -519,6 +549,7 @@ class SphereCaptureActivity : SimpleActivity() {
                 file.delete()
                 guide.abortCapture()
                 busy = false
+                dropEmptySession()
                 Toast.makeText(this@SphereCaptureActivity, R.string.sfera_c_save_failed, Toast.LENGTH_SHORT).show()
             }
         })
@@ -538,6 +569,7 @@ class SphereCaptureActivity : SimpleActivity() {
         if (moved > CaptureGuide.MAX_MOVE_DEG) {
             file.delete()
             busy = false
+            dropEmptySession()
             Toast.makeText(this, R.string.sfera_c_moved, Toast.LENGTH_SHORT).show()
             return
         }
@@ -569,6 +601,12 @@ class SphereCaptureActivity : SimpleActivity() {
                 if (!isDestroyed && frames.any { it.file == file.name }) binding.sphereGuide.addThumb(file.name, bmp, r)
             }
         }
+    }
+
+    private fun dropEmptySession() {
+        if (frames.isNotEmpty()) return
+        sessionDir?.let { SphereStore.delete(it) }
+        sessionDir = null
     }
 
     private fun ensureSessionDir(): File {
@@ -724,7 +762,7 @@ class SphereCaptureActivity : SimpleActivity() {
 
     private fun demoFirstShot() {
         if (isDestroyed || mode != Mode.CAPTURE || guide.hasFirstFrame) return
-        if (!busy && lastState?.firstFrameReady == true && imageCapture != null) onShutter()
+        if (!busy && streaming && targetsReady && lastState?.firstFrameReady == true && imageCapture != null) onShutter()
         else handler.postDelayed({ demoFirstShot() }, 300)
     }
 
@@ -886,7 +924,8 @@ class SphereCaptureActivity : SimpleActivity() {
     /** Nová relácia po skončení predchádzajúcej: čistý stav a znova kamera. */
     private fun startNewSession() {
         SphereStitchService.reset()
-        guide = CaptureGuide(baseFov.hDeg, baseFov.vDeg)
+        guide = CaptureGuide(baseFov.hDeg, baseFov.vDeg, emptyList())
+        targetsReady = false
         binding.sphereGuide.setGuide(guide)
         binding.sphereGuide.clearThumbs()
         frames.clear()
@@ -915,7 +954,7 @@ class SphereCaptureActivity : SimpleActivity() {
             val size = dirs.sumOf { SphereStore.sizeOf(it) }
             runOnUiThread {
                 if (isDestroyed) return@runOnUiThread
-                val b = AlertDialog.Builder(this).setTitle(R.string.sfera_c_sources_title)
+                val b = AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Dialog_Alert).setTitle(R.string.sfera_c_sources_title)
                 if (dirs.isEmpty()) {
                     b.setMessage(R.string.sfera_c_sources_empty)
                 } else {
@@ -928,7 +967,7 @@ class SphereCaptureActivity : SimpleActivity() {
     }
 
     private fun confirmDeleteSources(size: Long) {
-        AlertDialog.Builder(this)
+        AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Dialog_Alert)
             .setMessage(getString(R.string.sfera_c_sources_confirm, size.formatSize()))
             .setPositiveButton(R.string.sfera_c_yes) { _, _ ->
                 val keep = HashSet<String>()

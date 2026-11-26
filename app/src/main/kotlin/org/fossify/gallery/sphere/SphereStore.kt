@@ -42,6 +42,11 @@ object SphereStore {
 
     fun totalSize(context: Context): Long = list(context).sumOf { sizeOf(it) }
 
+    /** Zmaže prázdne priečinky relácií (po zlyhanom prvom zábere). */
+    fun purgeEmpty(context: Context) {
+        for (d in list(context)) if (d.listFiles().isNullOrEmpty()) d.delete()
+    }
+
     fun delete(dir: File) {
         dir.deleteRecursively()
     }

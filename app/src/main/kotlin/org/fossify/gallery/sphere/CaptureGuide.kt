@@ -32,12 +32,16 @@ data class GuideState(
  * Stavový automat navádzania (čistý Kotlin, bez Androidu). Pred prvým záberom nie sú ciele;
  * po ňom sa z prvého záberu určí rám panorámy a ciele sa dajú nasnímať v ľubovoľnom poradí.
  */
-class CaptureGuide(hFovDeg: Double, vFovDeg: Double) {
+class CaptureGuide(
+    hFovDeg: Double,
+    vFovDeg: Double,
+    initialTargets: List<Target> = TargetCache.get(hFovDeg, vFovDeg),
+) {
     var hFov = hFovDeg
         private set
     var vFov = vFovDeg
         private set
-    var targets: List<Target> = TargetLayout.generate(hFovDeg, vFovDeg)
+    var targets: List<Target> = initialTargets
         private set
     var panoFrame: PanoFrame? = null
         private set
@@ -66,11 +70,11 @@ class CaptureGuide(hFovDeg: Double, vFovDeg: Double) {
     fun targetDir(i: Int): DoubleArray = dirs[i]
 
     /** Zmena zorného poľa (objektív) je možná len pred prvým záberom. */
-    fun setFov(hFovDeg: Double, vFovDeg: Double) {
+    fun setFov(hFovDeg: Double, vFovDeg: Double, newTargets: List<Target> = TargetCache.get(hFovDeg, vFovDeg)) {
         if (panoFrame != null) return
         hFov = hFovDeg
         vFov = vFovDeg
-        targets = TargetLayout.generate(hFovDeg, vFovDeg)
+        targets = newTargets
         captured = BooleanArray(targets.size)
     }
 
@@ -223,4 +227,18 @@ class DemoSlewer(start: Mat3, private val rateDegPerS: Double = 45.0) {
         r = Mat3.exp(Vec.scale(w, maxStep / angle)) * r
         return maxStep / dtS
     }
+}
+
+/**
+ * Rozloženie cieľov sa hľadá podľa pokrytia, čo na pomalšom zariadení trvá aj sekundy — výsledok sa
+ * pamätá a aktivita ho počíta mimo hlavného vlákna.
+ */
+object TargetCache {
+    private val map = java.util.concurrent.ConcurrentHashMap<Long, List<Target>>()
+
+    private fun key(h: Double, v: Double) = Math.round(h * 100) * 1_000_000L + Math.round(v * 100)
+
+    fun cached(h: Double, v: Double): List<Target>? = map[key(h, v)]
+
+    fun get(h: Double, v: Double): List<Target> = map.getOrPut(key(h, v)) { TargetLayout.generate(h, v) }
 }
