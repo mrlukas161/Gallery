@@ -44,6 +44,16 @@ class StitchResult(
     /** Podiel gule pokrytý aspoň jedným záberom (0..1). */
     val coverage: Double,
     val warnings: List<String>,
+    /** Doladené rotácie záberov (R_cw, kamera → svet), v poradí použitých záberov; pre testy a ladenie. */
+    val refinedRotations: List<Mat3> = emptyList(),
+    /** Indexy záberov v relácii, ktoré sa použili (zhodujú sa s [refinedRotations] a [gains]). */
+    val usedFrameIndices: List<Int> = emptyList(),
+    /** Rám panorámy (z orientácie prvého záberu zo senzora). */
+    val panoFrame: PanoFrame? = null,
+    /** Zisky jasu na záber. */
+    val gains: List<Double> = emptyList(),
+    /** Stredný rozdiel farby (0..255) medzi susednými zábermi pozdĺž švov; NaN ak sa nemeral. */
+    val seamMismatch: Double = Double.NaN,
 )
 
 class StitchCancelledException : RuntimeException("cancelled")
