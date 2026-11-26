@@ -37,3 +37,21 @@ tasks.register<JavaExec>("stitchCli") {
     mainClass.set("org.fossify.gallery.spherecore.StitchCliKt")
     maxHeapSize = "6g"
 }
+
+// Vygeneruje syntetickú reláciu pre meranie: gradlew :spherecore:genSession --args="<priečinok> [šírka] [výška]"
+tasks.register<JavaExec>("genSession") {
+    group = "sfera"
+    classpath = sourceSets["test"].runtimeClasspath
+    mainClass.set("org.fossify.gallery.spherecore.GenSession")
+    maxHeapSize = "6g"
+}
+
+// Pomocné: zapíše classpath testov do súboru (na spúšťanie mimo Gradle, napr. pri meraní pamäte)
+tasks.register("writeTestClasspath") {
+    group = "sfera"
+    doLast {
+        val f = layout.buildDirectory.file("test-classpath.txt").get().asFile
+        f.writeText(sourceSets["test"].runtimeClasspath.files.joinToString(File.pathSeparator) { it.absolutePath })
+    }
+    dependsOn("testClasses")
+}

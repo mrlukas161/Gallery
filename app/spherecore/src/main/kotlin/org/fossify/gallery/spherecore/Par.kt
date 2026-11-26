@@ -5,9 +5,9 @@ import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicInteger
 
-/** Jednoduchý paralelizmus: pevný fond vlákien (jadrá − 1, aspoň 1). Nevolať vnorene. */
+/** Jednoduchý paralelizmus: pevný fond vlákien (jadrá − 1, najviac 8, aspoň 1). Nevolať vnorene. */
 internal object Par {
-    val threads: Int get() = maxOf(1, Runtime.getRuntime().availableProcessors() - 1)
+    val threads: Int = (System.getProperty("sfera.threads")?.toIntOrNull()) ?: maxOf(1, minOf(8, Runtime.getRuntime().availableProcessors() - 1))
 
     private val pool: ExecutorService by lazy {
         Executors.newFixedThreadPool(threads) { r -> Thread(r, "sfera-par").apply { isDaemon = true } }

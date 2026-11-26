@@ -14,7 +14,7 @@ import org.opencv.imgproc.Imgproc
  */
 internal class Blender(val w: Int, val h: Int, val bands: Int, val margin: Int) {
     val levels = if (bands <= 0) 1 else bands + 1
-    val align = maxOf(1 shl bands.coerceAtLeast(0), 4)
+    val align = maxOf(1 shl bands.coerceAtLeast(0), 8)
     val extW = w + 2 * margin
     val padW = roundUp(extW, align)
     val padH = roundUp(h, align)
@@ -128,10 +128,14 @@ internal class Blender(val w: Int, val h: Int, val bands: Int, val margin: Int) 
         inv.release()
         val crop = Rect(margin, 0, w, h)
         val res = Mat()
-        out8.submat(crop).copyTo(res)
+        val o8s = out8.submat(crop)
+        o8s.copyTo(res)
+        o8s.release()
         out8.release()
         val covCrop = Mat()
-        cov.submat(crop).copyTo(covCrop)
+        val cvs = cov.submat(crop)
+        cvs.copyTo(covCrop)
+        cvs.release()
         cov.release()
         val ones = Mat()
         covCrop.convertTo(ones, CvType.CV_8U, 1.0 / 255.0)

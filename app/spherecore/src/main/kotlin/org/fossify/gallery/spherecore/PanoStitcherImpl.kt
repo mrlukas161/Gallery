@@ -46,6 +46,18 @@ internal class PanoStitcherImpl(
         log.append(String.format(Locale.ROOT, "[%6.1f s] ", (System.nanoTime() - t0) / 1e9)).append(s).append('\n')
     }
 
+    /** Súkromná (commit) pamäť procesu v MB, len na PC cez JMX; na Androide prázdne. */
+    private fun memInfo(): String {
+        if (options.debugDir == null) return ""
+        return try {
+            val b = java.lang.management.ManagementFactory.getOperatingSystemMXBean()
+            val v = Class.forName("com.sun.management.OperatingSystemMXBean").getMethod("getCommittedVirtualMemorySize").invoke(b) as Long
+            ", ${v shr 20} MB"
+        } catch (_: Throwable) {
+            ""
+        }
+    }
+
     private fun warn(s: String) {
         warnings.add(s)
         note("VAROVANIE: $s")
@@ -228,8 +240,10 @@ internal class PanoStitcherImpl(
         val panoFrame = PanoFrame.fromFirstFrame(sens[0])
         val pw = panoFrame.worldToPano()
         val cams = Array(n) { FrameCam(pw * rot[it], geoms[it].f, used[it].w, used[it].h) }
-        val lw = W / 4
-        val lh = H / 4
+        // nízke rozlíšenie pre zisky a švy: plátno/4, pri veľkom výstupe plátno/8 (rez grafom je inak veľmi pomalý)
+        val lowK = if (W > 4096) 8 else 4
+        val lw = W / lowK
+        val lh = H / lowK
 
         // ---------- 5. nízke rozlíšenie, zisky ----------
         val lows = ArrayList<LowFrame>()
@@ -282,7 +296,7 @@ internal class PanoStitcherImpl(
         // ---------- 7. prelínanie ----------
         val tb = System.nanoTime()
         val bands = opt.blendBands.coerceIn(0, 8)
-        val margin = Blender.roundUp(if (bands > 0) maxOf(64, (1 shl bands) * 8) else 64, maxOf(1 shl bands, 4))
+        val margin = Blender.roundUp(if (bands > 0) maxOf(64, (1 shl bands) * 8) else 64, maxOf(1 shl bands, 8))
         val blender = Blender(W, H, bands, margin)
         val canvasPxPerRad = W / (2 * Math.PI)
         for (i in 0 until n) {
@@ -302,7 +316,7 @@ internal class PanoStitcherImpl(
                 val img8 = Warp.remap(src, mx, my)
                 val valid8 = Warp.validMask(mx, my, src.cols(), src.rows())
                 mx.release(); my.release()
-                val mask8 = labelMask(labels, i, lw, lh, margin, roi)
+                val mask8 = labelMask(labels, i, lw, lh, margin, roi, lowK)
                 Core.bitwise_and(mask8, valid8, mask8)
                 if (Core.countNonZero(mask8) > 0) {
                     Warp.fillInvalid(img8, valid8, bands)
@@ -369,16 +383,16 @@ internal class PanoStitcherImpl(
     }
 
     /** Maska (8U, 0/255) územia záberu `idx` vo výreze rozšíreného plátna: štítky z nízkeho rozlíšenia, zväčšené bilineárne. */
-    private fun labelMask(labels: IntArray, idx: Int, lw: Int, lh: Int, margin: Int, roi: Roi): Mat {
-        val wl = roi.w / 4
-        val hl = roi.h / 4
+    private fun labelMask(labels: IntArray, idx: Int, lw: Int, lh: Int, margin: Int, roi: Roi, k: Int): Mat {
+        val wl = roi.w / k
+        val hl = roi.h / k
         val buf = ByteArray(wl * hl)
-        val mOff = margin / 4
+        val mOff = margin / k
         for (y in 0 until hl) {
-            val yl = roi.y0 / 4 + y
+            val yl = roi.y0 / k + y
             if (yl >= lh) break
             for (x in 0 until wl) {
-                val xl = roi.x0 / 4 + x - mOff
+                val xl = roi.x0 / k + x - mOff
                 val col = ((xl % lw) + lw) % lw
                 if (labels[yl * lw + col] == idx) buf[y * wl + x] = -1
             }

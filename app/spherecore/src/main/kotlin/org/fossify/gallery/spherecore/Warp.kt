@@ -69,8 +69,11 @@ internal object Warp {
         Imgproc.resize(cmx, bx, Size((gw * STEP).toDouble(), (gh * STEP).toDouble()), 0.0, 0.0, Imgproc.INTER_LINEAR)
         Imgproc.resize(cmy, by, Size((gw * STEP).toDouble(), (gh * STEP).toDouble()), 0.0, 0.0, Imgproc.INTER_LINEAR)
         val rect = Rect(8, 8, r.w, r.h)
-        bx.submat(rect).copyTo(mapX)
-        by.submat(rect).copyTo(mapY)
+        val sx = bx.submat(rect)
+        val sy = by.submat(rect)
+        sx.copyTo(mapX)
+        sy.copyTo(mapY)
+        sx.release(); sy.release()
         cmx.release(); cmy.release(); bx.release(); by.release()
     }
 

@@ -42,8 +42,11 @@ internal object GainCompensator {
                 Core.bitwise_and(m1, m2, m1)
                 val cnt = Core.countNonZero(m1)
                 if (cnt >= 150) {
-                    val mi = Core.mean(fi.img.submat(ri), m1)
-                    val mj = Core.mean(fj.img.submat(rj), m1)
+                    val si = fi.img.submat(ri)
+                    val sj = fj.img.submat(rj)
+                    val mi = Core.mean(si, m1)
+                    val mj = Core.mean(sj, m1)
+                    si.release(); sj.release()
                     val ii = (mi.`val`[0] + mi.`val`[1] + mi.`val`[2]) / 3.0
                     val ij = (mj.`val`[0] + mj.`val`[1] + mj.`val`[2]) / 3.0
                     val nn = cnt.toDouble()
